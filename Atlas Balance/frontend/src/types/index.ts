@@ -973,3 +973,16 @@ export interface ImportPlazoFijoMovimientoResult {
   saldo_anterior: number;
   saldo_actual: number;
 }
+
+// V-03.02 (LOTE 6, seccion 8.1): dispositivo MFA de confianza. El backend lo
+// serializa en snake_case (AuthDtos.TrustedMfaDeviceResponse).
+export interface TrustedMfaDevice {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  user_agent_summary: string | null;
+  ip_address_summary: string | null;
+  current: boolean;
+}

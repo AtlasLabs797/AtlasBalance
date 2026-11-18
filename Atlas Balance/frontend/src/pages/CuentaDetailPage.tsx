@@ -29,11 +29,16 @@ import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import type { AuditCellEntry, CuentaResumenKpi, Extracto, ExtractoDesgloseResumen, PaginatedResponse, PeriodoDashboard } from '@/types';
+// S-2: la REGLA de columnas del administrador (`columnas_restringidas`) y la
+// PREFERENCIA del usuario (`columnas_visibles`) son conjuntos distintos. El
+// conjunto efectivo es la interseccion: el usuario solo puede estrechar.
+import { columnasExcluidasPorAdmin, columnasPermitidas } from '@/utils/columnasPermitidas';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate, formatDateTime, parseEuropeanNumber } from '@/utils/formatters';
 import { computeBulkFlagToggle } from '@/utils/bulkFlagToggle';
 import { ejecutarEnLote } from '@/utils/concurrencia';
 import { hoy } from '@/utils/hoy';
+import { rangoMostrado } from '@/utils/paginacion';
 
 const BULK_DELETE_PREVIEW_LIMIT = 6;
 
@@ -122,6 +127,9 @@ export default function CuentaDetailPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [visibleColumns, setVisibleColumns] = useState<string[] | null>(null);
   const [columnOrder, setColumnOrder] = useState<string[] | null>(null);
+  // S-2: whitelist del administrador para el alcance de esta cuenta.
+  // null = el administrador no restringe.
+  const [columnasRestringidas, setColumnasRestringidas] = useState<string[] | null>(null);
   const [columnPreferencesSaving, setColumnPreferencesSaving] = useState(false);
   const columnPreferencesSavingRef = useRef(false);
   const preferenceScopeRef = useRef(cuentaId);
@@ -197,10 +205,15 @@ export default function CuentaDetailPage() {
   const queryClient = useQueryClient();
   const usuarioId = usuario?.id ?? '';
 
-  const excludedColumns = useMemo(() => ['cuenta_nombre', 'banco_nombre', 'titular_nombre'], []);
+  const excludedColumns = useMemo(
+    // S-2: ni las columnas del encabezado de la cuenta ni las que el
+    // administrador prohibio se ofrecen en el interruptor.
+    () => [...columnasExcluidasPorAdmin(columnasRestringidas, BASE_COLUMNS), 'cuenta_nombre', 'banco_nombre', 'titular_nombre'],
+    [columnasRestringidas]
+  );
   const columnPreferencesQuery = useQuery({
     queryKey: queryKeys.extractos.columnasVisibles({ usuarioId, cuentaId, titularId: summary?.titular_id ?? null, paisId: summary?.pais_id ?? selectedPaisId ?? null }),
-    queryFn: () => api.get<{ columnas_visibles: string[] | null; orden_columnas: string[] | null }>('/extractos/columnas-visibles', {
+    queryFn: () => api.get<{ columnas_visibles: string[] | null; orden_columnas: string[] | null; columnas_restringidas: string[] | null }>('/extractos/columnas-visibles', {
       params: { cuentaId, titularId: summary?.titular_id, paisId: summary?.pais_id ?? (selectedPaisId || undefined) },
     }).then((res) => res.data),
     enabled: Boolean(usuarioId && cuentaId && summary?.cuenta_id === cuentaId),
@@ -210,11 +223,22 @@ export default function CuentaDetailPage() {
     if (columnPreferencesQuery.data && !columnPreferencesSaving) {
       setVisibleColumns(columnPreferencesQuery.data.columnas_visibles ?? null);
       setColumnOrder(columnPreferencesQuery.data.orden_columnas ?? null);
+      setColumnasRestringidas(columnPreferencesQuery.data.columnas_restringidas ?? null);
     }
   }, [columnPreferencesQuery.data, columnPreferencesSaving]);
   useEffect(() => {
-    if (columnPreferencesQuery.error) setError(extractErrorMessage(columnPreferencesQuery.error, 'No se pudieron cargar las preferencias de columnas.'));
+    if (columnPreferencesQuery.error) {
+      setColumnasRestringidas(null);
+      setError(extractErrorMessage(columnPreferencesQuery.error, 'No se pudieron cargar las preferencias de columnas.'));
+    }
   }, [columnPreferencesQuery.error]);
+
+  // S-2: conjunto efectivo de columnas de la tabla: la preferencia del usuario
+  // recortada por la regla del administrador.
+  const permittedVisibleColumns = useMemo(
+    () => (visibleColumns === null ? null : columnasPermitidas(columnasRestringidas, visibleColumns)),
+    [columnasRestringidas, visibleColumns]
+  );
 
   const summaryQuery = useQuery({
     queryKey: queryKeys.extractos.cuentaResumen({ usuarioId, cuentaId, periodo, paisId: selectedPaisId || null }),
@@ -257,6 +281,14 @@ export default function CuentaDetailPage() {
   });
 
   const selectionEnabled = canSelectRows && search === searchDebounced && !rowsQuery.isFetching && !invalidRange;
+
+  // S-2: las columnas extra que se ofrecen son las que el administrador
+  // permite (el backend ya las recorta por cuenta; aqui se recorta por el
+  // alcance de la pantalla).
+  const permittedExtraColumns = useMemo(
+    () => columnasPermitidas(columnasRestringidas, rowsQuery.data?.columnas_disponibles ?? []),
+    [columnasRestringidas, rowsQuery.data?.columnas_disponibles]
+  );
 
   useEffect(() => {
     if (summaryQuery.error) {
@@ -417,8 +449,9 @@ export default function CuentaDetailPage() {
   const bulkDeleteConfirmLabel = `Eliminar ${selectedRowsCount} ${selectedRowsCount === 1 ? 'movimiento' : 'movimientos'}`;
   const selectedRowsPreview = selectedRows.slice(0, BULK_DELETE_PREVIEW_LIMIT).map((row) => row.fila_numero).join(', ');
   const hiddenSelectedRows = Math.max(0, selectedRowsCount - BULK_DELETE_PREVIEW_LIMIT);
-  const rowsStart = rowsTotal === 0 ? 0 : ((rowsPage - 1) * rowsPageSize) + 1;
-  const rowsEnd = rowsTotal === 0 ? 0 : Math.min(rowsTotal, rowsStart + rows.length - 1);
+  // R-3 (seccion 9): el rango mostrado se calcula con el helper compartido, el
+  // mismo que usa la paginacion de conciliacion.
+  const filasMostradas = rangoMostrado(rowsPage, rowsPageSize, rowsTotal);
 
   const importUrl = useMemo(() => {
     if (!summary) {
@@ -672,18 +705,22 @@ export default function CuentaDetailPage() {
     const savingScope = cuentaId;
     const previousVisible = visibleColumns;
     const previousOrder = columnOrder;
-    setVisibleColumns(nextVisible);
-    setColumnOrder(nextOrder);
+    // S-2: el usuario solo puede estrechar. Las columnas que el administrador
+    // prohibio no se ofrecen, no se guardan y no se pintan.
+    const permitidas = nextVisible === null ? null : columnasPermitidas(columnasRestringidas, nextVisible);
+    const ordenPermitido = nextOrder === null ? null : columnasPermitidas(columnasRestringidas, nextOrder);
+    setVisibleColumns(permitidas);
+    setColumnOrder(ordenPermitido);
     try {
       await api.put('/extractos/columnas-visibles', {
         cuenta_id: cuentaId, titular_id: summary.titular_id, pais_id: summary.pais_id,
-        columnas_visibles: nextVisible, orden_columnas: nextOrder,
+        columnas_visibles: permitidas, orden_columnas: ordenPermitido,
       });
       await queryClient.invalidateQueries({ queryKey: queryKeys.extractos.columnasVisibles({ usuarioId, cuentaId, titularId: summary.titular_id, paisId: summary.pais_id ?? selectedPaisId ?? null }) });
     } catch (err) {
       if (preferenceScopeRef.current === savingScope) {
-        setVisibleColumns(previousVisible);
-        setColumnOrder(previousOrder);
+        setVisibleColumns(previousVisible === null ? null : columnasPermitidas(columnasRestringidas, previousVisible));
+        setColumnOrder(previousOrder === null ? null : columnasPermitidas(columnasRestringidas, previousOrder));
         setError(extractErrorMessage(err, 'No se pudieron guardar las preferencias de columnas.'));
       }
     } finally {
@@ -1065,7 +1102,7 @@ export default function CuentaDetailPage() {
         {rowsTotal > 0 ? (
           <div className="account-rows-pagination" aria-label="Paginación del desglose de cuenta">
             <span>
-              Mostrando {rowsStart}-{rowsEnd} de {rowsTotal} movimientos
+              Mostrando {filasMostradas.desde}-{filasMostradas.hasta} de {rowsTotal} movimientos
             </span>
             <div className="account-rows-pagination-actions">
               <button
@@ -1102,11 +1139,11 @@ export default function CuentaDetailPage() {
           loading={loading}
           sortBy={sortBy}
           sortDir={sortDir}
-          visibleColumns={visibleColumns}
+          visibleColumns={permittedVisibleColumns}
           columnOrder={columnOrder}
           columnPreferencesSaving={columnPreferencesSaving || !columnPreferencesQuery.data || columnPreferencesQuery.isLoading || Boolean(columnPreferencesQuery.error)}
           excludedColumns={excludedColumns}
-          availableExtraColumns={rowsQuery.data?.columnas_disponibles ?? []}
+          availableExtraColumns={permittedExtraColumns}
           onSort={(field) => { if (field === sortBy) setSortDir((dir) => dir === 'asc' ? 'desc' : 'asc'); else { setSortBy(field); setSortDir('asc'); } setRowsPage(1); setSelectedRowIds(new Set()); }}
           onToggleColumn={(column, available) => void toggleColumn(column, available)}
           onShowAllColumns={showAllColumns}

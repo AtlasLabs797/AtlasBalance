@@ -169,6 +169,68 @@ const importContexto = {
   })),
 };
 
+const MS_HORA = 60 * 60 * 1000;
+const MS_DIA = 24 * MS_HORA;
+/** Fecha ISO relativa al instante de cargar el fixture (el aviso de vencimiento depende de "ahora"). */
+const en = (ms: number) => new Date(Date.now() + ms).toISOString();
+
+// V-03.02 (LOTE 6): dispositivos MFA de confianza. Forma exacta del DTO
+// backend AuthDtos.TrustedMfaDeviceResponse (snake_case). Tres dispositivos
+// representativos: el actual, uno que caduca pronto y uno ya revocado.
+const mfaDispositivosFixture = [
+  {
+    id: ID(1201), created_at: en(-20 * MS_DIA), expires_at: en(70 * MS_DIA),
+    last_used_at: en(-3 * MS_HORA), revoked_at: null,
+    user_agent_summary: 'Chrome 141 - Windows 11', ip_address_summary: '192.168.1.24', current: true,
+  },
+  {
+    id: ID(1202), created_at: en(-87 * MS_DIA), expires_at: en(3 * MS_DIA),
+    last_used_at: en(-40 * MS_DIA), revoked_at: null,
+    user_agent_summary: 'Safari 18 - iPhone 15', ip_address_summary: '203.0.113.45', current: false,
+  },
+  {
+    id: ID(1203), created_at: en(-50 * MS_DIA), expires_at: en(40 * MS_DIA),
+    last_used_at: en(-12 * MS_DIA), revoked_at: en(-2 * MS_DIA),
+    user_agent_summary: 'Edge 140 - Windows 10', ip_address_summary: '10.0.0.15', current: false,
+  },
+];
+
+// V-03.02 (LOTE 6): historial de lotes de importacion. Forma exacta de
+// ImportacionLoteResponse (snake_case). Solo un lote 'confirmado' es
+// reversible, asi que es el unico que muestra el boton "Revertir".
+const lotesImportacionFixture = [
+  {
+    id: ID(1301), cuenta_id: CTA[0], cuenta_nombre: 'Operativa BBVA', usuario_creador_id: USER_ID,
+    tipo_origen: 'ARCHIVO', nombre_archivo: 'movimientos-noviembre.csv', tamanio_bytes: 18_432,
+    sha256: '3f9a1c7d2b5e84a6c0d1e2f3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7',
+    separador: ';', lote_hash: 'a1b2c3d4e5f60718', estado: 'confirmado',
+    filas_total: 48, filas_validas: 46, filas_error: 2, filas_advertencia: 1, advertencias_aceptadas: true,
+    fecha_creacion: en(-2 * MS_DIA), fecha_confirmacion: en(-2 * MS_DIA + MS_HORA), confirmado_por_id: USER_ID,
+    fecha_reversion: null, revertido_por_id: null,
+    divisa_mismatch: false, divisa_cuenta: 'EUR', divisa_esperada: null,
+  },
+  {
+    id: ID(1302), cuenta_id: CTA[0], cuenta_nombre: 'Operativa BBVA', usuario_creador_id: USER_ID,
+    tipo_origen: 'PEGADO', nombre_archivo: null, tamanio_bytes: 4_096,
+    sha256: '9b2c4d6e8f0a1b3c5d7e9f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5',
+    separador: 'tab', lote_hash: 'b2c3d4e5f6071829', estado: 'validado_con_errores',
+    filas_total: 30, filas_validas: 27, filas_error: 3, filas_advertencia: 0, advertencias_aceptadas: false,
+    fecha_creacion: en(-6 * MS_HORA), fecha_confirmacion: null, confirmado_por_id: null,
+    fecha_reversion: null, revertido_por_id: null,
+    divisa_mismatch: false, divisa_cuenta: 'EUR', divisa_esperada: null,
+  },
+  {
+    id: ID(1303), cuenta_id: CTA[0], cuenta_nombre: 'Operativa BBVA', usuario_creador_id: USER_ID,
+    tipo_origen: 'ARCHIVO', nombre_archivo: 'movimientos-octubre.csv', tamanio_bytes: 21_880,
+    sha256: 'c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2',
+    separador: ';', lote_hash: 'c3d4e5f607182930', estado: 'revertido',
+    filas_total: 52, filas_validas: 52, filas_error: 0, filas_advertencia: 0, advertencias_aceptadas: true,
+    fecha_creacion: en(-14 * MS_DIA), fecha_confirmacion: en(-14 * MS_DIA + MS_HORA), confirmado_por_id: USER_ID,
+    fecha_reversion: en(-9 * MS_DIA), revertido_por_id: USER_ID,
+    divisa_mismatch: false, divisa_cuenta: 'EUR', divisa_esperada: null,
+  },
+];
+
 const tokensFixture = [
   { id: ID(901), nombre: 'Token lectura demo', descripcion: 'Asistente de consulta', tipo: 'OPENCLAW', estado: 'activo', permiso_lectura: true, permiso_escritura: false, fecha_creacion: '2026-10-01T09:00:00Z', fecha_expiracion: '2027-10-01T23:59:59Z', fecha_ultima_uso: '2026-11-14T10:20:00Z', fecha_revocacion: null, rotated_from_token_id: null, scopes: ['titulares', 'saldos', 'extractos'], last_used_ip_address: '203.0.113.10', usuario_creador_id: USER_ID, deleted_at: null },
   { id: ID(902), nombre: 'Token informes demo', descripcion: null, tipo: 'OPENCLAW', estado: 'activo', permiso_lectura: true, permiso_escritura: false, fecha_creacion: '2026-10-05T09:00:00Z', fecha_expiracion: null, fecha_ultima_uso: null, fecha_revocacion: null, rotated_from_token_id: null, scopes: ['evolucion', 'alertas'], last_used_ip_address: null, usuario_creador_id: USER_ID, deleted_at: null },
@@ -225,6 +287,7 @@ function paged<T>(data: T[], page = 1, pageSize = 50, extra: Record<string, unkn
 type Handler = (url: URL) => unknown;
 const routes: Array<[RegExp, Handler]> = [
   [/^\/auth\/me$/, () => ({ usuario, permisos: [] })],
+  [/^\/auth\/mfa\/trusted-devices$/, () => mfaDispositivosFixture],
   [/^\/auth\/(logout|refresh-token)$/, () => ({ csrf_token: 'x'.repeat(43) + '=', usuario, permisos: [] })],
   [/^\/alertas\/activas$/, () => [{ alerta_id: ID(701), cuenta_id: CTA[1], titular_id: TIT[0], cuenta_nombre: 'Nominas Santander', titular_nombre: titulares[0].nombre, saldo_actual: 12980.1, saldo_minimo: 15000, divisa: 'EUR' }]],
   [/^\/notificaciones-admin\/resumen$/, () => ({ exportaciones_pendientes: 1, total_pendientes: 1 })],
@@ -238,7 +301,7 @@ const routes: Array<[RegExp, Handler]> = [
   [/^\/dashboard\/saldos-divisa$/, () => saldosDivisa],
   [/^\/dashboard\/titular\/.+/, () => ({ titular_id: TIT[0], titular_nombre: titulares[0].nombre, divisa_principal: 'EUR', saldos_por_divisa: dashboardPrincipal.saldos_por_divisa, ingresos_mes: 21400.5, egresos_mes: 15870.2, total_convertido: 67380, saldos_por_cuenta: saldosPorCuenta.slice(0, 3), saldos_por_pais: dashboardPrincipal.saldos_por_pais, chart_colors: chartColors })],
   [/^\/extractos\/titulares-resumen$/, () => titularesResumen],
-  [/^\/extractos\/columnas-visibles$/, () => ({ columnas_visibles: null })],
+  [/^\/extractos\/columnas-visibles$/, () => ({ columnas_visibles: null, columnas_restringidas: [] })],
   [/^\/extractos$/, (u) => paged(extractos, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 200), { columnas_disponibles: ['fecha', 'concepto', 'comentarios', 'monto', 'saldo'] })],
   [/^\/extractos\/[^/]+\/desglose$/, () => ({ extracto_id: ID(1000), extracto_monto: 0, count: 0, total: 0, diferencia: 0, estado: 'sin_desglose', version: '1', lineas: [] })],
   [/^\/titulares$/, (u) => paged(u.searchParams.get('incluirEliminados') === 'true' ? [...titulares, ...titularesEliminados] : titulares, 1, Number(u.searchParams.get('pageSize') ?? 50))],
@@ -249,6 +312,11 @@ const routes: Array<[RegExp, Handler]> = [
   [/^\/formatos-importacion$/, () => paged([{ id: ID(801), nombre: 'BBVA CSV', banco_nombre: 'BBVA', divisa: 'EUR' }])],
   [/^\/formatos-importacion\/columnas-extra-sugeridas$/, () => ({ data: [] })],
   [/^\/importacion\/contexto$/, () => importContexto],
+  [/^\/importacion\/lotes$/, (u) => {
+    const cuentaId = u.searchParams.get('cuentaId');
+    const filtrados = cuentaId ? lotesImportacionFixture.filter((l) => l.cuenta_id === cuentaId) : lotesImportacionFixture;
+    return paged(filtrados, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 20));
+  }],
   [/^\/usuarios$/, () => paged(usuariosRows)],
   [/^\/usuarios\/catalogos-permisos$/, () => catalogos],
   [/^\/usuarios\/[^/]+$/, () => ({ ...usuariosRows[1], permisos: [] })],

@@ -233,7 +233,7 @@ public sealed class PapeleraSoloEliminadosTests
 
     private static ExtractosController BuildExtractosController(AppDbContext db, Guid userId, RolUsuario role)
     {
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<ExtractosController>.Instance, TestUserAccess.Create(db));
         SetUser(controller, userId, role);
         return controller;
     }

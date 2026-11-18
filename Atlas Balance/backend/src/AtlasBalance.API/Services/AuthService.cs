@@ -1082,7 +1082,11 @@ _secretProtector = secretProtector;
                 PuedeAprobarImportaciones = p.PuedeAprobarImportaciones,
                 PuedeConciliar = p.PuedeConciliar,
                 PuedeCerrarConciliacion = p.PuedeCerrarConciliacion,
-                ColumnasVisibles = ParseJsonArray(preferencia?.ColumnasVisibles),
+                // S-2: el store del frontend (getColumnasVisibles) debe leer la
+                // REGLA que fija el administrador (ColumnasVisiblesAdmin). La
+                // PREFERENCIA del usuario vive en ColumnasVisibles y la lee
+                // PUT/GET /api/extractos/columnas-visibles.
+                ColumnasVisibles = ParseJsonArray(preferencia?.ColumnasVisiblesAdmin),
                 ColumnasEditables = ParseJsonArray(preferencia?.ColumnasEditables)
             };
         }).ToList();

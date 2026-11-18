@@ -41,8 +41,8 @@ public class ImportacionLote5Tests
     public async Task ConfirmarLoteAsync_Tras_Revertir_El_Lote_Anterior_Deberia_Permitir_Reimportar()
     {
         await using var db = BuildDbContext();
-        var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var (userId, cuentaId) = await SeedCuentaAsync(db, puedeEliminarLineas: true);
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
         var raw = "01/04/2026\tIngreso cliente\t100\t100";
 
         var primerLote = await service.CrearLoteAsync(
@@ -113,8 +113,8 @@ public class ImportacionLote5Tests
     public async Task RevertirLoteAsync_Deberia_Rechazar_Un_Lote_No_Confirmado()
     {
         await using var db = BuildDbContext();
-        var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var (userId, cuentaId) = await SeedCuentaAsync(db, puedeEliminarLineas: true);
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var lote = await service.CrearLoteAsync(
             userId,
@@ -154,8 +154,8 @@ public class ImportacionLote5Tests
     public async Task RevertirLoteAsync_Deberia_Invalidar_Las_Conciliaciones_De_Los_Extractos_Borrados()
     {
         await using var db = BuildDbContext();
-        var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var (userId, cuentaId) = await SeedCuentaAsync(db, puedeEliminarLineas: true);
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var lote = await service.CrearLoteAsync(
             userId,
@@ -269,7 +269,7 @@ public class ImportacionLote5Tests
         });
         await db.SaveChangesAsync();
 
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var result = await service.RegistrarMovimientoPlazoFijoAsync(
             userId,
@@ -303,7 +303,7 @@ public class ImportacionLote5Tests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var result = await service.ConfirmarAsync(
             userId,
@@ -337,7 +337,7 @@ public class ImportacionLote5Tests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         // 01/04 (mas antigua) arriba, 03/04 (mas reciente) abajo.
         var raw = "01/04/2026\tIngreso cliente\t100\t100\n03/04/2026\tPago proveedor\t50\t50";
@@ -363,7 +363,7 @@ public class ImportacionLote5Tests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         // Orden esperado: la linea mas reciente arriba del todo.
         var raw = "03/04/2026\tPago proveedor\t50\t50\n01/04/2026\tIngreso cliente\t100\t100";
@@ -388,7 +388,7 @@ public class ImportacionLote5Tests
     {
         await using var db = BuildDbContext();
         var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var raw = "01/04/2026\tIngreso cliente\t100\t100\n01/04/2026\tPago proveedor\t50\t50";
 
@@ -407,7 +407,7 @@ public class ImportacionLote5Tests
         validacion.Advertencias.Should().BeEmpty("con una sola fecha no se puede saber el orden");
     }
 
-    private static async Task<(Guid UserId, Guid CuentaId)> SeedCuentaAsync(AppDbContext db)
+    private static async Task<(Guid UserId, Guid CuentaId)> SeedCuentaAsync(AppDbContext db, bool puedeEliminarLineas = false)
     {
         var userId = Guid.NewGuid();
         var titular = new Titular { Id = Guid.NewGuid(), Nombre = "Titular Lote 5", Tipo = TipoTitular.EMPRESA };
@@ -420,7 +420,10 @@ public class ImportacionLote5Tests
             UsuarioId = userId,
             CuentaId = cuenta.Id,
             PuedeImportar = true,
-            PuedeAprobarImportaciones = true
+            PuedeAprobarImportaciones = true,
+            // S-3: solo los tests que revierten un lote necesitan este
+            // permiso (la reversion borra masivamente los extractos).
+            PuedeEliminarLineas = puedeEliminarLineas
         });
         await db.SaveChangesAsync();
         return (userId, cuenta.Id);

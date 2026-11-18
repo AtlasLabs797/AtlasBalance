@@ -233,7 +233,7 @@ public sealed class ExtractosResumenConsultasTests
 
     private static ExtractosController BuildController(AppDbContext db, Guid userId)
     {
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

@@ -8,6 +8,11 @@ public sealed class ExtractoListItemResponse
     public Guid Id { get; set; }
     public Guid CuentaId { get; set; }
     public string CuentaNombre { get; set; } = string.Empty;
+    // S-2: BancoNombre, Concepto y Comentarios llegan a null cuando la columna
+    // queda fuera del conjunto efectivo de columnas visibles (la regla del
+    // administrador es una restriccion y el filtro se aplica en el servidor).
+    // Los campos no nullable (Fecha, Monto, Saldo, FilaNumero...) no se pueden
+    // omitir sin romper el contrato de la fila.
     public string? BancoNombre { get; set; }
     public Guid TitularId { get; set; }
     public string TitularNombre { get; set; } = string.Empty;

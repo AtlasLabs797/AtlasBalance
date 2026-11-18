@@ -22,6 +22,9 @@ const CuentaDetailPage       = lazy(() => import('@/pages/CuentaDetailPage'));
 const CuentasPage            = lazy(() => import('@/pages/CuentasPage'));
 const DashboardPage          = lazy(() => import('@/pages/DashboardPage'));
 const DashboardTitularPage   = lazy(() => import('@/pages/DashboardTitularPage'));
+// V-03.02 (LOTE 6, seccion 8.1): cualquier usuario autenticado puede ver y
+// revocar SUS dispositivos MFA de confianza. No lleva RoleGuard de ADMIN.
+const DispositivosMfaPage   = lazy(() => import('@/pages/DispositivosMfaPage'));
 const ExportacionesPage      = lazy(() => import('@/pages/ExportacionesPage'));
 const ExtractosPage          = lazy(() => import('@/pages/ExtractosPage'));
 const FormatosImportacionPage = lazy(() => import('@/pages/FormatosImportacionPage'));
@@ -183,6 +186,7 @@ export default function App() {
         />
         <Route path="/alertas" element={section(<AlertasPage />)} />
         <Route path="/exportaciones" element={section(<ExportacionesPage />)} />
+        <Route path="/seguridad/dispositivos-mfa" element={section(<DispositivosMfaPage />)} />
         <Route
           path="/usuarios"
           element={section(

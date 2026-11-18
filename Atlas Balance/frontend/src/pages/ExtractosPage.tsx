@@ -19,6 +19,10 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type { AuditCellEntry, Extracto, ExtractoDesgloseResumen, PaginatedResponse, TitularConCuentas } from '@/types';
+// S-2: la REGLA de columnas del administrador (`columnas_restringidas`) y la
+// PREFERENCIA del usuario (`columnas_visibles`) son conjuntos distintos. El
+// conjunto efectivo es la interseccion: el usuario solo puede estrechar.
+import { columnasExcluidasPorAdmin, columnasPermitidas } from '@/utils/columnasPermitidas';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { parseEuropeanNumber } from '@/utils/formatters';
 
@@ -86,6 +90,9 @@ export default function ExtractosPage() {
   const [titularesResumen, setTitularesResumen] = useState<TitularConCuentas[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[] | null>(null);
   const [columnOrder, setColumnOrder] = useState<string[] | null>(null);
+  // S-2: whitelist del administrador para el alcance actual. null = el
+  // administrador no restringe.
+  const [columnasRestringidas, setColumnasRestringidas] = useState<string[] | null>(null);
   const [columnPreferencesSaving, setColumnPreferencesSaving] = useState(false);
   const columnPreferencesSavingRef = useRef(false);
   const columnScopeRef = useRef('');
@@ -217,7 +224,7 @@ export default function ExtractosPage() {
   const visibleColumnsQuery = useQuery({
     queryKey: queryKeys.extractos.columnasVisibles(columnasVisiblesParams),
     queryFn: () =>
-      api.get<{ columnas_visibles: string[] | null; orden_columnas: string[] | null }>('/extractos/columnas-visibles', {
+      api.get<{ columnas_visibles: string[] | null; orden_columnas: string[] | null; columnas_restringidas: string[] | null }>('/extractos/columnas-visibles', {
         params: {
           cuentaId: columnasVisiblesParams.cuentaId ?? undefined,
           titularId: columnasVisiblesParams.titularId ?? undefined,
@@ -301,9 +308,11 @@ export default function ExtractosPage() {
     if (visibleColumnsQuery.data) {
       setVisibleColumns(visibleColumnsQuery.data.columnas_visibles ?? null);
       setColumnOrder(visibleColumnsQuery.data.orden_columnas ?? null);
+      setColumnasRestringidas(visibleColumnsQuery.data.columnas_restringidas ?? null);
     } else if (!visibleColumnsQuery.isLoading && !visibleColumnsQuery.error) {
       setVisibleColumns(null);
       setColumnOrder(null);
+      setColumnasRestringidas(null);
     }
   }, [visibleColumnsQuery.data, visibleColumnsQuery.isLoading, visibleColumnsQuery.error, columnPreferencesSaving]);
 
@@ -311,9 +320,26 @@ export default function ExtractosPage() {
     if (visibleColumnsQuery.error) {
       setVisibleColumns(null);
       setColumnOrder(null);
+      setColumnasRestringidas(null);
       setError(extractErrorMessage(visibleColumnsQuery.error, 'No se pudieron cargar las preferencias de columnas.'));
     }
   }, [visibleColumnsQuery.error]);
+
+  // S-2: el conjunto efectivo de columnas de la tabla. Las columnas que el
+  // administrador prohibio no se ofrecen en el interruptor ni se pintan, y las
+  // que el usuario eligio se recortan contra la regla del administrador.
+  const excludedColumns = useMemo(
+    () => columnasExcluidasPorAdmin(columnasRestringidas, BASE_COLUMNS),
+    [columnasRestringidas]
+  );
+  const permittedExtraColumns = useMemo(
+    () => columnasPermitidas(columnasRestringidas, availableExtraColumns),
+    [columnasRestringidas, availableExtraColumns]
+  );
+  const permittedVisibleColumns = useMemo(
+    () => (visibleColumns === null ? null : columnasPermitidas(columnasRestringidas, visibleColumns)),
+    [columnasRestringidas, visibleColumns]
+  );
 
   const loadRows = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.extractos.list(rowsQueryParams) });
@@ -385,8 +411,14 @@ export default function ExtractosPage() {
     columnPreferencesSavingRef.current = true;
     setColumnPreferencesSaving(true);
     const scope = columnScopeRef.current;
-    setVisibleColumns(next);
-    setColumnOrder(nextOrder);
+    const previousVisible = visibleColumns;
+    const previousOrder = columnOrder;
+    // S-2: el usuario solo puede estrechar. Las columnas que el administrador
+    // prohibio no se ofrecen, no se guardan y no se pintan.
+    const permitidas = columnasPermitidas(columnasRestringidas, next);
+    const ordenPermitido = columnasPermitidas(columnasRestringidas, nextOrder);
+    setVisibleColumns(permitidas);
+    setColumnOrder(ordenPermitido);
     setError(null);
     try {
       const payload: {
@@ -396,8 +428,8 @@ export default function ExtractosPage() {
         columnas_visibles: string[];
         orden_columnas: string[];
       } = {
-        columnas_visibles: next,
-        orden_columnas: nextOrder
+        columnas_visibles: permitidas,
+        orden_columnas: ordenPermitido
       };
       const safeCuentaId = asUuidOrUndefined(cuentaFiltro);
       if (safeCuentaId) {
@@ -416,8 +448,10 @@ export default function ExtractosPage() {
       await invalidate('extractoColumnasVisibles');
     } catch (err) {
       if (scope === columnScopeRef.current) {
-        setVisibleColumns(visibleColumns);
-        setColumnOrder(columnOrder);
+        // Se restaura la preferencia anterior, recortada por la regla del
+        // administrador.
+        setVisibleColumns(previousVisible === null ? null : columnasPermitidas(columnasRestringidas, previousVisible));
+        setColumnOrder(previousOrder === null ? null : columnasPermitidas(columnasRestringidas, previousOrder));
       }
       setError(extractErrorMessage(err, 'No se pudieron guardar las columnas visibles.'));
     } finally {
@@ -805,10 +839,11 @@ export default function ExtractosPage() {
         loading={loading}
         sortBy={sortBy}
         sortDir={sortDir}
-        visibleColumns={visibleColumns}
+        visibleColumns={permittedVisibleColumns}
         columnOrder={columnOrder}
-        columnPreferencesSaving={columnPreferencesSaving}
-        availableExtraColumns={availableExtraColumns}
+        columnPreferencesSaving={columnPreferencesSaving || !visibleColumnsQuery.data}
+        excludedColumns={excludedColumns}
+        availableExtraColumns={permittedExtraColumns}
         onSort={onSort}
         onToggleColumn={(column, availableColumns) => void onToggleColumn(column, availableColumns)}
         onShowAllColumns={(availableColumns) => void onShowAllColumns(availableColumns)}

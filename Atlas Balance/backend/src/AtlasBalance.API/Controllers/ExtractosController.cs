@@ -20,12 +20,20 @@ public sealed class ExtractosController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IAlertaService _alertaService;
+    // M-5: el alcance (que cuentas y titulares ve el actor) lo decide
+    // UserAccessService. El controller no lo reimplementa.
+    private readonly IUserAccessService _userAccessService;
     private readonly ILogger<ExtractosController> _logger;
 
-    public ExtractosController(AppDbContext db, IAlertaService alertaService, ILogger<ExtractosController> logger)
+    public ExtractosController(
+        AppDbContext db,
+        IAlertaService alertaService,
+        ILogger<ExtractosController> logger,
+        IUserAccessService userAccessService)
     {
         _db = db;
         _alertaService = alertaService;
+        _userAccessService = userAccessService;
         _logger = logger;
     }
 
@@ -73,7 +81,10 @@ public sealed class ExtractosController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 500);
 
-        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
+        // M-5: el alcance lo decide UserAccessService (una sola definicion de la
+        // regla para toda la API). El filtro por pais se mantiene encima.
+        var userScope = await GetScopeAsync(actor, ct);
+        var allowed = await GetAllowedAccountIds(userScope, ct, paisId);
         if (!allowed.Any())
         {
             return Ok(new PaginatedResponse<ExtractoListItemResponse> { Data = [], Total = 0, Page = page, PageSize = pageSize, TotalPages = 0 });
@@ -135,6 +146,10 @@ public sealed class ExtractosController : ControllerBase
         q = ((IOrderedQueryable<Extracto>)q).ThenBy(x => x.Id);
 
         var total = await q.CountAsync(ct);
+        // S-2: el conjunto efectivo de columnas visibles se calcula POR CUENTA
+        // (cada cuenta puede tener su propia regla del administrador). El
+        // admin no restringe: el mapa viene vacio y no se filtra nada.
+        var conjuntosPorCuenta = await GetConjuntosPorCuentaAsync(actor, allowed, ct);
         var columnasDisponibles = await (
                 from extra in _db.ExtractosColumnasExtra
                 join extracto in scopeQuery on extra.ExtractoId equals extracto.Id
@@ -143,6 +158,13 @@ public sealed class ExtractosController : ControllerBase
             .Distinct()
             .OrderBy(nombre => nombre)
             .ToListAsync(ct);
+        // S-2: una columna extra solo se ofrece si la permite el conjunto
+        // efectivo de TODAS las cuentas del alcance (la mas restrictiva gana).
+        var columnasPermitidas = IntersectConjuntos(conjuntosPorCuenta.Values);
+        if (columnasPermitidas is not null)
+        {
+            columnasDisponibles = [.. columnasDisponibles.Where(columnasPermitidas.Contains)];
+        }
         var pageRows = await q.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         var accountIds = pageRows.Select(x => x.CuentaId).Distinct().ToList();
         var cuentas = await _db.Cuentas.IgnoreQueryFilters().Where(c => accountIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
@@ -169,19 +191,30 @@ public sealed class ExtractosController : ControllerBase
             var hasDesglose = desgloseMap.TryGetValue(x.Id, out var desglose);
             var desgloseCount = hasDesglose ? desglose!.Count : 0;
             var desgloseTotal = hasDesglose ? desglose!.Total : 0m;
+            // S-2: la fila se filtra con el conjunto efectivo de SU cuenta.
+            // "visibles == null" significa que nadie restringe (se muestra todo).
+            var visibles = conjuntosPorCuenta.GetValueOrDefault(x.CuentaId)?.EfectivoSet;
+            var extrasFila = extrasMap.TryGetValue(x.Id, out var ex) ? ex : [];
+            var extrasVisibles = visibles is null
+                ? extrasFila
+                : extrasFila.Where(kv => visibles.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
             return new ExtractoListItemResponse
             {
                 Id = x.Id,
                 CuentaId = c.Id,
                 CuentaNombre = c.Nombre,
-                BancoNombre = c.BancoNombre,
+                BancoNombre = visibles is null || visibles.Contains("banco_nombre") ? c.BancoNombre : null,
                 TitularId = t.Id,
                 TitularNombre = t.Nombre,
                 PaisId = c.PaisId,
                 Divisa = c.Divisa,
                 Fecha = x.Fecha,
-                Concepto = x.Concepto,
-                Comentarios = x.Comentarios,
+                // S-2: las columnas base que el conjunto efectivo excluye llegan
+                // a null para que el VALOR no salga del servidor. Las que no son
+                // nullable (fecha, monto, saldo) no se pueden omitir sin romper
+                // el contrato de la fila: se dejan tal cual.
+                Concepto = visibles is null || visibles.Contains("concepto") ? x.Concepto : null,
+                Comentarios = visibles is null || visibles.Contains("comentarios") ? x.Comentarios : null,
                 Monto = x.Monto,
                 Saldo = x.Saldo,
                 FilaNumero = x.FilaNumero,
@@ -195,7 +228,7 @@ public sealed class ExtractosController : ControllerBase
                 FechaCreacion = x.FechaCreacion,
                 FechaModificacion = x.FechaModificacion,
                 DeletedAt = x.DeletedAt,
-                ColumnasExtra = extrasMap.TryGetValue(x.Id, out var ex) ? ex : [],
+                ColumnasExtra = extrasVisibles,
                 DesgloseCount = desgloseCount,
                 DesgloseTotal = desgloseTotal,
                 DesgloseEstado = GetDesgloseEstado(desgloseCount, desgloseTotal, x.Monto)
@@ -348,7 +381,10 @@ public sealed class ExtractosController : ControllerBase
         var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
-        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        // S-8: el extracto EXISTE (lo acabamos de leer) pero su cuenta no es
+        // accesible (borrada): el actor no tiene permiso sobre el. El 404 queda
+        // para "no existe".
+        if (cuenta is null) return Forbid();
         var p = await GetPermission(actor, cuenta, ct);
         if (!p.CanEdit) return Forbid();
 
@@ -454,7 +490,10 @@ public sealed class ExtractosController : ControllerBase
         var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
-        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        // S-8: el extracto EXISTE (lo acabamos de leer) pero su cuenta no es
+        // accesible (borrada): el actor no tiene permiso sobre el. El 404 queda
+        // para "no existe".
+        if (cuenta is null) return Forbid();
         var p = await GetPermission(actor, cuenta, ct);
         if (!p.CanEdit || !CanEditColumn(p, "desglose")) return Forbid();
 
@@ -611,7 +650,10 @@ public sealed class ExtractosController : ControllerBase
         var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
-        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        // S-8: el extracto EXISTE (lo acabamos de leer) pero su cuenta no es
+        // accesible (borrada): el actor no tiene permiso sobre el. El 404 queda
+        // para "no existe".
+        if (cuenta is null) return Forbid();
         var p = await GetPermission(actor, cuenta, ct);
         if (!p.CanEdit || !CanEditColumn(p, "checked")) return Forbid();
 
@@ -634,7 +676,10 @@ public sealed class ExtractosController : ControllerBase
         var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
-        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        // S-8: el extracto EXISTE (lo acabamos de leer) pero su cuenta no es
+        // accesible (borrada): el actor no tiene permiso sobre el. El 404 queda
+        // para "no existe".
+        if (cuenta is null) return Forbid();
         var p = await GetPermission(actor, cuenta, ct);
         if (!p.CanEdit) return Forbid();
 
@@ -666,7 +711,10 @@ public sealed class ExtractosController : ControllerBase
         var ex = await _db.Extractos.FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
-        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        // S-8: el extracto EXISTE (lo acabamos de leer) pero su cuenta no es
+        // accesible (borrada): el actor no tiene permiso sobre el. El 404 queda
+        // para "no existe".
+        if (cuenta is null) return Forbid();
         var p = await GetPermission(actor, cuenta, ct);
         if (!p.CanDelete) return Forbid();
         ex.DeletedAt = DateTime.UtcNow;
@@ -686,7 +734,10 @@ public sealed class ExtractosController : ControllerBase
         var ex = await _db.Extractos.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
         var cuenta = await _db.Cuentas.FirstOrDefaultAsync(c => c.Id == ex.CuentaId, ct);
-        if (cuenta is null) return NotFound(new { error = "Cuenta no encontrada" });
+        // S-8: el extracto EXISTE (lo acabamos de leer) pero su cuenta no es
+        // accesible (borrada): el actor no tiene permiso sobre el. El 404 queda
+        // para "no existe".
+        if (cuenta is null) return Forbid();
         var p = await GetPermission(actor, cuenta, ct);
         if (!p.CanDelete) return Forbid();
         ex.DeletedAt = null;
@@ -704,7 +755,9 @@ public sealed class ExtractosController : ControllerBase
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
         var ex = await _db.Extractos.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (ex is null) return NotFound(new { error = "Extracto no encontrado" });
-        if (ex.DeletedAt.HasValue && !actor.IsAdmin) return NotFound(new { error = "Extracto no encontrado" });
+        // S-8: el extracto existe (esta en la papelera) y el actor no es admin:
+        // no tiene permiso sobre el. 404 seria "no existe".
+        if (ex.DeletedAt.HasValue && !actor.IsAdmin) return Forbid();
         if (!await CanView(actor, ex.CuentaId, ct)) return Forbid();
 
         var q = _db.Auditorias.Where(a => a.EntidadTipo == "EXTRACTOS" && a.EntidadId == id);
@@ -749,7 +802,7 @@ public sealed class ExtractosController : ControllerBase
         if (!await CanViewTitular(actor, titularId, ct)) return Forbid();
         var titular = await _db.Titulares.FirstOrDefaultAsync(t => t.Id == titularId, ct);
         if (titular is null) return NotFound(new { error = "Titular no encontrado" });
-        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
+        var allowed = await GetAllowedAccountIds(await GetScopeAsync(actor, ct), ct, paisId);
         var cuentas = await _db.Cuentas.Where(c => c.TitularId == titularId && allowed.Contains(c.Id)).ToListAsync(ct);
         // R-7: un solo resumen agrupado para todas las cuentas del titular, en
         // vez de una consulta por cuenta dentro de un bucle.
@@ -761,7 +814,7 @@ public sealed class ExtractosController : ControllerBase
     public async Task<IActionResult> GetTitularesResumen([FromQuery] string periodo = "1m", [FromQuery] Guid? paisId = null, CancellationToken ct = default)
     {
         if (!TryGetUser(out var actor)) return Unauthorized(new { error = "Usuario no autenticado" });
-        var allowed = await GetAllowedAccountIds(actor, ct, paisId);
+        var allowed = await GetAllowedAccountIds(await GetScopeAsync(actor, ct), ct, paisId);
         var cuentas = await _db.Cuentas.Where(c => allowed.Contains(c.Id)).ToListAsync(ct);
         var titularesIds = cuentas.Select(c => c.TitularId).Distinct().ToList();
         var titulares = await _db.Titulares.Where(t => titularesIds.Contains(t.Id)).OrderBy(t => t.Nombre).ToListAsync(ct);
@@ -799,9 +852,19 @@ public sealed class ExtractosController : ControllerBase
         if (scope.Forbidden) return Forbid();
         if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
+        var conjunto = await GetConjuntoColumnasAsync(actor.Id, scope, ct);
         var pref = await QueryPreferenciaUsuarioCuenta(actor.Id, scope).FirstOrDefaultAsync(ct);
 
-        return Ok(new { columnas_visibles = ParseArray(pref?.ColumnasVisibles), orden_columnas = ParseArray(pref?.OrdenColumnas) });
+        // S-2: columnas_visibles es el conjunto EFECTIVO (regla del admin ∩
+        // preferencia del usuario), no solo la preferencia del usuario.
+        // columnas_restringidas es la whitelist del administrador, para que el
+        // cliente no ofrezca en su interruptor columnas que el admin prohibe.
+        return Ok(new
+        {
+            columnas_visibles = conjunto.Efectivo,
+            orden_columnas = ParseArray(pref?.OrdenColumnas),
+            columnas_restringidas = conjunto.Admin
+        });
     }
 
     [HttpPut("columnas-visibles")]
@@ -812,6 +875,7 @@ public sealed class ExtractosController : ControllerBase
         if (scope.Forbidden) return Forbid();
         if (scope.NotFound) return NotFound(new { error = "Cuenta no encontrada" });
 
+        var conjunto = await GetConjuntoColumnasAsync(actor.Id, scope, ct);
         var pref = await QueryPreferenciaUsuarioCuenta(actor.Id, scope).FirstOrDefaultAsync(ct);
 
         if (pref is null)
@@ -829,7 +893,16 @@ public sealed class ExtractosController : ControllerBase
             _db.PreferenciasUsuarioCuenta.Add(pref);
         }
 
-        pref.ColumnasVisibles = req.ColumnasVisibles is null ? null : JsonSerializer.Serialize(req.ColumnasVisibles);
+        // S-2: lo guardado nunca puede ser mas ancho que la regla del
+        // administrador (si el admin no restringe, se guarda lo pedido tal cual).
+        var columnas = req.ColumnasVisibles;
+        if (columnas is not null && conjunto.Admin is not null)
+        {
+            var permitidas = new HashSet<string>(conjunto.Admin, StringComparer.OrdinalIgnoreCase);
+            columnas = [.. columnas.Where(permitidas.Contains)];
+        }
+
+        pref.ColumnasVisibles = columnas is null ? null : JsonSerializer.Serialize(columnas);
         if (req.OrdenColumnas is not null)
             pref.OrdenColumnas = JsonSerializer.Serialize(req.OrdenColumnas);
         pref.UpdatedAt = DateTime.UtcNow;
@@ -988,7 +1061,7 @@ public sealed class ExtractosController : ControllerBase
         HashSet<Guid>? cuentasVisibles = null;
         if (!actor.IsAdmin && plazos.Values.Any(p => p.CuentaReferenciaId.HasValue))
         {
-            cuentasVisibles = await GetAllowedAccountIds(actor, ct);
+            cuentasVisibles = await GetAllowedAccountIds(await GetScopeAsync(actor, ct), ct);
         }
 
         foreach (var entrada in entradas)
@@ -1201,67 +1274,27 @@ public sealed class ExtractosController : ControllerBase
         await _db.SaveChangesAsync(ct);
     }
 
-    private async Task<HashSet<Guid>> GetAllowedAccountIds(Actor actor, CancellationToken ct, Guid? paisId = null)
+    // M-5: el alcance (que cuentas y titulares ve el actor) lo decide
+    // UserAccessService. El controller ya no reimplementa la regla: solo
+    // aplica el filtro por pais encima del alcance.
+    private async Task<HashSet<Guid>> GetAllowedAccountIds(UserAccessScope scope, CancellationToken ct, Guid? paisId = null)
     {
-        var visibleAccounts = QueryVisibleAccounts(actor).ApplyPaisScope(paisId);
-        if (actor.IsAdmin) return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
-        var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
-        if (!perms.Any()) return [];
-        if (perms.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
-        {
-            return [.. await visibleAccounts.Select(c => c.Id).ToListAsync(ct)];
-        }
-
-        return [.. await visibleAccounts
-            .Where(c => _db.PermisosUsuario.Any(p =>
-                p.UsuarioId == actor.Id &&
-                p.PuedeVerCuentas &&
-                (p.PaisId == null || p.PaisId == c.PaisId) &&
-                (p.TitularId == null || p.TitularId == c.TitularId) &&
-                (p.CuentaId == null || p.CuentaId == c.Id)))
+        var ids = await _userAccessService
+            .ApplyCuentaScope(_db.Cuentas.AsNoTracking(), scope)
+            .ApplyPaisScope(paisId)
             .Select(c => c.Id)
-            .ToListAsync(ct)];
+            .ToListAsync(ct);
+        return [.. ids];
     }
 
-    private async Task<bool> CanView(Actor actor, Guid cuentaId, CancellationToken ct) => (await GetAllowedAccountIds(actor, ct)).Contains(cuentaId);
+    private Task<UserAccessScope> GetScopeAsync(Actor actor, CancellationToken ct)
+        => _userAccessService.GetScopeAsync(actor.Id, actor.IsAdmin ? nameof(RolUsuario.ADMIN) : string.Empty, ct);
+
+    private async Task<bool> CanView(Actor actor, Guid cuentaId, CancellationToken ct)
+        => await _userAccessService.CanAccessCuentaAsync(cuentaId, await GetScopeAsync(actor, ct), ct);
 
     private async Task<bool> CanViewTitular(Actor actor, Guid titularId, CancellationToken ct)
-    {
-        if (actor.IsAdmin)
-        {
-            return true;
-        }
-
-        var perms = await _db.PermisosUsuario.Where(p => p.UsuarioId == actor.Id).ToListAsync(ct);
-        if (!perms.Any())
-        {
-            return false;
-        }
-
-        var titularActivo = await _db.Titulares.AnyAsync(t => t.Id == titularId && t.DeletedAt == null, ct);
-        if (!titularActivo)
-        {
-            return false;
-        }
-
-        if (perms.Any(p => p.PaisId is null && p.CuentaId is null && p.TitularId is null && GrantsAccountAccess(p)))
-        {
-            return true;
-        }
-
-        return await QueryVisibleAccounts(actor).AnyAsync(
-            c => c.TitularId == titularId &&
-                 _db.PermisosUsuario.Any(p =>
-                     p.UsuarioId == actor.Id &&
-                     p.PuedeVerCuentas &&
-                     (p.PaisId == null || p.PaisId == c.PaisId) &&
-                     (p.TitularId == null || p.TitularId == c.TitularId) &&
-                     (p.CuentaId == null || p.CuentaId == c.Id)),
-            ct);
-    }
-
-    private static bool GrantsAccountAccess(PermisoUsuario permiso) =>
-        permiso.PuedeVerCuentas;
+        => await _userAccessService.CanAccessTitularAsync(titularId, await GetScopeAsync(actor, ct), ct);
 
     private async Task<Perm> GetPermission(Actor actor, Cuenta cuenta, CancellationToken ct)
     {
@@ -1347,6 +1380,176 @@ public sealed class ExtractosController : ControllerBase
         return query;
     }
 
+    // ---------------------------------------------------------------------
+    // S-2: conjunto efectivo de columnas visibles.
+    //
+    //   admin   = whitelist que fija el administrador (ColumnasVisiblesAdmin).
+    //             null = "el administrador no restringe".
+    //   usuario = preferencia de vista del usuario (ColumnasVisibles).
+    //             null = "el usuario no restringe".
+    //   efectivo = admin == null ? usuario
+    //            : usuario == null ? admin
+    //            : admin ∩ usuario.  Si ambos son null, efectivo = null
+    //            (sin restriccion: se muestran todas).
+    //
+    // La regla del administrador puede vivir en una fila de preferencia de
+    // alcance MAS AMPLIO (pais o titular) que la vista (cuenta), asi que se
+    // recorren los alcances de mas especifico a mas amplio. Varias reglas del
+    // administrador se combinan por INTERSECCION: son restricciones y una
+    // union podria ampliar la vista por encima de lo permitido en el alcance
+    // mas estrecho.
+    // ---------------------------------------------------------------------
+
+    private async Task<ConjuntoColumnas> GetConjuntoColumnasAsync(Guid usuarioId, PreferenciaScope scope, CancellationToken ct)
+    {
+        var prefRows = await _db.PreferenciasUsuarioCuenta
+            .Where(p => p.UsuarioId == usuarioId)
+            .ToListAsync(ct);
+        return BuildConjuntoColumnas(prefRows, scope);
+    }
+
+    // S-2: el filtro de columnas se resuelve POR CUENTA, porque cada cuenta
+    // puede tener su propia regla del administrador. El admin no restringe
+    // (bypass): el mapa vuelve vacio y no se filtra nada.
+    private async Task<Dictionary<Guid, ConjuntoColumnas>> GetConjuntosPorCuentaAsync(Actor actor, IEnumerable<Guid> cuentaIds, CancellationToken ct)
+    {
+        var resultado = new Dictionary<Guid, ConjuntoColumnas>();
+        if (actor.IsAdmin) return resultado;
+
+        var ids = cuentaIds.Distinct().ToList();
+        if (ids.Count == 0) return resultado;
+
+        var cuentas = await _db.Cuentas
+            .AsNoTracking()
+            .Where(c => ids.Contains(c.Id))
+            .Select(c => new { c.Id, c.PaisId, c.TitularId })
+            .ToListAsync(ct);
+
+        var prefRows = await _db.PreferenciasUsuarioCuenta
+            .Where(p => p.UsuarioId == actor.Id)
+            .ToListAsync(ct);
+
+        foreach (var cuenta in cuentas)
+        {
+            var alcance = new PreferenciaScope(cuenta.PaisId, cuenta.TitularId, cuenta.Id, false, false);
+            resultado[cuenta.Id] = BuildConjuntoColumnas(prefRows, alcance);
+        }
+
+        return resultado;
+    }
+
+    private static ConjuntoColumnas BuildConjuntoColumnas(IReadOnlyList<PreferenciaUsuarioCuenta> prefRows, PreferenciaScope scope)
+    {
+        var admin = ResolveColumnasAdmin(prefRows, scope);
+        var usuario = ResolveColumnasUsuario(prefRows, scope);
+
+        List<string>? efectiva = null;
+        if (admin is not null && usuario is not null)
+        {
+            var permitidas = new HashSet<string>(admin, StringComparer.OrdinalIgnoreCase);
+            efectiva = [.. usuario.Where(permitidas.Contains)];
+        }
+        else if (admin is not null)
+        {
+            efectiva = [.. admin];
+        }
+        else if (usuario is not null)
+        {
+            efectiva = [.. usuario];
+        }
+
+        return new ConjuntoColumnas
+        {
+            Admin = admin,
+            Usuario = usuario,
+            Efectivo = efectiva,
+            EfectivoSet = efectiva is null ? null : new HashSet<string>(efectiva, StringComparer.OrdinalIgnoreCase)
+        };
+    }
+
+    // S-2: whitelist del administrador. Se busca en las filas de preferencia
+    // del usuario por alcance, de mas especifico a mas amplio, y se combinan
+    // por interseccion.
+    private static IReadOnlyList<string>? ResolveColumnasAdmin(IReadOnlyList<PreferenciaUsuarioCuenta> prefRows, PreferenciaScope scope)
+    {
+        List<string>? resultado = null;
+        foreach (var nivel in ScopesChain(scope))
+        {
+            var fila = prefRows.FirstOrDefault(p => MismoAlcance(p, nivel));
+            var columnas = ParseArray(fila?.ColumnasVisiblesAdmin);
+            if (columnas is null) continue;
+            if (resultado is null)
+            {
+                resultado = [.. columnas];
+                continue;
+            }
+            resultado = [.. resultado.Where(c => columnas.Contains(c, StringComparer.OrdinalIgnoreCase))];
+        }
+        return resultado;
+    }
+
+    // S-2: la preferencia del usuario es de VISTA, no de restriccion: gana la
+    // fila mas especifica del alcance que exista. Su columna null significa
+    // "el usuario no restringe".
+    private static IReadOnlyList<string>? ResolveColumnasUsuario(IReadOnlyList<PreferenciaUsuarioCuenta> prefRows, PreferenciaScope scope)
+    {
+        foreach (var nivel in ScopesChain(scope))
+        {
+            var fila = prefRows.FirstOrDefault(p => MismoAlcance(p, nivel));
+            if (fila is not null) return ParseArray(fila.ColumnasVisibles);
+        }
+        return null;
+    }
+
+    // S-2: alcances de mas especifico a mas amplio para un alcance dado.
+    private static List<(Guid? PaisId, Guid? TitularId, Guid? CuentaId)> ScopesChain(PreferenciaScope scope)
+    {
+        var chain = new List<(Guid? PaisId, Guid? TitularId, Guid? CuentaId)>();
+        if (scope.CuentaId.HasValue)
+        {
+            chain.Add((scope.PaisId, scope.TitularId, scope.CuentaId));
+            chain.Add((scope.PaisId, scope.TitularId, null));
+            chain.Add((null, scope.TitularId, null));
+        }
+        else if (scope.TitularId.HasValue)
+        {
+            chain.Add((scope.PaisId, scope.TitularId, null));
+            chain.Add((null, scope.TitularId, null));
+        }
+        if (scope.PaisId.HasValue)
+        {
+            chain.Add((scope.PaisId, null, null));
+        }
+        chain.Add((null, null, null));
+        return chain;
+    }
+
+    private static bool MismoAlcance(PreferenciaUsuarioCuenta preferencia, (Guid? PaisId, Guid? TitularId, Guid? CuentaId) alcance)
+    {
+        return preferencia.PaisId == alcance.PaisId &&
+               preferencia.TitularId == alcance.TitularId &&
+               preferencia.CuentaId == alcance.CuentaId;
+    }
+
+    // S-2: interseccion de los conjuntos efectivos de varias cuentas. Un
+    // conjunto null (cuenta sin restriccion) no acota: solo cuentan los que
+    // restringen. null = no hay ninguna restriccion.
+    private static HashSet<string>? IntersectConjuntos(IEnumerable<ConjuntoColumnas> conjuntos)
+    {
+        HashSet<string>? resultado = null;
+        foreach (var conjunto in conjuntos)
+        {
+            if (conjunto.EfectivoSet is null) continue;
+            if (resultado is null)
+            {
+                resultado = new HashSet<string>(conjunto.EfectivoSet, StringComparer.OrdinalIgnoreCase);
+                continue;
+            }
+            resultado.IntersectWith(conjunto.EfectivoSet);
+        }
+        return resultado;
+    }
+
     private static HashSet<string>? ResolveEditableColumns(
         IReadOnlyList<PermisoUsuario> editableRows,
         IReadOnlyList<PreferenciaUsuarioCuenta> prefRows)
@@ -1381,14 +1584,6 @@ public sealed class ExtractosController : ControllerBase
         return preferencia.PaisId == permiso.PaisId &&
                preferencia.TitularId == permiso.TitularId &&
                preferencia.CuentaId == permiso.CuentaId;
-    }
-
-    private IQueryable<Cuenta> QueryVisibleAccounts(Actor actor)
-    {
-        var query = _db.Cuentas.AsQueryable();
-        return actor.IsAdmin
-            ? query
-            : query.Where(c => c.DeletedAt == null && _db.Titulares.Any(t => t.Id == c.TitularId && t.DeletedAt == null));
     }
 
     private static void EnsureEditable(Perm p, string col)
@@ -1458,6 +1653,16 @@ public sealed class ExtractosController : ControllerBase
         public bool CanEdit { get; init; }
         public bool CanDelete { get; init; }
         public HashSet<string>? EditableCols { get; init; }
+    }
+
+    // S-2: conjunto de columnas visibles de un alcance (ver el bloque de
+    // helpers "conjunto efectivo de columnas visibles").
+    private sealed class ConjuntoColumnas
+    {
+        public IReadOnlyList<string>? Admin { get; init; }
+        public IReadOnlyList<string>? Usuario { get; init; }
+        public IReadOnlyList<string>? Efectivo { get; init; }
+        public IReadOnlySet<string>? EfectivoSet { get; init; }
     }
 
     private sealed record NormalizedDesgloseLine(Guid? Id, int Orden, string TerceroNombre, decimal Importe, string? Notas);

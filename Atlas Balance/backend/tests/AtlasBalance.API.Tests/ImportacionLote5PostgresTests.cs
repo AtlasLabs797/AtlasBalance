@@ -66,7 +66,7 @@ public sealed class ImportacionLote5PostgresTests
 
         await using (var db = new AppDbContext(options))
         {
-            var service = new ImportacionService(db, TestAuditService.Create(db));
+            var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
             var primerLote = await service.CrearLoteAsync(
                 userId,
@@ -113,7 +113,7 @@ public sealed class ImportacionLote5PostgresTests
         // reimportacion.
         await using (var db = new AppDbContext(options))
         {
-            var service = new ImportacionService(db, TestAuditService.Create(db));
+            var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
             var segundoLote = await service.CrearLoteAsync(
                 userId,
@@ -162,7 +162,7 @@ public sealed class ImportacionLote5PostgresTests
 
         await using (var db = new AppDbContext(options))
         {
-            var service = new ImportacionService(db, TestAuditService.Create(db));
+            var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var raw = "01/04/2026\tIngreso cliente\t100\t100";
 
             var lote = await service.CrearLoteAsync(
@@ -210,7 +210,7 @@ public sealed class ImportacionLote5PostgresTests
         try
         {
             await using var db = new AppDbContext(options);
-            var service = new ImportacionService(db, TestAuditService.Create(db));
+            var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
             var act = () => service.RevertirLoteAsync(
                 userId,
@@ -280,7 +280,7 @@ public sealed class ImportacionLote5PostgresTests
         Guid primerLoteId;
         await using (var db = new AppDbContext(options))
         {
-            var service = new ImportacionService(db, TestAuditService.Create(db));
+            var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
             var lote = await service.CrearLoteAsync(
                 userId,
@@ -321,7 +321,7 @@ public sealed class ImportacionLote5PostgresTests
         // reimportacion (indice parcial de B-3).
         await using (var db = new AppDbContext(options))
         {
-            var service = new ImportacionService(db, TestAuditService.Create(db));
+            var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
             var segundoLote = await service.CrearLoteAsync(
                 userId,
@@ -393,7 +393,10 @@ public sealed class ImportacionLote5PostgresTests
             UsuarioId = userId,
             CuentaId = cuentaId,
             PuedeImportar = true,
-            PuedeAprobarImportaciones = true
+            PuedeAprobarImportaciones = true,
+            // S-3: revertir un lote borra masivamente sus extractos y exige
+            // `puede_eliminar_lineas`.
+            PuedeEliminarLineas = true
         });
         await db.SaveChangesAsync();
 

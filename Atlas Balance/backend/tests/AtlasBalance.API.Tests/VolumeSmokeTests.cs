@@ -204,7 +204,7 @@ public sealed class VolumeSmokeTests
 
     private static ExtractosController BuildController(AppDbContext db, Guid userId, bool isAdmin)
     {
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

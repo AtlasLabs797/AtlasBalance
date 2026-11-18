@@ -54,6 +54,8 @@ public sealed class ImportacionController : ControllerBase
         [FromQuery] Guid? cuentaId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] string sortBy = "fecha_creacion",
+        [FromQuery] string sortDir = "desc",
         CancellationToken cancellationToken = default)
     {
         if (!TryGetActor(out var userId, out var rol))
@@ -63,7 +65,7 @@ public sealed class ImportacionController : ControllerBase
 
         try
         {
-            var result = await _importacionService.ListarLotesAsync(userId, rol, cuentaId, page, pageSize, cancellationToken);
+            var result = await _importacionService.ListarLotesAsync(userId, rol, cuentaId, page, pageSize, sortBy, sortDir, cancellationToken);
             return Ok(result);
         }
         catch (ImportacionException ex)
@@ -111,7 +113,13 @@ public sealed class ImportacionController : ControllerBase
     }
 
     [HttpGet("lotes/{id:guid}/filas")]
-    public async Task<IActionResult> ListarLoteFilas(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> ListarLoteFilas(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 100,
+        [FromQuery] string sortBy = "indice",
+        [FromQuery] string sortDir = "asc",
+        CancellationToken cancellationToken = default)
     {
         if (!TryGetActor(out var userId, out var rol))
         {
@@ -120,7 +128,9 @@ public sealed class ImportacionController : ControllerBase
 
         try
         {
-            var result = await _importacionService.ListarLoteFilasAsync(userId, rol, id, cancellationToken);
+            // R-3 (seccion 9): la respuesta pasa a ser paginada
+            // ({ data, total, page, page_size, total_pages }).
+            var result = await _importacionService.ListarLoteFilasAsync(userId, rol, id, page, pageSize, sortBy, sortDir, cancellationToken);
             return Ok(result);
         }
         catch (ImportacionException ex)

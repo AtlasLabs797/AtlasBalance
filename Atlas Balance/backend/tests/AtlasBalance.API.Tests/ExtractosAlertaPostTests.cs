@@ -76,7 +76,7 @@ public sealed class ExtractosAlertaPostTests
 
     private static ExtractosController BuildController(AppDbContext db, Guid userId, IAlertaService alertaService)
     {
-        var controller = new ExtractosController(db, alertaService, NullLogger<ExtractosController>.Instance);
+        var controller = new ExtractosController(db, alertaService, NullLogger<ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

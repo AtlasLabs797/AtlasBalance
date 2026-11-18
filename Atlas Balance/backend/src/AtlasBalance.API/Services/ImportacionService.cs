@@ -17,10 +17,10 @@ public interface IImportacionService
     Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, Guid? paisId, CancellationToken cancellationToken);
     Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken);
     Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
-    Task<PaginatedResponse<ImportacionLoteResponse>> ListarLotesAsync(Guid usuarioId, string rol, Guid? cuentaId, int page, int pageSize, CancellationToken cancellationToken);
+    Task<PaginatedResponse<ImportacionLoteResponse>> ListarLotesAsync(Guid usuarioId, string rol, Guid? cuentaId, int page, int pageSize, string sortBy, string sortDir, CancellationToken cancellationToken);
     Task<ImportacionLoteDetalleResponse> CrearLoteAsync(Guid usuarioId, string rol, ImportacionLoteCrearRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionLoteDetalleResponse> ObtenerLoteAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken);
-    Task<IReadOnlyList<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken);
+    Task<PaginatedResponse<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, int page, int pageSize, string sortBy, string sortDir, CancellationToken cancellationToken);
     Task<ImportacionConfirmarResponse> ConfirmarLoteAsync(Guid usuarioId, string rol, Guid id, ImportacionLoteConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionLoteResponse> RevertirLoteAsync(Guid usuarioId, string rol, Guid id, ImportacionLoteRevertirRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
@@ -62,24 +62,20 @@ public sealed class ImportacionService : IImportacionService
 
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
+    private readonly IUserAccessService _userAccessService;
     private readonly IAlertaService? _alertaService;
     private readonly ILogger<ImportacionService> _logger;
-
-    private enum ImportacionPermissionMode
-    {
-        Importar,
-        Aprobar,
-        Ver
-    }
 
     public ImportacionService(
         AppDbContext dbContext,
         IAuditService auditService,
+        IUserAccessService userAccessService,
         IAlertaService? alertaService = null,
         ILogger<ImportacionService>? logger = null)
     {
         _dbContext = dbContext;
         _auditService = auditService;
+        _userAccessService = userAccessService;
         _alertaService = alertaService;
         _logger = logger ?? NullLogger<ImportacionService>.Instance;
     }
@@ -161,7 +157,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, UserAccessAction.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var normalizedMap = NormalizeMap(request.Mapeo);
@@ -192,6 +188,8 @@ public sealed class ImportacionService : IImportacionService
         Guid? cuentaId,
         int page,
         int pageSize,
+        string sortBy,
+        string sortDir,
         CancellationToken cancellationToken)
     {
         page = Math.Max(1, page);
@@ -199,7 +197,7 @@ public sealed class ImportacionService : IImportacionService
 
         if (cuentaId.HasValue)
         {
-            await EnsureCuentaPermitidaAsync(usuarioId, rol, cuentaId.Value, ImportacionPermissionMode.Ver, cancellationToken);
+            await EnsureCuentaPermitidaAsync(usuarioId, rol, cuentaId.Value, UserAccessAction.Ver, cancellationToken);
         }
 
         var isAdmin = string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -223,12 +221,10 @@ public sealed class ImportacionService : IImportacionService
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var lotes = await query
-            .OrderByDescending(x => x.FechaCreacion)
-            // B-15 (LOTE 5): desempate estable por clave primaria. Sin el, dos
-            // lotes con la misma fecha de creacion pueden aparecer en paginas
-            // distintas o ser omitidos.
-            .ThenBy(x => x.Id)
+        // R-3 (seccion 9): el listado admite `sortBy`/`sortDir`. El valor por
+        // defecto mantiene el orden por fecha de creacion descendente.
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var lotes = await ApplyLoteSorting(query, sortBy, desc)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
@@ -256,7 +252,7 @@ public sealed class ImportacionService : IImportacionService
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, UserAccessAction.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var rawData = request.RawData ?? string.Empty;
@@ -471,11 +467,19 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Ver, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.Ver, cancellationToken);
         return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cuenta.Divisa, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken)
+    public async Task<PaginatedResponse<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(
+        Guid usuarioId,
+        string rol,
+        Guid id,
+        int page,
+        int pageSize,
+        string sortBy,
+        string sortDir,
+        CancellationToken cancellationToken)
     {
         var lote = await _dbContext.ImportacionLotes.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (lote is null)
@@ -483,13 +487,81 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Ver, cancellationToken);
-        var filas = await _dbContext.ImportacionLoteFilas
+        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.Ver, cancellationToken);
+
+        // R-3 (seccion 9): el listado de filas pasa a paging. Antes devolvia el
+        // lote entero (hasta 50.000 filas) en un unico array.
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 500);
+
+        var query = _dbContext.ImportacionLoteFilas
             .AsNoTracking()
-            .Where(x => x.LoteId == id)
-            .OrderBy(x => x.Indice)
+            .Where(x => x.LoteId == id);
+
+        // El total cuenta TODAS las filas del lote, no solo las de la pagina.
+        var total = await query.CountAsync(cancellationToken);
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var filas = await ApplyLoteFilaSorting(query, sortBy, desc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
-        return filas.Select(MapLoteFila).ToList();
+
+        return new PaginatedResponse<ImportacionLoteFilaResponse>
+        {
+            Data = filas.Select(MapLoteFila).ToList(),
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+        };
+    }
+
+    // R-3 (seccion 9): ordenacion de los lotes del historial. El caso por
+    // defecto es fecha de creacion descendente, el que ya devolvia el listado.
+    private static IOrderedQueryable<ImportacionLote> ApplyLoteSorting(IQueryable<ImportacionLote> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("estado", true) => query.OrderByDescending(x => x.Estado),
+            ("estado", false) => query.OrderBy(x => x.Estado),
+            ("nombre_archivo", true) => query.OrderByDescending(x => x.NombreArchivo),
+            ("nombre_archivo", false) => query.OrderBy(x => x.NombreArchivo),
+            ("filas_total", true) => query.OrderByDescending(x => x.FilasTotal),
+            ("filas_total", false) => query.OrderBy(x => x.FilasTotal),
+            ("tipo_origen", true) => query.OrderByDescending(x => x.TipoOrigen),
+            ("tipo_origen", false) => query.OrderBy(x => x.TipoOrigen),
+            ("fecha_creacion", true) => query.OrderByDescending(x => x.FechaCreacion),
+            ("fecha_creacion", false) => query.OrderBy(x => x.FechaCreacion),
+            _ => desc
+                ? query.OrderByDescending(x => x.FechaCreacion)
+                : query.OrderBy(x => x.FechaCreacion)
+        };
+
+        // B-15 (LOTE 5): desempate estable por clave primaria. Sin el, dos
+        // lotes con la misma fecha de creacion pueden aparecer en paginas
+        // distintas o ser omitidos.
+        return ((IOrderedQueryable<ImportacionLote>)ordered).ThenBy(x => x.Id);
+    }
+
+    // R-3 (seccion 9): ordenacion de las filas de un lote. El caso por
+    // defecto es el indice ascendente, el que ya devolvia el listado.
+    private static IOrderedQueryable<ImportacionLoteFila> ApplyLoteFilaSorting(IQueryable<ImportacionLoteFila> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("estado", true) => query.OrderByDescending(x => x.Estado),
+            ("estado", false) => query.OrderBy(x => x.Estado),
+            ("valida", true) => query.OrderByDescending(x => x.Valida),
+            ("valida", false) => query.OrderBy(x => x.Valida),
+            ("indice", true) => query.OrderByDescending(x => x.Indice),
+            ("indice", false) => query.OrderBy(x => x.Indice),
+            _ => desc
+                ? query.OrderByDescending(x => x.Indice)
+                : query.OrderBy(x => x.Indice)
+        };
+
+        // B-15: desempate estable por clave primaria.
+        return ((IOrderedQueryable<ImportacionLoteFila>)ordered).ThenBy(x => x.Id);
     }
 
     public async Task<ImportacionConfirmarResponse> ConfirmarLoteAsync(
@@ -533,7 +605,7 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Aprobar, cancellationToken);
+        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.AprobarImportacion, cancellationToken);
         var confirmationKey = NormalizeIdempotencyKey(httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault());
         if (lote.Estado == "confirmado" &&
             confirmationKey is not null &&
@@ -723,10 +795,15 @@ public sealed class ImportacionService : IImportacionService
         var lote = await _dbContext.ImportacionLotes.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (lote is null)
         {
+            // 404: el lote no existe. Distinto del 403 de abajo (el lote
+            // existe pero el actor no tiene permiso para revertirlo).
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Aprobar, cancellationToken);
+        // S-3: revertir un lote es un borrado masivo de los extractos del
+        // lote, asi que exige `puede_eliminar_lineas` (no basta con
+        // `puede_importar` ni con `puede_aprobar_importaciones`).
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.EliminarLineas, cancellationToken);
         if (lote.Estado == "revertido")
         {
             throw new ImportacionException("El lote ya fue revertido", StatusCodes.Status409Conflict);
@@ -886,7 +963,7 @@ public sealed class ImportacionService : IImportacionService
         CancellationToken cancellationToken,
         IReadOnlyList<FilaValidacionResponse>? persistedValidationRows)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, UserAccessAction.Importar, cancellationToken);
         await EnsureLotePerteneceACuentaAsync(request.LoteId, cuenta.Id, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
@@ -1151,7 +1228,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, UserAccessAction.Importar, cancellationToken);
         if (ResolveTipoCuenta(cuenta) != TipoCuenta.PLAZO_FIJO)
         {
             throw new ImportacionException("Esta operacion solo aplica a cuentas de plazo fijo", StatusCodes.Status400BadRequest);
@@ -1266,7 +1343,7 @@ public sealed class ImportacionService : IImportacionService
         }
     }
 
-    private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, ImportacionPermissionMode permissionMode, CancellationToken cancellationToken)
+    private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, UserAccessAction accion, CancellationToken cancellationToken)
     {
         var cuenta = await _dbContext.Cuentas
             .AsNoTracking()
@@ -1279,29 +1356,29 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Cuenta no encontrada o inactiva", StatusCodes.Status404NotFound);
         }
 
-        if (string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
+        // S-9/M-3: la regla de cada accion vive en UserAccessService. El ADMIN
+        // conserva su bypass (el scope lo marca como IsAdmin).
+        var scope = await _userAccessService.GetScopeAsync(usuarioId, rol, cancellationToken);
+        if (scope.IsAdmin)
         {
             return cuenta;
         }
 
-        var permisos = await _dbContext.PermisosUsuario
-            .AsNoTracking()
-            .Where(p => p.UsuarioId == usuarioId)
-            .ToListAsync(cancellationToken);
-
-        var hasPermission = permisos.Any(p =>
-            GrantsImportacionPermission(p, permissionMode) &&
-            (p.PaisId is null || p.PaisId == cuenta.PaisId) &&
-            (p.CuentaId is null || p.CuentaId == cuenta.Id) &&
-            (p.TitularId is null || p.TitularId == cuenta.TitularId));
-
+        var hasPermission = await _userAccessService.CanCuentaAsync(accion, cuentaId, scope, cancellationToken);
         if (!hasPermission)
         {
-            throw new ImportacionException("No tienes permisos para importar en esta cuenta", StatusCodes.Status403Forbidden);
+            throw new ImportacionException(PermissionDeniedMessage(accion), StatusCodes.Status403Forbidden);
         }
 
         return cuenta;
     }
+
+    private static string PermissionDeniedMessage(UserAccessAction accion) => accion switch
+    {
+        // S-3: revertir un lote borra masivamente los extractos del lote.
+        UserAccessAction.EliminarLineas => "No tienes permisos para eliminar lineas en esta cuenta",
+        _ => "No tienes permisos para importar en esta cuenta"
+    };
 
     // V-02.07: request.LoteId llegaba del cliente y se escribia tal cual en
     // Extracto.ImportacionLoteId sin comprobar que el lote fuera de la cuenta
@@ -1326,20 +1403,6 @@ public sealed class ImportacionService : IImportacionService
         {
             throw new ImportacionException("El lote no pertenece a la cuenta indicada", StatusCodes.Status403Forbidden);
         }
-    }
-
-    private static bool GrantsImportacionPermission(PermisoUsuario permiso, ImportacionPermissionMode permissionMode)
-    {
-        return permissionMode switch
-        {
-            ImportacionPermissionMode.Importar => permiso.PuedeImportar,
-            ImportacionPermissionMode.Aprobar => permiso.PuedeAprobarImportaciones || permiso.PuedeImportar,
-            ImportacionPermissionMode.Ver => permiso.PuedeVerCuentas ||
-                                             permiso.PuedeImportar ||
-                                             permiso.PuedeRevisarLineas ||
-                                             permiso.PuedeAprobarImportaciones,
-            _ => false
-        };
     }
 
     private async Task<ImportacionLoteDetalleResponse> BuildLoteDetalleAsync(ImportacionLote lote, string? cuentaNombre, string? cuentaDivisa, CancellationToken cancellationToken)

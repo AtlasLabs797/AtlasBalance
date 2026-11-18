@@ -13,6 +13,8 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
+import { usePermisosStore } from '@/stores/permisosStore';
+import { useUiStore } from '@/stores/uiStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { hoy } from '@/utils/hoy';
@@ -20,6 +22,7 @@ import {
   buildConfirmImportacionLoteRequest,
   buildCreateImportacionLoteRequest,
 } from '@/utils/importacionRequest';
+import { puedeRevertirLote, textoConfirmacionRevertir } from '@/utils/revertirLote';
 import { sanitizeInternalPath } from '@/utils/safeRoute';
 import type {
   ImportConfirmResult,
@@ -161,6 +164,10 @@ export default function ImportacionPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const invalidate = useInvalidateAfterMutation();
+  // V-03.02 (LOTE 6, S-3): revertir un lote borra masivamente los extractos
+  // del lote, asi que el backend exige `puede_eliminar_lineas` en la cuenta.
+  const canDeleteInCuenta = usePermisosStore((state) => state.canDeleteInCuenta);
+  const addToast = useUiStore((state) => state.addToast);
   const rawDataId = useId();
   const [step, setStep] = useState<ImportStep>(1);
   const [activeTab, setActiveTab] = useState<ImportTab>('nueva');
@@ -191,6 +198,7 @@ export default function ImportacionPage() {
   const [validationPage, setValidationPage] = useState(1);
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [revertingLoteId, setRevertingLoteId] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const plazoFijoSubmittingRef = useRef(false);
   const createIdempotencyKeyRef = useRef(crypto.randomUUID());
@@ -338,6 +346,14 @@ export default function ImportacionPage() {
   const selectedCuenta = useMemo(
     () => contexto.find((cuenta) => cuenta.id === cuentaId) ?? null,
     [contexto, cuentaId]
+  );
+  // V-03.02 (LOTE 6, S-3): el boton "Revertir" solo se muestra si el usuario
+  // puede eliminar lineas en la cuenta del lote. El contexto de importacion no
+  // devuelve el titular, asi que se pasa como desconocido (undefined): el
+  // backend sigue siendo quien autoriza y devuelve el 403 si no puede.
+  const puedeEliminarEnCuenta = useMemo(
+    () => (cuentaId ? canDeleteInCuenta(cuentaId, undefined, selectedCuenta?.pais_id ?? null) : false),
+    [canDeleteInCuenta, cuentaId, selectedCuenta]
   );
   const isPlazoFijo = selectedCuenta?.tipo_cuenta === 'PLAZO_FIJO';
 
@@ -603,6 +619,53 @@ export default function ImportacionPage() {
     }
   };
 
+  // V-03.02 (LOTE 6, seccion 8.1): revertir un lote confirmado. El backend
+  // borra (soft delete) los extractos del lote, deja las conciliaciones de
+  // esos extractos en estado 'excepcion' y marca el lote como revertido.
+  const revertirLote = async (lote: ImportacionLote) => {
+    const confirmed = await confirm({
+      title: 'Revertir lote de importación',
+      message: textoConfirmacionRevertir(lote),
+      confirmLabel: 'Revertir lote',
+      tone: 'irreversible',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setRevertingLoteId(lote.id);
+    setError(null);
+
+    try {
+      // El cuerpo respeta ImportacionLoteRevertirRequest: el motivo es
+      // opcional y el backend lo guarda en la auditoria de la reversion.
+      await api.post(`/importacion/lotes/${lote.id}/revertir`, { motivo: null });
+      addToast({
+        type: 'success',
+        message: 'Lote revertido. Los extractos de esa importación se han borrado y ya puedes volver a importar.',
+      });
+      await loadLotes(cuentaId);
+      // La reversion borra extractos y deja conciliaciones en 'excepcion':
+      // invalidamos las familias afectadas para que Extractos, Revision y
+      // Conciliacion re-consulten en cualquier tab abierta.
+      await Promise.all([
+        invalidate('importarRevertir'),
+        invalidate('revision'),
+        invalidate('conciliacion'),
+      ]);
+    } catch (err: unknown) {
+      // El 403 ("No tienes permisos para eliminar lineas en esta cuenta") y el
+      // 409 ("El lote esta en estado 'x' y no se puede revertir") se muestran
+      // tal cual, sin inventar texto.
+      addToast({
+        type: 'error',
+        message: getApiErrorMessage(err, 'No se pudo revertir el lote de importación'),
+      });
+    } finally {
+      setRevertingLoteId(null);
+    }
+  };
+
   const startNextImport = () => {
     setRawData('');
     setSeparator('tab');
@@ -839,6 +902,7 @@ export default function ImportacionPage() {
                       <td>{lote.filas_validas}/{lote.filas_total}</td>
                       <td><code>{lote.sha256.slice(0, 12)}</code></td>
                       <td>
+                        <div className="import-actions">
                         <button
                           type="button"
                           className="button-secondary"
@@ -877,6 +941,22 @@ export default function ImportacionPage() {
                         >
                           Abrir
                         </button>
+                        {/* V-03.02 (LOTE 6, S-3): solo un lote confirmado es
+                            reversible y hace falta `puede_eliminar_lineas` en la
+                            cuenta. Si falta el permiso, el boton no se muestra
+                            (el backend ya lo deniega con 403). */}
+                        {puedeRevertirLote(lote, puedeEliminarEnCuenta) ? (
+                          <button
+                            type="button"
+                            className="button-danger"
+                            onClick={() => void revertirLote(lote)}
+                            disabled={revertingLoteId !== null}
+                            aria-label={`Revertir el lote del ${new Date(lote.fecha_creacion).toLocaleString()}`}
+                          >
+                            {revertingLoteId === lote.id ? 'Revirtiendo...' : 'Revertir'}
+                          </button>
+                        ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -348,14 +348,12 @@ public sealed class UsuariosController : ControllerBase
             .Where(x => x.UsuarioId == id && x.CuentaId == cuentaId)
             .ToListAsync(cancellationToken);
         _dbContext.PermisosUsuario.RemoveRange(existing);
-        var existingPreference = await _dbContext.PreferenciasUsuarioCuenta
-            .Where(x => x.UsuarioId == id && x.CuentaId == cuentaId)
-            .ToListAsync(cancellationToken);
-        _dbContext.PreferenciasUsuarioCuenta.RemoveRange(existingPreference);
 
+        // S-2: la fila de preferencias NO se borra. Contiene la PREFERENCIA del
+        // usuario (ColumnasVisibles y OrdenColumnas), que el admin no escribe.
+        // Solo se actualizan las columnas que pertenecen al admin.
         await AddPermisoAsync(id, normalizedRequest);
-        var previousOrder = existingPreference.FirstOrDefault(p => p.PaisId == normalizedRequest.PaisId && p.TitularId == normalizedRequest.TitularId)?.OrdenColumnas;
-        AddPreferencia(id, normalizedRequest.PaisId, normalizedRequest.TitularId, normalizedRequest.CuentaId, normalizedRequest.ColumnasVisibles, normalizedRequest.ColumnasEditables, previousOrder);
+        await AplicaColumnasAdminAsync(id, [normalizedRequest], limpiarAlcancesNoGestionados: false, cancellationToken);
         var revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -618,13 +616,33 @@ public sealed class UsuariosController : ControllerBase
             return BadRequest(new { error = "Email y nombre son obligatorios" });
         }
 
-        var validation = await ValidatePermisosAsync(request.Permisos, cancellationToken);
+        // S-5: el PUT es ESTRICTO, exige el CUERPO COMPLETO. Antes, un cuerpo
+        // parcial aplicaba los valores por defecto del DTO (rol EMPLEADO,
+        // activo false, sin primer login, sin IA, sin emails y sin permisos) y
+        // degradaba al usuario sin avisar. Se responde 400 indicando los
+        // campos que faltan, que es mas util que el 400 generico de
+        // deserializacion.
+        var camposFaltantes = CamposFaltantesActualizacion(request);
+        if (camposFaltantes.Count > 0)
+        {
+            return BadRequest(new { error = $"Faltan campos obligatorios en la actualizacion del usuario: {string.Join(", ", camposFaltantes)}." });
+        }
+
+        // A partir de aqui todos los campos vienen: se aplican tal cual.
+        var rol = request.Rol!.Value;
+        var activo = request.Activo!.Value;
+        var primerLogin = request.PrimerLogin!.Value;
+        var puedeUsarIa = request.PuedeUsarIa!.Value;
+        var emails = request.Emails!;
+        var permisos = request.Permisos!;
+
+        var validation = await ValidatePermisosAsync(permisos, cancellationToken);
         if (!validation.Ok)
         {
             return BadRequest(new { error = validation.Error });
         }
 
-        var roleValidation = ValidateRolePermissions(request.Rol, request.Permisos);
+        var roleValidation = ValidateRolePermissions(rol, permisos);
         if (!roleValidation.Ok)
         {
             return BadRequest(new { error = roleValidation.Error });
@@ -634,7 +652,7 @@ public sealed class UsuariosController : ControllerBase
         // La edicion real de usuario pasa los permisos por este endpoint, no por
         // aquel, asi que sin esto la deteccion nunca se ejecutaba en el flujo
         // de UsuarioModal.save.
-        var redundanciasActualizar = DetectPermisosRedundantes(request.Permisos);
+        var redundanciasActualizar = DetectPermisosRedundantes(permisos);
         if (redundanciasActualizar.Count > 0)
         {
             return Conflict(new
@@ -661,13 +679,13 @@ public sealed class UsuariosController : ControllerBase
 
         var actorId = GetCurrentUserId();
         var removesAdminAccess = usuario.Rol == RolUsuario.ADMIN &&
-            (!request.Activo || request.Rol != RolUsuario.ADMIN);
+            (!activo || rol != RolUsuario.ADMIN);
         if (removesAdminAccess && !await HasAnotherActiveAdminAsync(usuario.Id, cancellationToken))
         {
             return BadRequest(new { error = "Debe quedar al menos un administrador activo." });
         }
 
-        if (actorId == id && (!request.Activo || request.Rol != RolUsuario.ADMIN))
+        if (actorId == id && (!activo || rol != RolUsuario.ADMIN))
         {
             return BadRequest(new { error = "No puedes quitarte tu propio acceso de administrador." });
         }
@@ -684,14 +702,14 @@ public sealed class UsuariosController : ControllerBase
             permisos = await LoadPermisosAuditSnapshotAsync(id, cancellationToken)
         };
 
-        var shouldRevokeForDeactivation = usuario.Activo && !request.Activo;
+        var shouldRevokeForDeactivation = usuario.Activo && !activo;
 
         usuario.Email = normalizedEmail;
         usuario.NombreCompleto = request.NombreCompleto.Trim();
-        usuario.Rol = request.Rol;
-        usuario.Activo = request.Activo;
-        usuario.PrimerLogin = request.PrimerLogin;
-        usuario.PuedeUsarIa = request.PuedeUsarIa;
+        usuario.Rol = rol;
+        usuario.Activo = activo;
+        usuario.PrimerLogin = primerLogin;
+        usuario.PuedeUsarIa = puedeUsarIa;
 
         var passwordChanged = false;
         var revokedRefreshTokens = 0;
@@ -718,7 +736,7 @@ public sealed class UsuariosController : ControllerBase
             revokedRefreshTokens = await RotateAndRevokeSessionsAsync(usuario, DateTime.UtcNow, cancellationToken);
         }
 
-        var normalizedEmails = NormalizeEmails(request.Emails);
+        var normalizedEmails = NormalizeEmails(emails);
         // V-02.08: validacion antes de persistir; si falla, nada se ha guardado
         // todavia (SaveChanges viene despues).
         var invalidEmail = FindInvalidEmail(normalizedEmails);
@@ -728,7 +746,7 @@ public sealed class UsuariosController : ControllerBase
         }
 
         await UpsertEmailsAsync(usuario.Id, normalizedEmails, cancellationToken);
-        await UpsertPermisosAsync(usuario.Id, request.Permisos, cancellationToken);
+        await UpsertPermisosAsync(usuario.Id, permisos, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         var after = new
@@ -740,7 +758,7 @@ public sealed class UsuariosController : ControllerBase
             usuario.PrimerLogin,
             usuario.PuedeUsarIa,
             emails = normalizedEmails,
-            permisos = request.Permisos
+            permisos = permisos
         };
 
         await _auditService.LogAsync(GetCurrentUserId(), AuditActions.UpdateUsuario, "USUARIOS", usuario.Id, HttpContext,
@@ -947,6 +965,21 @@ public sealed class UsuariosController : ControllerBase
             cancellationToken);
 
         return Ok(new { message = "Authenticator revocado. El usuario tendra que configurarlo de nuevo en el proximo acceso." });
+    }
+
+    // S-5: campos que el PUT de usuario exige. Si falta alguno se responde 400
+    // con la lista de campos que faltan (util para el cliente) en vez de un
+    // 400 generico de deserializacion.
+    private static List<string> CamposFaltantesActualizacion(UpdateUsuarioRequest request)
+    {
+        var faltan = new List<string>();
+        if (request.Rol is null) faltan.Add("rol");
+        if (request.Activo is null) faltan.Add("activo");
+        if (request.PrimerLogin is null) faltan.Add("primer_login");
+        if (request.PuedeUsarIa is null) faltan.Add("puede_usar_ia");
+        if (request.Emails is null) faltan.Add("emails");
+        if (request.Permisos is null) faltan.Add("permisos");
+        return faltan;
     }
 
     private async Task<(bool Ok, string? Error)> ValidatePermisosAsync(IReadOnlyList<SavePermisoUsuarioRequest> permisos, CancellationToken cancellationToken)
@@ -1201,7 +1234,9 @@ public sealed class UsuariosController : ControllerBase
                 permiso.PuedeAprobarImportaciones,
                 permiso.PuedeConciliar,
                 permiso.PuedeCerrarConciliacion,
-                ColumnasVisibles = preferencia?.ColumnasVisibles,
+                // S-2: la regla de columnas del admin. La preferencia del
+                // usuario no entra en la instantanea de permisos.
+                ColumnasVisibles = preferencia?.ColumnasVisiblesAdmin,
                 ColumnasEditables = preferencia?.ColumnasEditables
             };
         });
@@ -1273,31 +1308,81 @@ public sealed class UsuariosController : ControllerBase
     {
         var existing = await _dbContext.PermisosUsuario.Where(x => x.UsuarioId == usuarioId).ToListAsync(cancellationToken);
         _dbContext.PermisosUsuario.RemoveRange(existing);
-        var existingPreferences = await _dbContext.PreferenciasUsuarioCuenta.Where(x => x.UsuarioId == usuarioId).ToListAsync(cancellationToken);
-        _dbContext.PreferenciasUsuarioCuenta.RemoveRange(existingPreferences);
 
         foreach (var item in permisos)
         {
             await AddPermisoAsync(usuarioId, item);
         }
 
-        foreach (var item in permisos
-                     .Where(x => x.ColumnasVisibles is not null || x.ColumnasEditables is not null)
-                     .GroupBy(x => new { x.PaisId, x.TitularId, x.CuentaId })
-                     .Select(x => x.Last()))
+        // S-2: la matriz del admin fija la REGLA de columnas. Se aplica sobre la
+        // fila de preferencia existente (creandola si hace falta) SIN tocar la
+        // PREFERENCIA del usuario ni su orden de columnas, que viven en la misma
+        // fila pero los escribe el usuario.
+        await AplicaColumnasAdminAsync(usuarioId, permisos, limpiarAlcancesNoGestionados: true, cancellationToken);
+    }
+
+    // S-2: la REGLA de columnas del administrador (ColumnasVisiblesAdmin y
+    // ColumnasEditables) y la PREFERENCIA del usuario (ColumnasVisibles y
+    // OrdenColumnas) comparten fila en PREFERENCIAS_USUARIO_CUENTA, pero no se
+    // pisan: solo el admin escribe las dos primeras y solo el usuario las
+    // otras dos. Antes el guardado de permisos del admin hacia RemoveRange de
+    // la fila entera, lo que borraba la preferencia y el orden del usuario.
+    private async Task AplicaColumnasAdminAsync(
+        Guid usuarioId,
+        IReadOnlyList<SavePermisoUsuarioRequest> permisos,
+        bool limpiarAlcancesNoGestionados,
+        CancellationToken cancellationToken)
+    {
+        var preferencias = await _dbContext.PreferenciasUsuarioCuenta
+            .Where(x => x.UsuarioId == usuarioId)
+            .ToListAsync(cancellationToken);
+
+        var alcances = permisos
+            .GroupBy(x => new { x.PaisId, x.TitularId, x.CuentaId })
+            .Select(x => x.Last())
+            .ToList();
+
+        foreach (var item in alcances)
         {
-            var previous = existingPreferences.FirstOrDefault(p => p.PaisId == item.PaisId && p.TitularId == item.TitularId && p.CuentaId == item.CuentaId);
-            AddPreferencia(usuarioId, item.PaisId, item.TitularId, item.CuentaId, item.ColumnasVisibles, item.ColumnasEditables, previous?.OrdenColumnas);
+            var preferencia = preferencias.FirstOrDefault(p =>
+                p.PaisId == item.PaisId && p.TitularId == item.TitularId && p.CuentaId == item.CuentaId);
+
+            if (preferencia is null)
+            {
+                if (item.ColumnasVisibles is null && item.ColumnasEditables is null)
+                {
+                    // Sin regla de columnas no hay nada que guardar: no se crea
+                    // una fila vacia que luego confunda al usuario.
+                    continue;
+                }
+
+                AddPreferencia(usuarioId, item.PaisId, item.TitularId, item.CuentaId, item.ColumnasVisibles, item.ColumnasEditables);
+                continue;
+            }
+
+            preferencia.ColumnasVisiblesAdmin = SerializaColumnas(item.ColumnasVisibles);
+            preferencia.ColumnasEditables = SerializaColumnas(item.ColumnasEditables);
+            preferencia.UpdatedAt = DateTime.UtcNow;
         }
 
-        foreach (var previous in existingPreferences.Where(p => p.OrdenColumnas is not null && !permisos.Any(item =>
-                     (item.ColumnasVisibles is not null || item.ColumnasEditables is not null) &&
-                     p.PaisId == item.PaisId && p.TitularId == item.TitularId && p.CuentaId == item.CuentaId)))
+        if (!limpiarAlcancesNoGestionados)
         {
-            AddPreferencia(usuarioId, previous.PaisId, previous.TitularId, previous.CuentaId,
-                ParseJsonArray(previous.ColumnasVisibles), null, previous.OrdenColumnas);
+            return;
+        }
+
+        // El admin ya no gestiona ese alcance: se retira SU regla, pero la
+        // preferencia del usuario se conserva.
+        foreach (var preferencia in preferencias.Where(p => !alcances.Any(a =>
+                     p.PaisId == a.PaisId && p.TitularId == a.TitularId && p.CuentaId == a.CuentaId)))
+        {
+            preferencia.ColumnasVisiblesAdmin = null;
+            preferencia.ColumnasEditables = null;
+            preferencia.UpdatedAt = DateTime.UtcNow;
         }
     }
+
+    private static string? SerializaColumnas(IReadOnlyList<string>? columnas) =>
+        columnas is null ? null : JsonSerializer.Serialize(columnas);
 
     private Task AddPermisoAsync(Guid usuarioId, SavePermisoUsuarioRequest item)
     {
@@ -1323,7 +1408,11 @@ public sealed class UsuariosController : ControllerBase
         return Task.CompletedTask;
     }
 
-    private void AddPreferencia(Guid usuarioId, Guid? paisId, Guid? titularId, Guid? cuentaId, IReadOnlyList<string>? columnasVisibles, IReadOnlyList<string>? columnasEditables, string? ordenColumnas = null)
+    // S-2: AddPreferencia escribe la REGLA del administrador
+    // (ColumnasVisiblesAdmin) y las columnas editables. La PREFERENCIA del
+    // usuario (ColumnasVisibles) y su orden (OrdenColumnas) NO se tocan: los
+    // escribe el usuario en PUT /api/extractos/columnas-visibles.
+    private void AddPreferencia(Guid usuarioId, Guid? paisId, Guid? titularId, Guid? cuentaId, IReadOnlyList<string>? columnasVisiblesAdmin, IReadOnlyList<string>? columnasEditables)
     {
         _dbContext.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
         {
@@ -1332,9 +1421,8 @@ public sealed class UsuariosController : ControllerBase
             PaisId = paisId,
             TitularId = titularId,
             CuentaId = cuentaId,
-            ColumnasVisibles = columnasVisibles is null ? null : JsonSerializer.Serialize(columnasVisibles),
-            OrdenColumnas = ordenColumnas,
-            ColumnasEditables = columnasEditables is null ? null : JsonSerializer.Serialize(columnasEditables),
+            ColumnasVisiblesAdmin = SerializaColumnas(columnasVisiblesAdmin),
+            ColumnasEditables = SerializaColumnas(columnasEditables),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -1383,7 +1471,9 @@ public sealed class UsuariosController : ControllerBase
             PuedeAprobarImportaciones = permiso.PuedeAprobarImportaciones,
             PuedeConciliar = permiso.PuedeConciliar,
             PuedeCerrarConciliacion = permiso.PuedeCerrarConciliacion,
-            ColumnasVisibles = ParseJsonArray(preferencia?.ColumnasVisibles),
+            // S-2: el DTO que edita el modal del admin lleva la REGLA del admin
+            // (ColumnasVisiblesAdmin). El nombre del campo JSON no cambia.
+            ColumnasVisibles = ParseJsonArray(preferencia?.ColumnasVisiblesAdmin),
             ColumnasEditables = ParseJsonArray(preferencia?.ColumnasEditables)
         };
     }
@@ -1403,7 +1493,12 @@ public sealed class UsuariosController : ControllerBase
             ("fecha_ultima_login", true) => query.OrderByDescending(u => u.FechaUltimaLogin),
             ("fecha_ultima_login", false) => query.OrderBy(u => u.FechaUltimaLogin),
             ("fecha_creacion", true) => query.OrderByDescending(u => u.FechaCreacion),
-            _ => query.OrderBy(u => u.FechaCreacion)
+            ("fecha_creacion", false) => query.OrderBy(u => u.FechaCreacion),
+            // Seccion 9 del informe: con un sortBy desconocido el caso por
+            // defecto caia siempre en ascendente, ignorando sortDir=desc.
+            _ => desc
+                ? query.OrderByDescending(u => u.FechaCreacion)
+                : query.OrderBy(u => u.FechaCreacion)
         };
     }
 

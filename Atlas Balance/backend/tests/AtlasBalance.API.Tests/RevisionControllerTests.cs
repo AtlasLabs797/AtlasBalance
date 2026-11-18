@@ -124,6 +124,14 @@ public sealed class RevisionControllerTests
             => Task.FromResult(_scope.HasGlobalAccess);
         public Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
             => Task.FromResult(_scope.HasGlobalAccess);
+
+        // S-9/M-3: miembros anadidos a IUserAccessService.
+        public Task<UserAccessScope> GetScopeAsync(Guid usuarioId, string rol, CancellationToken cancellationToken)
+            => Task.FromResult(_scope);
+        public Task<bool> CanCuentaAsync(UserAccessAction accion, Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+            => Task.FromResult(_scope.HasGlobalAccess);
+        public Task<IReadOnlySet<Guid>> GetCuentasAccesiblesAsync(UserAccessAction accion, Guid usuarioId, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid>());
     }
 
     private sealed class StubRevisionService : IRevisionService

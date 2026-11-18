@@ -63,7 +63,7 @@ public class ImportacionR7Tests
         var spy = new SaveChangesSpy();
         await using var db = BuildDbContext(spy);
         var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var lote = await service.CrearLoteAsync(
             userId,
@@ -99,7 +99,7 @@ public class ImportacionR7Tests
         var spy = new SaveChangesSpy();
         await using var db = BuildDbContext(spy);
         var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var lote = await service.CrearLoteAsync(
             userId,
@@ -153,7 +153,7 @@ public class ImportacionR7Tests
         var spy = new SaveChangesSpy();
         await using var db = BuildDbContext(spy);
         var (userId, cuentaId) = await SeedCuentaAsync(db);
-        var service = new ImportacionService(db, TestAuditService.Create(db));
+        var service = new ImportacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers["Idempotency-Key"] = "r7-clave-idempotencia";

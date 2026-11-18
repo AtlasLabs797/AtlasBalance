@@ -316,6 +316,11 @@ public class PreferenciaUsuarioCuenta
     public string? ColumnasVisibles { get; set; }
     public string? OrdenColumnas { get; set; }
     public string? ColumnasEditables { get; set; }
+    // S-2: whitelist que fija el ADMIN. Es una restriccion, no una preferencia:
+    // el usuario solo puede estrechar su propia vista, nunca ampliarla.
+    // Se separa de ColumnasVisibles (que es la preferencia del usuario) para
+    // que el PUT del usuario no pueda pisar la regla del administrador.
+    public string? ColumnasVisiblesAdmin { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

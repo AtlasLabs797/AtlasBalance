@@ -32,6 +32,8 @@ public sealed class RevisionController : ControllerBase
         [FromQuery] Guid? paisId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] string sortBy = "fecha",
+        [FromQuery] string sortDir = "desc",
         CancellationToken cancellationToken = default)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
@@ -40,9 +42,21 @@ public sealed class RevisionController : ControllerBase
             return Unauthorized(new { error = "Usuario no autenticado" });
         }
 
+        // R-3 (seccion 9): el listado admite `sortBy`/`sortDir`. La ordenacion
+        // la resuelve RevisionService en SQL (RevisionQueryRequest.SortBy /
+        // SortDir), de modo que el controller no trae todas las filas para
+        // ordenarlas en memoria.
         return Ok(await _revisionService.GetComisionesAsync(
             scope,
-            new RevisionQueryRequest { Estado = estado, PaisId = paisId, Page = page, PageSize = pageSize },
+            new RevisionQueryRequest
+            {
+                Estado = estado,
+                PaisId = paisId,
+                Page = page,
+                PageSize = pageSize,
+                SortBy = sortBy,
+                SortDir = sortDir
+            },
             cancellationToken));
     }
 
@@ -52,6 +66,8 @@ public sealed class RevisionController : ControllerBase
         [FromQuery] Guid? paisId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] string sortBy = "fecha",
+        [FromQuery] string sortDir = "desc",
         CancellationToken cancellationToken = default)
     {
         var scope = await _userAccessService.GetScopeAsync(User, cancellationToken);
@@ -62,7 +78,15 @@ public sealed class RevisionController : ControllerBase
 
         return Ok(await _revisionService.GetSegurosAsync(
             scope,
-            new RevisionQueryRequest { Estado = estado, PaisId = paisId, Page = page, PageSize = pageSize },
+            new RevisionQueryRequest
+            {
+                Estado = estado,
+                PaisId = paisId,
+                Page = page,
+                PageSize = pageSize,
+                SortBy = sortBy,
+                SortDir = sortDir
+            },
             cancellationToken));
     }
 

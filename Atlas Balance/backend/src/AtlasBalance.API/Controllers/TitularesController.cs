@@ -278,15 +278,24 @@ public sealed class TitularesController : ControllerBase
 
     private static IQueryable<Titular> ApplySorting(IQueryable<Titular> query, string sortBy, bool desc)
     {
-        return (sortBy.ToLowerInvariant(), desc) switch
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
         {
             ("tipo", true) => query.OrderByDescending(t => t.Tipo),
             ("tipo", false) => query.OrderBy(t => t.Tipo),
             ("fecha_creacion", true) => query.OrderByDescending(t => t.FechaCreacion),
             ("fecha_creacion", false) => query.OrderBy(t => t.FechaCreacion),
             ("nombre", true) => query.OrderByDescending(t => t.Nombre),
-            _ => query.OrderBy(t => t.Nombre)
+            ("nombre", false) => query.OrderBy(t => t.Nombre),
+            // R-3 (seccion 9): el caso por defecto tambien respeta `sortDir`.
+            // Antes ignoraba `desc`, asi que un `sortBy` desconocido salia
+            // siempre por nombre ascendente.
+            _ => desc
+                ? query.OrderByDescending(t => t.Nombre)
+                : query.OrderBy(t => t.Nombre)
         };
+
+        // B-15: desempate estable por clave primaria, despues del campo pedido.
+        return ((IOrderedQueryable<Titular>)ordered).ThenBy(t => t.Id);
     }
 
     private Guid? GetCurrentUserId()

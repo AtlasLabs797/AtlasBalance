@@ -627,7 +627,7 @@ public sealed class CuentasController : ControllerBase
 
     private static IQueryable<Cuenta> ApplySorting(IQueryable<Cuenta> query, string sortBy, bool desc)
     {
-        return (sortBy.ToLowerInvariant(), desc) switch
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
         {
             ("nombre", true) => query.OrderByDescending(c => c.Nombre),
             ("nombre", false) => query.OrderBy(c => c.Nombre),
@@ -637,8 +637,16 @@ public sealed class CuentasController : ControllerBase
             ("fecha_creacion", false) => query.OrderBy(c => c.FechaCreacion),
             ("activa", true) => query.OrderByDescending(c => c.Activa),
             ("activa", false) => query.OrderBy(c => c.Activa),
-            _ => query.OrderByDescending(c => c.FechaCreacion)
+            // R-3 (seccion 9): el caso por defecto tambien respeta `sortDir`.
+            // Antes ignoraba `desc`, asi que un `sortBy` desconocido salia
+            // siempre en descendente por fecha de creacion.
+            _ => desc
+                ? query.OrderByDescending(c => c.FechaCreacion)
+                : query.OrderBy(c => c.FechaCreacion)
         };
+
+        // B-15: desempate estable por clave primaria, despues del campo pedido.
+        return ((IOrderedQueryable<Cuenta>)ordered).ThenBy(c => c.Id);
     }
 
     private Guid? GetCurrentUserId()

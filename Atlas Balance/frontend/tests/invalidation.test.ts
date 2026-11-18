@@ -82,6 +82,23 @@ test('crear un lote de importacion invalida el catalogo', async () => {
   clearQueryClient();
 });
 
+test('revertir un lote de importacion invalida extractos y papelera', async () => {
+  // LOTE 6 (S-2): los extractos borrados por una reversion caen en la
+  // papelera, asi que su cache tambien queda obsoleta.
+  const invalidar = (mutationInvalidation as Record<string, unknown>).importarRevertir;
+  assert.equal(typeof invalidar, 'function', 'mutationInvalidation debe exponer importarRevertir');
+
+  const qc = createQueryClient();
+  qc.setQueryData(['extractos', 'list', { page: 1 }], { rows: [] });
+  qc.setQueryData(['papelera', 'extractos', { page: 1 }], { rows: [] });
+
+  await (invalidar as Invalidator)(qc);
+
+  assert.equal(qc.getQueryState(['extractos', 'list', { page: 1 }])?.isInvalidated, true);
+  assert.equal(qc.getQueryState(['papelera', 'extractos', { page: 1 }])?.isInvalidated, true);
+  clearQueryClient();
+});
+
 test('mutationInvalidation no expone claves con el nombre de un prefijo interno', () => {
   // 'catalogo' es un prefijo de query, no una mutacion: usarlo como clave
   // rompia la invalidacion (A-7).

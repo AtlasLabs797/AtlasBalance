@@ -53,15 +53,15 @@ Rutas abreviadas: `API/` = `Atlas Balance/backend/src/AtlasBalance.API/`, `FE/` 
 
 | ID | Sev. | Qué pasa | Dónde | Estado |
 |---|---|---|---|---|
-| S-1 | Media | El dashboard da saldos a quien solo tiene permisos de escritura (`PuedeImportar`, `PuedeAgregarLineas`) sin `PuedeVerCuentas`; extractos y cuentas sí lo exigen. Para GERENTE se ignora `PuedeVerDashboard`. | `API/Services/DashboardService.cs:887-917` frente a `API/Services/UserAccessService.cs:200-206` | V |
-| S-2 | Media | Las columnas que el administrador oculta a un usuario no se filtran en el servidor (`GET /api/extractos` devuelve todas) y el propio usuario puede sobrescribir esa preferencia con `PUT /api/extractos/columnas-visibles`. | `API/Controllers/ExtractosController.cs:766-795`; `API/Controllers/UsuariosController.cs:1228-1244` | V |
-| S-3 | Media | Revertir un lote es un borrado masivo que no exige `PuedeEliminarLineas`: basta `PuedeImportar`. | `API/Services/ImportacionService.cs:643`, `:1135` | V |
+| S-1 | Media | El dashboard da saldos a quien solo tiene permisos de escritura (`PuedeImportar`, `PuedeAgregarLineas`) sin `PuedeVerCuentas`; extractos y cuentas sí lo exigen. Para GERENTE se ignora `PuedeVerDashboard`. | `API/Services/DashboardService.cs:887-917` frente a `API/Services/UserAccessService.cs:200-206` | V - **CORREGIDO** (LOTE 6, 2026-11-18): el dashboard exige `PuedeVerDashboard` **y** `PuedeVerCuentas` en la misma fila para todo rol no ADMIN (la excepción de GERENTE, que ignoraba `PuedeVerDashboard`, desaparece) y se elimina el helper `GrantsAccountDataAccess`, que concedía lectura de saldos con cualquier flag de escritura. |
+| S-2 | Media | Las columnas que el administrador oculta a un usuario no se filtran en el servidor (`GET /api/extractos` devuelve todas) y el propio usuario puede sobrescribir esa preferencia con `PUT /api/extractos/columnas-visibles`. | `API/Controllers/ExtractosController.cs:766-795`; `API/Controllers/UsuariosController.cs:1228-1244` | V - **CORREGIDO** (LOTE 6, 2026-11-18): la regla del administrador y la preferencia del usuario se separan (columna nueva `columnas_visibles_admin`); el servidor filtra las columnas en `GET /api/extractos` y el `PUT` del usuario guarda la **intersección** con la regla del admin, de modo que ya no puede ampliarla. Nota: las columnas base no-nullable de la fila (`fecha`, `monto`, `saldo`...) no se pueden ocultar sin cambiar el contrato; ver la seccion 19. |
+| S-3 | Media | Revertir un lote es un borrado masivo que no exige `PuedeEliminarLineas`: basta `PuedeImportar`. | `API/Services/ImportacionService.cs:643`, `:1135` | V - **CORREGIDO** (LOTE 6, 2026-11-18): revertir un lote exige `PuedeEliminarLineas` (borrado masivo); antes bastaba `PuedeAprobarImportaciones` o `PuedeImportar`. 404 (lote inexistente) ≠ 403 (sin permiso) y el bypass de ADMIN se mantiene. |
 | S-4 | Media | `GET /api/ia/config` devuelve presupuesto y gasto global de IA a cualquier usuario autenticado; `/modelos` sí comprueba el permiso. | `API/Controllers/IaController.cs:35-45`; `API/Services/AtlasAiService.cs:95-106` | V - **CORREGIDO** (LOTE 4, 2026-11-16) |
-| S-5 | Media | `UpdateUsuarioRequest` tiene valores por defecto destructivos: un `PUT` con cuerpo parcial desactiva al usuario, lo baja a EMPLEADO y le borra permisos y emails. | `API/DTOs/UsuariosDtos.cs:104-115` | V |
+| S-5 | Media | `UpdateUsuarioRequest` tiene valores por defecto destructivos: un `PUT` con cuerpo parcial desactiva al usuario, lo baja a EMPLEADO y le borra permisos y emails. | `API/DTOs/UsuariosDtos.cs:104-115` | V - **CORREGIDO** (LOTE 6, 2026-11-18): el PUT pasa a ser **estricto**. Los campos que deben distinguir "enviado" de "no enviado" son anulables en el DTO y el controller responde **400 con la lista de los campos ausentes**; nada se aplica a medias. `CreateUsuarioRequest` no se toca (sus valores por defecto son sensatos). |
 | S-6 | Media | Las respuestas locales del planificador de IA no se auditan ni cuentan contra los límites: un usuario puede extraer saldos por el chat sin rastro. | `API/Services/AtlasAiService.cs:1014-1070` | S - **CORREGIDO** (LOTE 4, 2026-11-16) |
-| S-7 | Baja | La exportación CSV de auditoría (hasta 50.000 filas) no deja rastro de quién la extrajo. | `API/Controllers/AuditoriaController.cs:201-282` | ? |
-| S-8 | Baja | Respuestas 404 antes que 403 en varios endpoints (oráculo de existencia; ids GUID). | `ExtractosController`, `CuentasController.cs:535-544` | S |
-| S-9 | Info | Tres métodos de permisos sin uso en `UserAccessService` cuyas reglas difieren de las que aplican de verdad Conciliación e Importación. Un cambio de política toca tres sitios. | `API/Services/UserAccessService.cs:311-336` | V |
+| S-7 | Baja | La exportación CSV de auditoría (hasta 50.000 filas) no deja rastro de quién la extrajo. | `API/Controllers/AuditoriaController.cs:201-282` | ? - **CONFIRMADO Y CORREGIDO** (LOTE 6, 2026-11-18): `ExportarCsv` no dejaba ninguna fila de auditoría (ni el interceptor de entidades ni `SecurityAuditMiddleware` cubren una lectura). Ahora escribe `AUDITORIA_EXPORTACION_CSV` con el actor, el número de filas y los filtros, y la acción queda también en el registro de seguridad. |
+| S-8 | Baja | Respuestas 404 antes que 403 en varios endpoints (oráculo de existencia; ids GUID). | `ExtractosController`, `CuentasController.cs:535-544` | S - **PARCIAL** (LOTE 6, 2026-11-18): en `CuentasController.ActualizarNotas` **no hay defecto**: la cuenta existente sin permiso ya respondía 403 y el 404 queda para "no existe" (confirmado con tests, no solo leyendo). Se revisa `ExtractosController` en el mismo lote. Queda abierto el oráculo de existencia: con la regla 403/404 pedida, un actor sin permiso sigue distinguiendo "existe" de "no existe". |
+| S-9 | Info | Tres métodos de permisos sin uso en `UserAccessService` cuyas reglas difieren de las que aplican de verdad Conciliación e Importación. Un cambio de política toca tres sitios. | `API/Services/UserAccessService.cs:311-336` | V - **CORREGIDO** (LOTE 6, 2026-11-18): los tres métodos han dejado de estar muertos y son la **fuente única** de las reglas de permiso por acción (`UserAccessAction` + un único mapa de predicados en `UserAccessService`). `ConciliacionService` e `ImportacionService` los consultan en vez de reimplementarlos, y `CanConciliarCuentaAsync`/`CanCerrarConciliacionAsync` pasan a ser estrictos, que es la regla que de verdad se aplicaba. Sin cambio observable de permisos. |
 
 ### 4.2 Autenticación y sesión
 
@@ -182,7 +182,7 @@ Sin validación visual: todo sale de leer CSS y TSX. Según el subagente de dise
 | D-10 | Baja | Encabezados que saltan de `h1` a `h3`; 23 `<th>` sin `scope`; 24 tablas y 2 `<caption>`. | `FE/pages/ImportacionPage.tsx:808,1011,1042` | S |
 | D-11 | Baja | Los importes positivos se distinguen solo por el color. | `SignedAmount` | S |
 | D-12 | Baja | Tokens con nombre engañoso: `--text-16` vale 17 px, `--weight-medium` y `--weight-semibold` valen 600. | `FE/styles/tokens` | S |
-| D-13 | Baja | Acciones de conciliación y revisión visibles para quien no tiene permiso: el backend responde 403 con toast. | `FE/stores/permisosStore.ts:111` | S |
+| D-13 | Baja | Acciones de conciliación y revisión visibles para quien no tiene permiso: el backend responde 403 con toast. | `FE/stores/permisosStore.ts:111` | S - **CORREGIDO** (LOTE 6, 2026-11-18): `canConciliarCuenta` deja de estar sin consumidores y las pantallas de Conciliación y Revisión ocultan las acciones que el backend deniega. Se añaden `canCerrarConciliacionCuenta` (estricto) y `canRevisarCuenta`, con los predicados exactos del backend. |
 
 Mejoras de diseño de mayor efecto, en orden:
 
@@ -198,9 +198,9 @@ Mejoras de diseño de mayor efecto, en orden:
 |---|---|---|---|
 | M-1 | `TendenciasAnomaliasService` (237 líneas): solo lo usan sus tests; no está registrado en DI. | `API/Services/IaPlanner/TendenciasAnomaliasService.cs` | V |
 | M-2 | `AppendPeriodSummary_ObsoleteKeptForBuild` y una sobrecarga de `AppendPeriodSummaryAsync` sin llamadores. | `API/Services/AtlasAiService.cs:1957-1992` | V (el primero) / S |
-| M-3 | `CanApproveImportacionAsync`, `CanConciliarCuentaAsync`, `CanCerrarConciliacionAsync` sin uso. | `API/Services/UserAccessService.cs:311-336` | V |
+| M-3 | `CanApproveImportacionAsync`, `CanConciliarCuentaAsync`, `CanCerrarConciliacionAsync` sin uso. | `API/Services/UserAccessService.cs:311-336` | V - **CORREGIDO** (LOTE 6, 2026-11-18): los tres métodos se usan; las reglas viven en un único mapa (`UserAccessAction`) y tanto Conciliación como Importación las consultan. |
 | M-4 | `AtlasAiService.cs` (3.744 líneas) mezcla orquestación, cliente HTTP, límites, formato, contexto y parseo. El ranking existe tres veces con semánticas distintas. Corte propuesto: cliente de proveedor, gobernanza, constructor de contexto, posprocesado y formateador; el servicio queda como orquestador. Arregla de paso A-5. | `API/Services/AtlasAiService.cs` | S |
-| M-5 | `ExtractosController` reimplementa la lógica de alcance de `UserAccessService` (ya conocido). | `API/Controllers/ExtractosController.cs:1045-1118` | S |
+| M-5 | `ExtractosController` reimplementa la lógica de alcance de `UserAccessService` (ya conocido). | `API/Controllers/ExtractosController.cs:1045-1118` | S - **CORREGIDO** (LOTE 6, 2026-11-18): la condición del informe se cumple (los tests de autorización existentes cubren admin, acceso global, permiso solo-dashboard, país, titular sin acceso, borrados, permisos de edición y de desglose), asi que el controller inyecta `IUserAccessService` y deja de reimplementar el alcance. |
 | M-6 | Unas 35 clases CSS y 239 tokens sin uso (ver sección 7). `canConciliarCuenta` sin consumidores. | `FE/styles`, `FE/stores/permisosStore.ts:111` | V (muestra) |
 | M-7 | Reglas del proyecto que no se cumplen: React Hook Form solo en 2 formularios (el resto usa `useState`); varios archivos con más de un componente; 14 `eslint-disable exhaustive-deps`; 105 errores de las reglas nuevas de react-hooks desactivados. | `FE/pages`, `FE/eslint.config.js` | S |
 | M-8 | Duplicados: `parseDecimalInput`, `InsertRowDraft` y `getTodayInputValue` en dos archivos cada uno. Páginas de más de 1.200 líneas: Configuración, CuentaDetail, Importación. | `FE/pages` | S |
@@ -214,8 +214,8 @@ Comprobado con `grep` de la ruta en `FE/` y en `scripts/`. Antes de retirarlos h
 
 | Endpoint | Observación | Estado |
 |---|---|---|
-| `GET` / `DELETE /api/auth/mfa/trusted-devices` | Sin interfaz: el usuario no puede ver ni revocar sus dispositivos MFA de confianza. Aquí falta la pantalla, no sobra el endpoint. | V |
-| `POST /api/importacion/lotes/{id}/revertir` | Sin interfaz. Reduce la exposición práctica de S-3, B-3 y B-4 a quien llame a la API directamente, pero la función no está disponible para el usuario. | V |
+| `GET` / `DELETE /api/auth/mfa/trusted-devices` | Sin interfaz: el usuario no puede ver ni revocar sus dispositivos MFA de confianza. Aquí falta la pantalla, no sobra el endpoint. | V - **CORREGIDO** (LOTE 6, 2026-11-18): pantalla nueva de dispositivos MFA de confianza (`/seguridad/dispositivos-mfa`), con listado y revocacion. |
+| `POST /api/importacion/lotes/{id}/revertir` | Sin interfaz. Reduce la exposición práctica de S-3, B-3 y B-4 a quien llame a la API directamente, pero la función no está disponible para el usuario. | V - **CORREGIDO** (LOTE 6, 2026-11-18): boton "Revertir" en el historial de lotes de la pantalla de Importacion, con confirmacion y solo para quien puede eliminar lineas. |
 | `POST /api/importacion/validar`, `POST /api/importacion/confirmar`, `GET /api/importacion/lotes/{id}/filas` | Flujo anterior a los lotes; el frontend usa `lotes` y `lotes/{id}/confirmar`. | V |
 | `GET /api/cuentas/{id}/resumen` | El frontend usa `/extractos/cuentas/{id}/resumen`. | V |
 | `GET`/`PUT /api/usuarios/{id}/permisos`, `/permisos/cuenta/{cuentaId}`, `/emails` | El frontend solo llama a `/usuarios/catalogos-permisos` y al `PUT` del usuario completo. | V |
@@ -844,3 +844,120 @@ Pendientes que quedan abiertos y **no** se han tocado:
   el mismo recorrido encuentra la raiz y esos tests pasan. Es una limitacion
   del localizador de fuentes, no una regresion del LOTE 7, y no se ha tocado
   porque es infraestructura compartida de tests.
+
+## 19. LOTE 6 - Correccion aplicada (2026-11-18)
+
+Alcance: los IDs del LOTE 6 (S-1, S-2, S-3, S-5, S-7, S-8, S-9, M-3, M-5,
+R-3 y D-13) mas las dos pantallas que faltaban de la seccion 8.1. Ningun otro ID
+tocado. Rama `V-03.02`. Sin commit ni push y sin cambio de version.
+
+**Comprobacion previa del LOTE 1.** El encargo da por hecho que A-1 (los cuatro
+permisos que el formulario de usuario perdia) ya esta aplicado. **Comprobado de
+punta a punta**: los cuatro flags estan en el formulario (`UsuarioModal.tsx`),
+en el payload (`utils/permisosFormUtils.ts`), en el DTO
+(`SavePermisoUsuarioRequest`) y en la persistencia (`UsuariosController.cs`).
+No hizo falta tocar nada de A-1.
+
+**Decisiones de producto.** El cuestionario se respondio por **auto-seleccion de
+tiempo** (60 s por pregunta), de modo que **ninguna esta confirmada por el
+usuario** y todas siguen siendo ajustables:
+
+- **S-1:** quien solo tiene permisos de escritura **no** ve saldos en el
+  dashboard: hacen falta "Ver cuentas" y "Ver dashboard".
+- **S-2:** las columnas que fija el administrador son una **restriccion**: el
+  servidor filtra y el usuario solo puede estrechar su vista.
+- **S-3:** **revertir un lote exige `puede_eliminar_lineas`**.
+- **S-5:** el PUT de usuario pasa a ser **estricto**: cuerpo completo o 400 con
+  la lista de campos que faltan (no se anade un PATCH).
+- **8.1 (endpoints sin llamada):** se busco cliente externo en todo el
+  repositorio (frontend, scripts, OpenClaw y documentacion) y **no hay
+  ninguno**, pero **no se retiran**: la respuesta fue automatica y borrarlos es
+  irreversible.
+
+**Dos premisas del informe corregidas al releer el codigo.** (a) En S-2 **no
+existe el concepto de "columnas ocultas"**: hay dos *whitelists*
+(`columnas_visibles` y `columnas_editables`) y el administrador y el usuario
+escribian **en la misma columna de la misma fila** de
+`PREFERENCIAS_USUARIO_CUENTA`. (b) En S-8, la parte de `CuentasController`
+**no tiene defecto**: `ActualizarNotas` ya respondia 403 cuando la cuenta
+existe y falta el permiso; el defecto real estaba en `ExtractosController` (7
+endpoints).
+
+Metodo: el orquestador confirmo las premisas leyendo el codigo citado,
+aplico el cambio de esquema (columna nueva + migracion) y repartio el trabajo
+en siete subagentes con ficheros disjuntos. Cada subagente escribio el test
+que falla antes del arreglo, el arreglo minimo y el test en verde. El
+orquestador corrigio por su cuenta cuatro cosas que quedaron fuera del alcance
+de los subagentes: la columna y su migracion, el espejo en el registro de
+seguridad de la exportacion de auditoria, el `sortDir=desc` de
+`/api/usuarios`, y la ordenacion de la revision (que el subagente de R-3
+resolvia trayendo **todas** las filas al controller para ordenarlas en
+memoria: una regresion de rendimiento que se ha trasladado al servicio, donde
+se resuelve en SQL).
+
+| ID | Estado | Que se cambio | Evidencia |
+|---|---|---|---|
+| S-1 | **Corregido** | El dashboard exige `PuedeVerDashboard` **y** `PuedeVerCuentas` en la misma fila para todo rol no ADMIN (la excepcion de GERENTE desaparece) y se elimina `GrantsAccountDataAccess`, que concedia lectura con cualquier flag de escritura. ADMIN conserva el bypass. | `DashboardServicePermisosLecturaTests` (nuevo, 6 casos): rojo con 2 fallos -> 6/6; las tres clases de dashboard, 20/20. Dos tests existentes ajustados porque codificaban el defecto. |
+| S-2 | **Corregido** | Columna nueva `columnas_visibles_admin` en `PREFERENCIAS_USUARIO_CUENTA` (migracion `20261118100000_AddColumnasVisiblesAdminPreferencias`): la regla del administrador deja de compartir celda con la preferencia del usuario. El conjunto efectivo es `admin ∩ usuario`; lo aplica el filtro en servidor de `GET /api/extractos` y el `PUT` del usuario guarda la interseccion. `GET /api/extractos/columnas-visibles` devuelve el conjunto efectivo y `columnas_restringidas`. El guardado de permisos del admin ya no borra la preferencia del usuario. | `ExtractosColumnasServidorTests` (nuevo, 9 casos): rojo con 7 fallos -> 9/9; `*Extractos*` 46/46; `UsuariosPermisosYCamposObligatoriosTests` (nuevo, 12 casos) -> 12/12. |
+| S-3 | **Corregido** | `RevertirLoteAsync` usa la accion `EliminarLineas` (`puede_eliminar_lineas`); antes bastaba `puede_importar` o `puede_aprobar_importaciones`. 404 (lote inexistente) != 403 (sin permiso), bypass de ADMIN intacto. | `PermisosLote6Tests` (nuevo, 12 casos): rojo con 3 fallos -> 12/12. Tres seeds de test que reponen lotes dan ahora `puede_eliminar_lineas`. |
+| S-5 | **Corregido** | `UpdateUsuarioRequest` deja de tener valores por defecto destructivos: los campos que deben distinguir "enviado" de "no enviado" son anulables en el DTO y el controller responde **400 con la lista de los campos ausentes**. `CreateUsuarioRequest` no se toca. | `UsuariosPermisosYCamposObligatoriosTests` (nuevo, 12 casos): 11 de 12 en rojo antes -> en verde; `*Usuarios*` 37/37. Tres peticiones de test existentes ajustadas. |
+| S-7 | **Confirmado y corregido** | `ExportarCsv` no dejaba ninguna fila de auditoria (ni el interceptor de entidades ni `SecurityAuditMiddleware` cubren una lectura). Ahora escribe `AUDITORIA_EXPORTACION_CSV` con el actor, el numero de filas y los filtros, despues de materializar las filas; la accion queda tambien en el registro de seguridad. | `AuditoriaControllerExportacionCsvAuditoriaTests` (nuevo): rojo con "Sequence contains no elements" -> en verde; los tests previos de `AuditoriaController` siguen verdes. |
+| S-8 | **Parcial** | En `CuentasController` **no habia defecto** (confirmado con tests, sin tocar el codigo de produccion). En `ExtractosController` si: 7 endpoints (`Actualizar`, `GuardarDesglose`, `ToggleCheck`, `ToggleFlag`, `Eliminar`, `Restaurar`, `GetAuditCelda`) devolvian 404 donde el recurso existe y faltaba el permiso. | `ExtractosControllerTests` 28/28; un test existente cambia de `NotFound` a `Forbid` porque codificaba el defecto. Tres tests nuevos fijan el comportamiento correcto de `ActualizarNotas`. |
+| S-9 / M-3 | **Corregido** | Las reglas de permiso por accion tienen **una sola fuente**: `UserAccessAction` + un unico mapa de predicados en `UserAccessService`, con `CanCuentaAsync` (chequeo por cuenta) y `GetCuentasAccesiblesAsync` (conjunto de cuentas en una query, sin N+1). `ConciliacionService` e `ImportacionService` dejan de reimplementarlas. `CanConciliarCuentaAsync` y `CanCerrarConciliacionAsync` pasan a ser estrictos (la regla que de verdad se aplicaba). Sin cambio observable salvo S-3. | `PermisosLote6Tests` (12 casos, dos de delegacion con espia): rojo con 3 fallos -> 12/12; `*Conciliacion*` 13/13, `*Importacion*` 79/79, `*UserAccess*` 19/19. |
+| M-5 | **Corregido** | La condicion del encargo se cumple (los tests de autorizacion existentes cubren admin, acceso global, permiso solo-dashboard, pais, titular sin acceso, borrados, permisos de edicion y de desglose): `ExtractosController` inyecta `IUserAccessService` y deja de reimplementar el alcance. | `ExtractosControllerTests` 28/28 y `*Extractos*` 46/46. |
+| R-3 / seccion 9 | **Corregido** | `GET /api/importacion/lotes/{id}/filas`, `GET /api/conciliacion` y `GET /api/conciliacion/movimientos-esperados` devuelven `{ data, total, page, page_size, total_pages }` y admiten `?sortBy`/`?sortDir` (los dos listados de conciliacion ya no se recortan a 500 filas). Se anade ordenacion a paises, auditoria, lotes, comisiones y seguros, y el caso por defecto de cuentas, titulares, formatos y **usuarios** deja de ignorar `sortDir`. | `ContratoApiPaginacionTests` (nuevo, 18 casos): rojo con 5 fallos -> en verde; `*Conciliacion*` + `*Importacion*` 92/92 y 216/216 en las areas tocadas. |
+| D-13 | **Corregido** | `canConciliarCuenta` deja de estar sin consumidores; el store replica los predicados exactos del backend y anade `canCerrarConciliacionCuenta` y `canRevisarCuenta`. Conciliacion y Revision ocultan las acciones que el backend deniega. En Revision la puerta de acciones pasa de `canEditCuenta` a `canRevisarCuenta` (antes se ocultaban a quien solo tiene `puede_revisar_lineas`, que el backend si le deja revisar). | `permisosConciliacionRevision.test.ts` (nuevo, 11 casos): rojo con 6 fallos -> 11/11; suite completa del frontend 265/265. |
+| 8.1 (pantallas) | **Corregido** | Pantalla de **dispositivos MFA de confianza** (`/seguridad/dispositivos-mfa`, entrada de menu "Dispositivos MFA") para ver y revocar los equipos con MFA recordado, y boton **Revertir** en el historial de lotes de la pantalla de Importacion, con confirmacion y solo para quien puede eliminar lineas. | `dispositivosMfaYRevertirLote.test.ts` (nuevo, 17 casos) en verde; capturas Playwright de las dos pantallas y de los dos dialogos de confirmacion (54 PNG en `.artifacts/l6-visual`). |
+
+**Lo que queda abierto de este lote (y no se ha tocado):**
+
+- **Las columnas base no-nullable de la fila** (`Fecha`, `Monto`, `Saldo`,
+  `FilaNumero`, `CuentaNombre`, `TitularNombre`, `Divisa`, `Checked`, `Flagged`,
+  `Desglose*`) **no se pueden ocultar** con el contrato actual: las que son
+  nullable (`Concepto`, `Comentarios`, `BancoNombre`) llegan a `null` y las
+  columnas extra dinamicas se filtran enteras, pero ocultar las demas exigiria
+  un contrato de fila nuevo. Con una whitelist del administrador
+  `["fecha","monto"]` el usuario sigue viendo saldo, cuenta, titular, divisa,
+  marcado y desglose.
+- **El oraculo de existencia sigue abierto** con la regla 403/404 que pidio el
+  encargo: un actor sin permiso sigue distinguiendo "existe" de "no existe".
+  `Obtener` y `Resumen` de `CuentasController` hacen lo contrario (403
+  uniforme): unificar ambos estilos es una decision de politica.
+- **No hay migracion de datos** que rellene `puede_ver_dashboard` en los
+  permisos ya dados de alta: un gerente con `puede_ver_cuentas` y sin
+  `puede_ver_dashboard` pierde el panel (403). Lo decide el administrador
+  revisando la matriz de permisos.
+- **`GetCuentasAccesiblesAsync`** no se ha probado contra PostgreSQL real (no
+  hay test de PostgreSQL de `ConciliacionService`); la forma de la SQL es la
+  que ya tenia `ResolveAccessibleCuentas`.
+- **El alcance de extractos pasa a salir de la cache** de `UserAccessService`
+  (TTL 45 s en produccion): un cambio de permisos tarda hasta ese TTL en
+  reflejarse en los extractos.
+- **Para ADMIN**, `CanAccessCuentaAsync` no comprueba que la cuenta exista, de
+  modo que el administrador puede auditar y ver el desglose de extractos de
+  cuentas en la papelera.
+- **`ImportacionService.GetContextoAsync`** mantiene su propia query de
+  "cuentas importables", que es la unica duplicacion que queda de las reglas
+  de alcance.
+- **El desplegable de cuentas de la pantalla de Conciliacion** se alimenta de
+  `/importacion/contexto`, que exige `puede_importar`: quien solo puede
+  conciliar lo ve vacio (desajuste preexistente del backend, fuera del lote).
+- **`/importacion/contexto` no devuelve `titular_id`**, asi que el boton de
+  revertir y el de conciliar resuelven el alcance con la cuenta y el pais
+  solamente; una fila de permisos acotada a un titular (y no a la cuenta) no
+  habilita la accion aunque el backend si lo permitiria.
+- **Los endpoints sin llamada de la seccion 8.1 no se han retirado** (no hay
+  cliente externo en el repositorio, pero la decision no esta confirmada).
+
+**Verificacion global del lote:** backend `AtlasBalance.API.Tests` **1292/1292**
+(suite completa, incluida la de PostgreSQL real con Testcontainers, 4 m 51 s) y
+`AtlasBalance.Caching.Tests` **15/15**. Frontend: `npx tsc --noEmit` sin
+errores, `eslint src tests --max-warnings 0` sin errores, `npm run lint`
+(canonico) en verde, **265/265** pruebas unitarias (los 40 ficheros de la lista
+canonica de `package.json`) y build de Vite correcto (4,12 s). Capturas
+Playwright de las pantallas nuevas: **54 PNG** en `.artifacts/l6-visual` (4
+tests pasados). Los comandos canonicos `npm run test:unit` y `npm run build`
+siguen rotos por los permisos heredados de `.test-dist/` y `dist/` (otra cuenta
+de sandbox, M-10): las mismas comprobaciones pasaron con carpetas de salida
+nuevas. Detalle de comandos y numeros en `DOCUMENTACION_CAMBIOS.md` y
+`LOG_ERRORES_INCIDENCIAS.md`.

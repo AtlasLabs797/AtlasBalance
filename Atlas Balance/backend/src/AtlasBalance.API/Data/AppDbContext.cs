@@ -384,6 +384,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ColumnasVisibles).HasColumnType("jsonb");
             entity.Property(e => e.OrdenColumnas).HasColumnType("jsonb");
             entity.Property(e => e.ColumnasEditables).HasColumnType("jsonb");
+            entity.Property(e => e.ColumnasVisiblesAdmin).HasColumnType("jsonb");
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);

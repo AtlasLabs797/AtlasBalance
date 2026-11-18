@@ -53,7 +53,7 @@ public class ConciliacionServiceToleranciaTests
         await db.SaveChangesAsync();
 
         var audit = TestAuditService.Create(db);
-        var service = new ConciliacionService(db, audit);
+        var service = new ConciliacionService(db, audit, TestUserAccess.Create(db));
         await service.CrearMovimientoEsperadoAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -102,7 +102,7 @@ public class ConciliacionServiceToleranciaTests
         await db.SaveChangesAsync();
 
         var audit = TestAuditService.Create(db);
-        var service = new ConciliacionService(db, audit);
+        var service = new ConciliacionService(db, audit, TestUserAccess.Create(db));
         foreach (var movimiento in new[]
         {
             new MovimientoEsperadoCrearRequest { CuentaId = cuenta.Id, FechaEsperada = new DateOnly(2026, 7, 1), Monto = -100_000m, Referencia = "REF NEG", Concepto = "Cargo grande" },

@@ -78,7 +78,7 @@ public sealed class ExtractosControllerTests
         });
         await db.SaveChangesAsync();
 
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
@@ -769,7 +769,10 @@ public sealed class ExtractosControllerTests
 
         var result = await controller.GetAuditCelda(extractoId, "concepto", ct: CancellationToken.None);
 
-        result.Should().BeOfType<NotFoundObjectResult>();
+        // S-8 (LOTE 6): el extracto EXISTE (esta en la papelera) y el actor no es
+        // admin, asi que no tiene permiso sobre el -> 403. Antes devolvia 404
+        // ("no existe"), que no distingue "no existe" de "no me dejan".
+        result.Should().BeOfType<ForbidResult>();
     }
 
     [Fact]
@@ -1648,7 +1651,7 @@ public sealed class ExtractosControllerTests
 
     private static ExtractosController BuildController(AppDbContext db, Guid userId, RolUsuario role)
     {
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

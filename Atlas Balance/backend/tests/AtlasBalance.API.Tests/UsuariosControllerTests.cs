@@ -156,6 +156,10 @@ public class UsuariosControllerTests
             Rol = user.Rol,
             Activo = true,
             PrimerLogin = false,
+            // S-5: el PUT exige el cuerpo completo; "puede_usar_ia" es
+            // obligatorio (si no, el 400 por campo ausente enmascararia el
+            // comportamiento que este test comprueba).
+            PuedeUsarIa = false,
             PasswordNueva = "Cambio-Seguro-9471!",
             Emails = new[] { user.Email },
             Permisos = Array.Empty<SavePermisoUsuarioRequest>()
@@ -342,6 +346,7 @@ public class UsuariosControllerTests
             Rol = RolUsuario.ADMIN,
             Activo = false,
             PrimerLogin = false,
+            PuedeUsarIa = false,
             Emails = new[] { admin.Email },
             Permisos = Array.Empty<SavePermisoUsuarioRequest>()
         };
@@ -370,6 +375,7 @@ public class UsuariosControllerTests
             Rol = RolUsuario.GERENTE,
             Activo = true,
             PrimerLogin = false,
+            PuedeUsarIa = false,
             Emails = new[] { actor.Email },
             Permisos = Array.Empty<SavePermisoUsuarioRequest>()
         };

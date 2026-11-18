@@ -223,7 +223,7 @@ public sealed class PaginacionDesempateTests
 
     private static ExtractosController BuildExtractosController(AppDbContext db, Guid userId)
     {
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

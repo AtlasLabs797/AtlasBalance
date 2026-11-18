@@ -78,7 +78,7 @@ public class ConciliacionLote5Tests
             });
             await db.SaveChangesAsync();
 
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var grande = await service.CrearMovimientoEsperadoAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),
@@ -112,7 +112,7 @@ public class ConciliacionLote5Tests
 
         await using (var db = BuildDbContext(dbName))
         {
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var sugerencias = await service.SugerirAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),
@@ -176,7 +176,7 @@ public class ConciliacionLote5Tests
             });
             await db.SaveChangesAsync();
 
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var grande = await service.CrearMovimientoEsperadoAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),
@@ -210,7 +210,7 @@ public class ConciliacionLote5Tests
 
         await using (var db = BuildDbContext(dbName))
         {
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var sugerencias = await service.SugerirAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),
@@ -322,7 +322,7 @@ public class ConciliacionLote5Tests
 
         await using (var db = BuildDbContext(dbName))
         {
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
 
             var primera = await service.ConfirmarAsync(
                 userId,
@@ -400,7 +400,7 @@ public class ConciliacionLote5Tests
 
         await using (var db = BuildDbContext(dbName))
         {
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var act = () => service.ConfirmarAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),
@@ -467,7 +467,7 @@ public class ConciliacionLote5Tests
 
         await using (var db = BuildDbContext(dbName))
         {
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var act = () => service.ConfirmarAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),
@@ -531,7 +531,7 @@ public class ConciliacionLote5Tests
 
         await using (var db = BuildDbContext(dbName))
         {
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var resuelta = await service.ResolverAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),
@@ -603,7 +603,7 @@ public class ConciliacionLote5Tests
 
         await using (var db = BuildDbContext(dbName))
         {
-            var service = new ConciliacionService(db, TestAuditService.Create(db));
+            var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
             var act = () => service.ConfirmarAsync(
                 userId,
                 RolUsuario.EMPLEADO.ToString(),

@@ -91,6 +91,9 @@ public sealed class PermisoUsuarioResponse
     public bool PuedeAprobarImportaciones { get; set; }
     public bool PuedeConciliar { get; set; }
     public bool PuedeCerrarConciliacion { get; set; }
+    // S-2: `columnas_visibles` es la REGLA que fija el administrador
+    // (PREFERENCIAS_USUARIO_CUENTA.columnas_visibles_admin), no la
+    // preferencia del usuario. El nombre del campo JSON no cambia.
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
     public IReadOnlyList<string>? ColumnasEditables { get; set; }
 }

@@ -29,7 +29,10 @@ export default function RevisionPage() {
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const canEditCuenta = usePermisosStore((state) => state.canEditCuenta);
+  // LOTE 6 (D-13): el backend revisa con `puede_revisar_lineas` O
+  // `puede_editar_lineas` (UserAccessService.CanReviewCuentaAsync). Con solo
+  // `puede_editar_lineas` se ocultaban acciones que el backend permite.
+  const canRevisarCuenta = usePermisosStore((state) => state.canRevisarCuenta);
   usePermisosStore((state) => state.permisos);
   const invalidate = useInvalidateAfterMutation();
 
@@ -218,7 +221,7 @@ export default function RevisionPage() {
         <ComisionesTable
           rows={comisiones}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
+          canReviewItem={(item) => canRevisarCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setComisionEstado}
           onVerificar={verificarDevolucion}
         />
@@ -226,7 +229,7 @@ export default function RevisionPage() {
         <SegurosTable
           rows={seguros}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
+          canReviewItem={(item) => canRevisarCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setSeguroEstado}
         />
       )}
@@ -264,13 +267,13 @@ export default function RevisionPage() {
 function ComisionesTable({
   rows,
   busyId,
-  canEditItem,
+  canReviewItem,
   onSetEstado,
   onVerificar,
 }: {
   rows: RevisionComisionItem[];
   busyId: string | null;
-  canEditItem: (item: RevisionComisionItem) => boolean;
+  canReviewItem: (item: RevisionComisionItem) => boolean;
   onSetEstado: (item: RevisionComisionItem, next: RevisionEstadoComision) => void;
   onVerificar: (item: RevisionComisionItem) => void;
 }) {
@@ -309,7 +312,7 @@ function ComisionesTable({
                 <RevisionComisionActions
                   item={item}
                   busy={busyId === item.extracto_id}
-                  canEdit={canEditItem(item)}
+                  canReview={canReviewItem(item)}
                   onSetEstado={onSetEstado}
                   onVerificar={onVerificar}
                 />
@@ -325,12 +328,12 @@ function ComisionesTable({
 function SegurosTable({
   rows,
   busyId,
-  canEditItem,
+  canReviewItem,
   onSetEstado,
 }: {
   rows: RevisionSeguroItem[];
   busyId: string | null;
-  canEditItem: (item: RevisionSeguroItem) => boolean;
+  canReviewItem: (item: RevisionSeguroItem) => boolean;
   onSetEstado: (item: RevisionSeguroItem, next: RevisionEstadoSeguro) => void;
 }) {
   if (rows.length === 0) {
@@ -364,7 +367,7 @@ function SegurosTable({
                 <RevisionSeguroActions
                   item={item}
                   busy={busyId === item.extracto_id}
-                  canEdit={canEditItem(item)}
+                  canReview={canReviewItem(item)}
                   onSetEstado={onSetEstado}
                 />
               </td>
@@ -379,17 +382,17 @@ function SegurosTable({
 function RevisionComisionActions({
   item,
   busy,
-  canEdit,
+  canReview,
   onSetEstado,
   onVerificar,
 }: {
   item: RevisionComisionItem;
   busy: boolean;
-  canEdit: boolean;
+  canReview: boolean;
   onSetEstado: (item: RevisionComisionItem, next: RevisionEstadoComision) => void;
   onVerificar: (item: RevisionComisionItem) => void;
 }) {
-  if (!canEdit) {
+  if (!canReview) {
     return <span className="revision-status revision-status--readonly">Solo lectura</span>;
   }
 
@@ -441,15 +444,15 @@ function RevisionComisionActions({
 function RevisionSeguroActions({
   item,
   busy,
-  canEdit,
+  canReview,
   onSetEstado,
 }: {
   item: RevisionSeguroItem;
   busy: boolean;
-  canEdit: boolean;
+  canReview: boolean;
   onSetEstado: (item: RevisionSeguroItem, next: RevisionEstadoSeguro) => void;
 }) {
-  if (!canEdit) {
+  if (!canReview) {
     return <span className="revision-status revision-status--readonly">Solo lectura</span>;
   }
 

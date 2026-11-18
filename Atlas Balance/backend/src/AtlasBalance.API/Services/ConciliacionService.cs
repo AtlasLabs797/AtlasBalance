@@ -10,9 +10,9 @@ namespace AtlasBalance.API.Services;
 
 public interface IConciliacionService
 {
-    Task<IReadOnlyList<MovimientoEsperadoResponse>> ListarMovimientosEsperadosAsync(Guid usuarioId, string rol, Guid? cuentaId, string? estado, CancellationToken cancellationToken);
+    Task<PaginatedResponse<MovimientoEsperadoResponse>> ListarMovimientosEsperadosAsync(Guid usuarioId, string rol, Guid? cuentaId, string? estado, int page, int pageSize, string sortBy, string sortDir, CancellationToken cancellationToken);
     Task<MovimientoEsperadoResponse> CrearMovimientoEsperadoAsync(Guid usuarioId, string rol, MovimientoEsperadoCrearRequest request, HttpContext httpContext, CancellationToken cancellationToken);
-    Task<IReadOnlyList<ConciliacionResponse>> ListarConciliacionesAsync(Guid usuarioId, string rol, Guid? cuentaId, string? estado, CancellationToken cancellationToken);
+    Task<PaginatedResponse<ConciliacionResponse>> ListarConciliacionesAsync(Guid usuarioId, string rol, Guid? cuentaId, string? estado, int page, int pageSize, string sortBy, string sortDir, CancellationToken cancellationToken);
     Task<ConciliacionSugerenciasResponse> SugerirAsync(Guid usuarioId, string rol, ConciliacionSugerirRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ConciliacionResponse> ConfirmarAsync(Guid usuarioId, string rol, Guid id, ConciliacionCambiarEstadoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ConciliacionResponse> MarcarExcepcionAsync(Guid usuarioId, string rol, Guid id, ConciliacionCambiarEstadoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
@@ -53,18 +53,24 @@ public sealed class ConciliacionService : IConciliacionService
 
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
+    private readonly IUserAccessService _userAccessService;
 
-    public ConciliacionService(AppDbContext dbContext, IAuditService auditService)
+    public ConciliacionService(AppDbContext dbContext, IAuditService auditService, IUserAccessService userAccessService)
     {
         _dbContext = dbContext;
         _auditService = auditService;
+        _userAccessService = userAccessService;
     }
 
-    public async Task<IReadOnlyList<MovimientoEsperadoResponse>> ListarMovimientosEsperadosAsync(
+    public async Task<PaginatedResponse<MovimientoEsperadoResponse>> ListarMovimientosEsperadosAsync(
         Guid usuarioId,
         string rol,
         Guid? cuentaId,
         string? estado,
+        int page,
+        int pageSize,
+        string sortBy,
+        string sortDir,
         CancellationToken cancellationToken)
     {
         if (cuentaId.HasValue)
@@ -72,7 +78,7 @@ public sealed class ConciliacionService : IConciliacionService
             await EnsureCuentaPermitidaAsync(usuarioId, rol, cuentaId.Value, cerrar: false, cancellationToken);
         }
 
-        var query = ApplyCuentaScope(_dbContext.MovimientosEsperados.AsNoTracking(), usuarioId, rol);
+        var query = await ApplyCuentaScopeAsync(_dbContext.MovimientosEsperados.AsNoTracking(), usuarioId, rol, cancellationToken: cancellationToken);
         if (cuentaId.HasValue)
         {
             query = query.Where(x => x.CuentaId == cuentaId.Value);
@@ -84,13 +90,26 @@ public sealed class ConciliacionService : IConciliacionService
             query = query.Where(x => x.Estado == normalizedEstado);
         }
 
-        var rows = await query
-            .OrderByDescending(x => x.FechaEsperada)
-            .ThenByDescending(x => x.FechaCreacion)
-            .Take(500)
+        // R-3 (seccion 9): el recorte silencioso de 500 filas desaparece. El
+        // total real se expone en `total` y el cliente pide paginas.
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 500);
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+
+        var total = await query.CountAsync(cancellationToken);
+        var rows = await ApplyMovimientoSorting(query, sortBy, desc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        return await MapMovimientosAsync(rows, cancellationToken);
+        return new PaginatedResponse<MovimientoEsperadoResponse>
+        {
+            Data = await MapMovimientosAsync(rows, cancellationToken),
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+        };
     }
 
     public async Task<MovimientoEsperadoResponse> CrearMovimientoEsperadoAsync(
@@ -140,11 +159,15 @@ public sealed class ConciliacionService : IConciliacionService
         return (await MapMovimientosAsync([movimiento], cancellationToken))[0];
     }
 
-    public async Task<IReadOnlyList<ConciliacionResponse>> ListarConciliacionesAsync(
+    public async Task<PaginatedResponse<ConciliacionResponse>> ListarConciliacionesAsync(
         Guid usuarioId,
         string rol,
         Guid? cuentaId,
         string? estado,
+        int page,
+        int pageSize,
+        string sortBy,
+        string sortDir,
         CancellationToken cancellationToken)
     {
         if (cuentaId.HasValue)
@@ -152,7 +175,7 @@ public sealed class ConciliacionService : IConciliacionService
             await EnsureCuentaPermitidaAsync(usuarioId, rol, cuentaId.Value, cerrar: false, cancellationToken);
         }
 
-        var query = ApplyCuentaScope(_dbContext.Conciliaciones.AsNoTracking(), usuarioId, rol);
+        var query = await ApplyCuentaScopeAsync(_dbContext.Conciliaciones.AsNoTracking(), usuarioId, rol, cancellationToken: cancellationToken);
         if (cuentaId.HasValue)
         {
             query = query.Where(x => x.CuentaId == cuentaId.Value);
@@ -164,12 +187,76 @@ public sealed class ConciliacionService : IConciliacionService
             query = query.Where(x => x.Estado == normalizedEstado);
         }
 
-        var rows = await query
-            .OrderByDescending(x => x.FechaCreacion)
-            .Take(500)
+        // R-3 (seccion 9): el recorte silencioso de 500 filas desaparece. El
+        // total real se expone en `total` y el cliente pide paginas.
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 500);
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+
+        var total = await query.CountAsync(cancellationToken);
+        var rows = await ApplyConciliacionSorting(query, sortBy, desc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        return await MapConciliacionesAsync(rows, cancellationToken);
+        return new PaginatedResponse<ConciliacionResponse>
+        {
+            Data = await MapConciliacionesAsync(rows, cancellationToken),
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+        };
+    }
+
+    // R-3 (seccion 9): ordenacion de los movimientos esperados. El caso por
+    // defecto es la fecha esperada descendente, la que ya devolvia el listado.
+    private static IOrderedQueryable<MovimientoEsperado> ApplyMovimientoSorting(IQueryable<MovimientoEsperado> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("estado", true) => query.OrderByDescending(x => x.Estado),
+            ("estado", false) => query.OrderBy(x => x.Estado),
+            ("monto", true) => query.OrderByDescending(x => x.Monto),
+            ("monto", false) => query.OrderBy(x => x.Monto),
+            ("divisa", true) => query.OrderByDescending(x => x.Divisa),
+            ("divisa", false) => query.OrderBy(x => x.Divisa),
+            ("fecha_creacion", true) => query.OrderByDescending(x => x.FechaCreacion),
+            ("fecha_creacion", false) => query.OrderBy(x => x.FechaCreacion),
+            ("fecha_esperada", true) => query.OrderByDescending(x => x.FechaEsperada),
+            ("fecha_esperada", false) => query.OrderBy(x => x.FechaEsperada),
+            _ => desc
+                ? query.OrderByDescending(x => x.FechaEsperada)
+                : query.OrderBy(x => x.FechaEsperada)
+        };
+
+        // B-15: desempate estable por clave primaria.
+        return ((IOrderedQueryable<MovimientoEsperado>)ordered).ThenBy(x => x.Id);
+    }
+
+    // R-3 (seccion 9): ordenacion de las conciliaciones. El caso por defecto
+    // es la fecha de creacion descendente, la que ya devolvia el listado.
+    private static IOrderedQueryable<Conciliacion> ApplyConciliacionSorting(IQueryable<Conciliacion> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("estado", true) => query.OrderByDescending(x => x.Estado),
+            ("estado", false) => query.OrderBy(x => x.Estado),
+            ("score", true) => query.OrderByDescending(x => x.Score),
+            ("score", false) => query.OrderBy(x => x.Score),
+            ("diferencia_dias", true) => query.OrderByDescending(x => x.DiferenciaDias),
+            ("diferencia_dias", false) => query.OrderBy(x => x.DiferenciaDias),
+            ("cuenta_id", true) => query.OrderByDescending(x => x.CuentaId),
+            ("cuenta_id", false) => query.OrderBy(x => x.CuentaId),
+            ("fecha_creacion", true) => query.OrderByDescending(x => x.FechaCreacion),
+            ("fecha_creacion", false) => query.OrderBy(x => x.FechaCreacion),
+            _ => desc
+                ? query.OrderByDescending(x => x.FechaCreacion)
+                : query.OrderBy(x => x.FechaCreacion)
+        };
+
+        // B-15: desempate estable por clave primaria.
+        return ((IOrderedQueryable<Conciliacion>)ordered).ThenBy(x => x.Id);
     }
 
     public async Task<ConciliacionSugerenciasResponse> SugerirAsync(
@@ -185,7 +272,7 @@ public sealed class ConciliacionService : IConciliacionService
             await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId.Value, cerrar: false, cancellationToken);
         }
 
-        var movimientosQuery = ApplyCuentaScope(_dbContext.MovimientosEsperados, usuarioId, rol, soloPuedeConciliar: true)
+        var movimientosQuery = (await ApplyCuentaScopeAsync(_dbContext.MovimientosEsperados, usuarioId, rol, soloPuedeConciliar: true, cancellationToken))
             .Where(x => x.Estado == "pendiente" || x.Estado == "sugerida");
         if (request.CuentaId.HasValue)
         {
@@ -538,7 +625,7 @@ public sealed class ConciliacionService : IConciliacionService
             string.IsNullOrWhiteSpace(expectedConcept) ? extractConcept : expectedConcept);
     }
 
-    private IQueryable<T> ApplyCuentaScope<T>(IQueryable<T> query, Guid usuarioId, string rol, bool soloPuedeConciliar = false)
+    private async Task<IQueryable<T>> ApplyCuentaScopeAsync<T>(IQueryable<T> query, Guid usuarioId, string rol, bool soloPuedeConciliar = false, CancellationToken cancellationToken = default)
         where T : class
     {
         if (string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
@@ -548,7 +635,13 @@ public sealed class ConciliacionService : IConciliacionService
 
         // V-02-05 (MED-17): precomputar las cuentas accesibles en un HashSet
         // con un solo join SQL, en lugar del EXISTS por cada fila.
-        var accessibleCuentas = ResolveAccessibleCuentas(usuarioId, soloPuedeConciliar);
+        // S-9/M-3: el conjunto lo calcula UserAccessService con la MISMA tabla
+        // de reglas que usan los chequeos por cuenta (sin N+1).
+        // `soloPuedeConciliar` restringe a quien puede generar sugerencias
+        // (SugerirAsync): un usuario que solo puede cerrar conciliaciones
+        // (PuedeCerrarConciliacion) no debe entrar en el lote de sugerencias.
+        var accion = soloPuedeConciliar ? UserAccessAction.Conciliar : UserAccessAction.AlcanceConciliacion;
+        var accessibleCuentas = await _userAccessService.GetCuentasAccesiblesAsync(accion, usuarioId, cancellationToken);
         if (accessibleCuentas.Count == 0)
         {
             return query.Where(_ => false);
@@ -565,34 +658,6 @@ public sealed class ConciliacionService : IConciliacionService
         return query;
     }
 
-    private HashSet<Guid> ResolveAccessibleCuentas(Guid usuarioId, bool soloPuedeConciliar = false)
-    {
-        // V-02-05 (MED-17): una sola query con join cruzado PermisosUsuario x Cuentas.
-        // V-02.08: las cuentas ya excluyen borradas por el query filter global
-        // ISoftDelete, pero faltaba exigir TITULAR activo (mismo criterio que
-        // UserAccessService.ApplyActiveTitularCuentaScope); sin ello, un usuario
-        // seguia viendo movimientos/conciliaciones de cuentas cuyo titular fue
-        // eliminado logicamente.
-        // `soloPuedeConciliar` restringe a quien puede generar sugerencias
-        // (SugerirAsync): un usuario que solo puede cerrar conciliaciones
-        // (PuedeCerrarConciliacion) no debe entrar en el lote de sugerencias.
-        var rows = (
-            from p in _dbContext.PermisosUsuario.AsNoTracking()
-            where p.UsuarioId == usuarioId
-                  && (soloPuedeConciliar ? p.PuedeConciliar : (p.PuedeConciliar || p.PuedeCerrarConciliacion))
-            from c in _dbContext.Cuentas.AsNoTracking()
-            join t in _dbContext.Titulares.AsNoTracking() on c.TitularId equals t.Id
-            where (p.PaisId == null || p.PaisId == c.PaisId)
-               && (p.TitularId == null || p.TitularId == c.TitularId)
-               && (p.CuentaId == null || p.CuentaId == c.Id)
-               && t.DeletedAt == null
-            select c.Id)
-            .Distinct()
-            .ToList();
-
-        return new HashSet<Guid>(rows);
-    }
-
     private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, bool cerrar, CancellationToken cancellationToken)
     {
         var cuenta = await _dbContext.Cuentas
@@ -603,14 +668,16 @@ public sealed class ConciliacionService : IConciliacionService
             throw new ConciliacionException("Cuenta no encontrada o inactiva", StatusCodes.Status404NotFound);
         }
 
-        if (string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
+        // S-9/M-3: la regla de conciliar/cerrar vive en UserAccessService.
+        // El ADMIN conserva su bypass (el scope lo marca como IsAdmin).
+        var scope = await _userAccessService.GetScopeAsync(usuarioId, rol, cancellationToken);
+        if (scope.IsAdmin)
         {
             return cuenta;
         }
 
         // V-02.08: mismo criterio de titular activo que la lectura
-        // (ResolveAccessibleCuentas / UserAccessService); el ADMIN conserva su
-        // bypass de arriba.
+        // (UserAccessService); el ADMIN conserva su bypass de arriba.
         var titularActivo = await _dbContext.Titulares.AsNoTracking()
             .AnyAsync(t => t.Id == cuenta.TitularId && t.DeletedAt == null, cancellationToken);
         if (!titularActivo)
@@ -618,15 +685,9 @@ public sealed class ConciliacionService : IConciliacionService
             throw new ConciliacionException("Cuenta no encontrada o inactiva", StatusCodes.Status404NotFound);
         }
 
-        var allowed = await _dbContext.PermisosUsuario.AnyAsync(p =>
-            p.UsuarioId == usuarioId &&
-            (cerrar
-                ? p.PuedeCerrarConciliacion
-                : p.PuedeConciliar) &&
-            (p.PaisId == null || p.PaisId == cuenta.PaisId) &&
-            (p.TitularId == null || p.TitularId == cuenta.TitularId) &&
-            (p.CuentaId == null || p.CuentaId == cuenta.Id),
-            cancellationToken);
+        var allowed = cerrar
+            ? await _userAccessService.CanCerrarConciliacionAsync(cuentaId, scope, cancellationToken)
+            : await _userAccessService.CanConciliarCuentaAsync(cuentaId, scope, cancellationToken);
         if (!allowed)
         {
             throw new ConciliacionException("No tienes permisos para conciliar esta cuenta", StatusCodes.Status403Forbidden);

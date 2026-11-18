@@ -889,19 +889,16 @@ public sealed class DashboardService : IDashboardService
                 x.TitularId,
                 x.PaisId,
                 x.PuedeVerCuentas,
-                x.PuedeAgregarLineas,
-                x.PuedeEditarLineas,
-                x.PuedeEliminarLineas,
-                x.PuedeImportar,
                 x.PuedeVerDashboard
             })
             .ToListAsync(cancellationToken);
 
+        // S-1: la lectura de saldos y cuentas del dashboard exige PuedeVerCuentas
+        // y PuedeVerDashboard. Los permisos de escritura (agregar, editar, eliminar
+        // o importar) no dan acceso al dashboard y el rol GERENTE tampoco queda
+        // exento de PuedeVerDashboard.
         permisos = permisos
-            .Where(x =>
-                usuario.Rol == RolUsuario.GERENTE
-                    ? GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar)
-                    : x.PuedeVerDashboard && GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar))
+            .Where(x => x.PuedeVerDashboard && x.PuedeVerCuentas)
             .ToList();
 
         if (permisos.Count == 0)
@@ -913,7 +910,7 @@ public sealed class DashboardService : IDashboardService
             x.PaisId == null &&
             x.CuentaId == null &&
             x.TitularId == null &&
-            GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar));
+            x.PuedeVerCuentas);
         if (globalAccess)
         {
             return DashboardScope.GlobalForManager();
@@ -923,8 +920,8 @@ public sealed class DashboardService : IDashboardService
             .AsNoTracking()
             .Where(c => _dbContext.PermisosUsuario.Any(p =>
                 p.UsuarioId == userId &&
-                (usuario.Rol == RolUsuario.GERENTE || p.PuedeVerDashboard) &&
-                (p.PuedeVerCuentas || p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas || p.PuedeImportar) &&
+                p.PuedeVerDashboard &&
+                p.PuedeVerCuentas &&
                 (p.PaisId == null || p.PaisId == c.PaisId) &&
                 (p.TitularId == null || p.TitularId == c.TitularId) &&
                 (p.CuentaId == null || p.CuentaId == c.Id)))
@@ -939,14 +936,6 @@ public sealed class DashboardService : IDashboardService
 
         return new DashboardScope(false, cuentaIds);
     }
-
-    private static bool GrantsAccountDataAccess(
-        bool puedeVerCuentas,
-        bool puedeAgregarLineas,
-        bool puedeEditarLineas,
-        bool puedeEliminarLineas,
-        bool puedeImportar) =>
-        puedeVerCuentas || puedeAgregarLineas || puedeEditarLineas || puedeEliminarLineas || puedeImportar;
 
     private async Task<bool> CanAccessTitularAsync(DashboardScope scope, Guid titularId, CancellationToken cancellationToken)
     {

@@ -2195,6 +2195,10 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("columnas_visibles");
 
+                    b.Property<string>("ColumnasVisiblesAdmin")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("columnas_visibles_admin");
+
                     b.Property<string>("OrdenColumnas")
                         .HasColumnType("jsonb")
                         .HasColumnName("orden_columnas");

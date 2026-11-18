@@ -34,6 +34,8 @@ public sealed class PaisesController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 500,
+        [FromQuery] string sortBy = "nombre",
+        [FromQuery] string sortDir = "asc",
         CancellationToken cancellationToken = default)
     {
         // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
@@ -90,8 +92,12 @@ public sealed class PaisesController : ControllerBase
         var total = await query.CountAsync(cancellationToken);
         var totalPages = total == 0 ? 1 : (int)Math.Ceiling((double)total / pageSize);
 
-        var data = await query
-            .OrderBy(x => x.Nombre)
+        // R-3 (seccion 9): el listado admite `sortBy`/`sortDir`. El valor por
+        // defecto mantiene el orden por nombre ascendente que ya devolvia.
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var ordered = ApplySorting(query, sortBy, desc);
+
+        var data = await ordered
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new PaisResponse
@@ -255,6 +261,28 @@ public sealed class PaisesController : ControllerBase
         }
 
         return new PaisValidationResult(null, nombre, codigoIso2);
+    }
+
+    private static IQueryable<Pais> ApplySorting(IQueryable<Pais> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("nombre", true) => query.OrderByDescending(x => x.Nombre),
+            ("nombre", false) => query.OrderBy(x => x.Nombre),
+            ("codigo_iso2", true) => query.OrderByDescending(x => x.CodigoIso2),
+            ("codigo_iso2", false) => query.OrderBy(x => x.CodigoIso2),
+            ("activo", true) => query.OrderByDescending(x => x.Activo),
+            ("activo", false) => query.OrderBy(x => x.Activo),
+            ("fecha_creacion", true) => query.OrderByDescending(x => x.FechaCreacion),
+            ("fecha_creacion", false) => query.OrderBy(x => x.FechaCreacion),
+            // R-3 (seccion 9): el caso por defecto respeta `sortDir`.
+            _ => desc
+                ? query.OrderByDescending(x => x.Nombre)
+                : query.OrderBy(x => x.Nombre)
+        };
+
+        // B-15: desempate estable por clave primaria, despues del campo pedido.
+        return ((IOrderedQueryable<Pais>)ordered).ThenBy(x => x.Id);
     }
 
     private static PaisResponse MapPais(Pais pais) => new()

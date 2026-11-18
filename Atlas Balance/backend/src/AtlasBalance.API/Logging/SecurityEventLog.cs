@@ -78,6 +78,9 @@ public sealed class SecurityEventLog : ISecurityEventLog
         AuditActions.DeleteIntegrationToken,
         AuditActions.AlertaSeguridadDisparada,
         AuditActions.AuditoriaIntegridadFallida,
+        // S-7: la extraccion de la auditoria deja rastro tambien en el
+        // registro de seguridad, no solo en la tabla AUDITORIAS.
+        AuditActions.AuditoriaExportacionCsv,
     };
 
     // Acciones que merecen severidad de error en vez de aviso: apuntan a

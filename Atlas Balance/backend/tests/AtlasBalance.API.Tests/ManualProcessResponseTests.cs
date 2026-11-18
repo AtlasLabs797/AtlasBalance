@@ -399,6 +399,28 @@ public class ManualProcessResponseTests
         {
             return Task.FromResult(_canWriteCuenta);
         }
+
+        // S-9/M-3: miembros anadidos a IUserAccessService.
+        public Task<UserAccessScope> GetScopeAsync(Guid usuarioId, string rol, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new UserAccessScope
+            {
+                UserId = usuarioId,
+                IsAdmin = true,
+                HasPermissions = true,
+                HasGlobalAccess = true
+            });
+        }
+
+        public Task<bool> CanCuentaAsync(UserAccessAction accion, Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlySet<Guid>> GetCuentasAccesiblesAsync(UserAccessAction accion, Guid usuarioId, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid>());
+        }
     }
 
     private sealed class FakeWatchdogClientService : IWatchdogClientService

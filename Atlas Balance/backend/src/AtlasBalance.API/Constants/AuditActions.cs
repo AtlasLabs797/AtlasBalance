@@ -76,4 +76,7 @@ public static class AuditActions
 
     /// <summary>La verificacion de integridad de AUDITORIAS encontro firmas invalidas o huecos.</summary>
     public const string AuditoriaIntegridadFallida = "AUDITORIA_INTEGRIDAD_FALLIDA";
+
+    /// <summary>S-7: un administrador exporto el historico de auditoria a CSV.</summary>
+    public const string AuditoriaExportacionCsv = "AUDITORIA_EXPORTACION_CSV";
 }
