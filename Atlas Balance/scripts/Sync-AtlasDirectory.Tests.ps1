@@ -1,5 +1,9 @@
 param([string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path)
 
+# LOTE 8 (T-2): se ejecuta en CI solo en windows-2022 (job policy-gates).
+# Usa $env:TEMP, que no existe en Linux (ahi es TMPDIR), asi que en
+# ubuntu-24.04 falla al crear el workspace temporal.
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 

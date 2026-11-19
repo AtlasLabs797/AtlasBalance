@@ -8,7 +8,7 @@
 // dependencias en tiempo de ejecucion: lo importan el interceptor y los tests
 // (importar axios aqui romperia la compilacion aislada de los tests).
 
-import type { AxiosRequestConfig } from 'axios';
+import type {} from 'axios';
 
 // Opcion por peticion: el interceptor la respeta y no pinta el toast global.
 // La ampliapon del modulo axios hace que `api.get(url, { skipErrorToast: true })`
@@ -21,17 +21,14 @@ declare module 'axios' {
   }
 }
 
-/** Configuracion de peticion con la opcion de no pintar el toast global. */
-export type RequestOptions = AxiosRequestConfig & { skipErrorToast?: boolean };
+type ErrorToastKind = 'none' | 'network' | 'server' | 'rate-limit';
 
-export type ErrorToastKind = 'none' | 'network' | 'server' | 'rate-limit';
-
-export interface ErrorToastDecision {
+interface ErrorToastDecision {
   kind: ErrorToastKind;
   show: boolean;
 }
 
-export interface ErrorToastOptions {
+interface ErrorToastOptions {
   /** La peticion se marco con skipErrorToast (sondeo). */
   skipErrorToast?: boolean;
 }

@@ -2055,43 +2055,6 @@ public sealed class AtlasAiService : IAtlasAiService
         return localBuilder;
     }
 
-    private async Task AppendPeriodSummaryAsync(
-        StringBuilder builder,
-        string title,
-        IQueryable<Models.Cuenta> cuentasQuery,
-        DateOnly fromDate,
-        DateOnly to,
-        CancellationToken cancellationToken)
-    {
-        builder.AppendLine();
-        builder.AppendLine(title);
-        var items = await (
-            from e in _dbContext.Extractos.AsNoTracking()
-            join c in cuentasQuery on e.CuentaId equals c.Id
-            where e.Fecha >= fromDate && e.Fecha <= to
-            group e by c.Divisa
-            into g
-            select new
-            {
-                Divisa = g.Key,
-                Ingresos = g.Where(x => x.Monto > 0).Sum(x => x.Monto),
-                Egresos = -g.Where(x => x.Monto < 0).Sum(x => x.Monto),
-                Neto = g.Sum(x => x.Monto)
-            })
-            .OrderBy(x => x.Divisa)
-            .ToListAsync(cancellationToken);
-
-        foreach (var item in items)
-        {
-            builder.AppendLine($"- {item.Divisa}: ingresos {FormatMoney(item.Ingresos)}, gastos {FormatMoney(item.Egresos)}, neto {FormatMoney(item.Neto)}");
-        }
-    }
-#pragma warning disable IDE0051 // unused private member (kept for compatibility with existing call sites during migration)
-    private static void AppendPeriodSummary_ObsoleteKeptForBuild()
-#pragma warning restore IDE0051
-    {
-    }
-
     private async Task AppendCategoryAsync(
         StringBuilder builder,
         string title,

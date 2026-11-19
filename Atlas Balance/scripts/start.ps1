@@ -1,3 +1,8 @@
+<#
+    Alias fino en ingles del lanzador canonico Launch-AtlasBalance.ps1.
+    Solo fija la ruta de instalacion por defecto (C:\AtlasBalance).
+#>
+
 param(
     [string]$InstallPath = "C:\AtlasBalance",
     [string]$Url = ""

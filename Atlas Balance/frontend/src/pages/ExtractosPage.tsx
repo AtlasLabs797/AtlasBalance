@@ -25,6 +25,7 @@ import type { AuditCellEntry, Extracto, ExtractoDesgloseResumen, PaginatedRespon
 import { columnasExcluidasPorAdmin, columnasPermitidas } from '@/utils/columnasPermitidas';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { parseEuropeanNumber } from '@/utils/formatters';
+import '@/styles/layout/routes/extractos.css';
 
 interface UpdateExtractoPayload {
   fecha?: string;
@@ -724,12 +725,12 @@ export default function ExtractosPage() {
   };
 
   return (
-    <section className="extractos-page">
-      <header className="extractos-header">
+    <section className="extractos-page page page--wide">
+      <header className="extractos-header page-header">
         <div className="extractos-heading">
           <span className="extractos-eyebrow">Tesorería / Movimientos</span>
-          <h1>Extractos</h1>
-          <p>Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
+          <h1 className="page-header__title">Extractos</h1>
+          <p className="page-header__subtitle--narrow">Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
         </div>
         <div className="extractos-header-actions">
           <div className="extractos-mode-toggle" role="group" aria-label="Modo de extractos">

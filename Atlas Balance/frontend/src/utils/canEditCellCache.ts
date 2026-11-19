@@ -3,7 +3,7 @@
 // el resultado por fila y columna, y se invalida sola cuando cambia el objeto
 // fila o cuando se crea una cache nueva (es decir, cuando cambia la funcion de
 // permisos que recibe el componente).
-export interface CanEditCellCache<Row extends { id: string }> {
+interface CanEditCellCache<Row extends { id: string }> {
   (row: Row, column: string): boolean;
 }
 

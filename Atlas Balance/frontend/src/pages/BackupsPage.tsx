@@ -3,8 +3,9 @@ import { Cloud, CloudOff, DownloadCloud, Link2, RefreshCcw, RotateCcw, Save, Shi
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
+import Modal from '@/components/common/Modal';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
-import { useBlockingOverlay } from '@/hooks/useBlockingOverlay';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -22,6 +23,7 @@ import type {
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatBytes, formatDateTime } from '@/utils/formatters';
 import { createPollLifecycle, type PollLifecycle } from '@/utils/pollLifecycle';
+import '@/styles/layout/routes/backups.css';
 
 const pageSizeOptions = [10, 20, 50];
 const dayOptions = [
@@ -127,8 +129,6 @@ export default function BackupsPage() {
 
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [overlayMessage, setOverlayMessage] = useState('No cierres esta ventana; al terminar volverás al inicio de sesión.');
-  const restoreOverlayRef = useRef<HTMLDivElement | null>(null);
-  useBlockingOverlay(overlayVisible);
 
   // F-4: sondeo de las operaciones de backup; se detiene al desmontar la pagina.
   const backupPollRef = useRef<PollLifecycle | null>(null);
@@ -148,12 +148,6 @@ export default function BackupsPage() {
   const driveConnected = Boolean(config?.google_drive.connected);
   const linkTerminalState = (linkStatus?.estado ?? '').toUpperCase();
   const linkCanRetry = linkTerminalState === 'FAILED' || linkTerminalState === 'EXPIRED';
-
-  useEffect(() => {
-    if (overlayVisible) {
-      restoreOverlayRef.current?.focus();
-    }
-  }, [overlayVisible]);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -470,11 +464,11 @@ export default function BackupsPage() {
   }, [driveConnected, fetchDriveFiles]);
 
   return (
-    <section className="backups-page">
-      <header className="backups-header">
-        <div>
-          <h1>Copias de seguridad</h1>
-          <p className="dashboard-subtitle">Programacion, copias locales y subida cifrada a Google Drive</p>
+    <section className="backups-page page">
+      <header className="backups-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Copias de seguridad</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Programacion, copias locales y subida cifrada a Google Drive</p>
         </div>
         <button type="button" className="button-primary" onClick={createBackup} disabled={creating || loading}>
           <UploadCloud size={18} aria-hidden="true" />
@@ -578,7 +572,7 @@ export default function BackupsPage() {
               </dl>
             </div>
           ) : (
-            <p className="import-muted">Cargando configuración...</p>
+            <PageSkeleton variant="inline" label="Cargando configuración..." />
           )}
         </article>
 
@@ -662,7 +656,7 @@ export default function BackupsPage() {
               ) : null}
             </div>
           ) : (
-            <p className="import-muted">Cargando Google Drive...</p>
+            <PageSkeleton variant="inline" label="Cargando Google Drive..." />
           )}
         </article>
       </section>
@@ -701,7 +695,7 @@ export default function BackupsPage() {
               {driveFilesLoading ? 'Cargando...' : 'Actualizar'}
             </button>
           </div>
-          {driveFilesLoading ? <p className="import-muted">Cargando archivos de Drive...</p> : null}
+          {driveFilesLoading ? <PageSkeleton variant="inline" label="Cargando archivos de Drive..." /> : null}
           {!driveFilesLoading && driveFiles.length === 0 ? (
             <p className="import-muted">No hay copias creadas por Atlas Balance en esta cuenta.</p>
           ) : null}
@@ -730,7 +724,7 @@ export default function BackupsPage() {
       ) : null}
 
       <div className="users-table-card">
-        {loading ? <p className="import-muted">Cargando copias de seguridad...</p> : null}
+        {loading ? <PageSkeleton variant="table" rows={5} columns={7} label="Cargando copias de seguridad..." /> : null}
         {!loading && rows.length === 0 ? (
           <EmptyState
             title="No hay copias de seguridad registradas."
@@ -742,6 +736,7 @@ export default function BackupsPage() {
           <>
             <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de backups">
               <table>
+                <caption className="sr-only">Copias de seguridad</caption>
                 <thead>
                   <tr>
                     <th scope="col">Fecha</th>
@@ -851,23 +846,25 @@ export default function BackupsPage() {
         onConfirm={triggerRestore}
       />
 
-      {overlayVisible ? (
-        <div className="modal-backdrop">
-          <div
-            ref={restoreOverlayRef}
-            className="loading-overlay"
-            role="alertdialog"
-            aria-live="assertive"
-            aria-busy="true"
-            aria-labelledby="backup-restore-overlay-title"
-            aria-describedby="backup-restore-overlay-message"
-            tabIndex={-1}
-          >
-            <h2 id="backup-restore-overlay-title">Restaurando copia de seguridad</h2>
-            <p id="backup-restore-overlay-message">{overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}</p>
-          </div>
-        </div>
-      ) : null}
+      <Modal
+        open={overlayVisible}
+        onClose={() => {}}
+        titleId="backup-restore-overlay-title"
+        title="Restaurando copia de seguridad"
+        descriptionId="backup-restore-overlay-message"
+        panelClassName="loading-overlay"
+        headerClassName=""
+        bareBody
+        busy
+        showCloseButton={false}
+      >
+        {/* Sin aria-busy: en una region viva difiere los anuncios hasta que el
+            atributo pasa a false, y aqui nunca pasa, de modo que el progreso
+            de la restauracion no se anunciaria. */}
+        <p id="backup-restore-overlay-message" aria-live="assertive">
+          {overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}
+        </p>
+      </Modal>
       <ConfirmDialog {...confirmDialogProps} />
     </section>
   );

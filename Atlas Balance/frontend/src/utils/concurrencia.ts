@@ -9,7 +9,7 @@
 // saturar la API ni el navegador.
 export const LIMITE_CONCURRENCIA_LOTE = 4;
 
-export interface ResultadoOperacion<T> {
+interface ResultadoOperacion<T> {
   indice: number;
   exito: boolean;
   valor?: T;

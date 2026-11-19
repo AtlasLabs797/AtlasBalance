@@ -20,6 +20,31 @@ jobs:
       - name: Test secret scanner fixtures
         shell: pwsh
         run: '& "./Atlas Balance/scripts/Test-AtlasSecrets.Tests.ps1" -RepoRoot "."'
+      # LOTE 8 (T-2): los *.Tests.ps1 de scripts/ que no ejecutaba CI.
+      # Mfa-Totp, ServiceSecurity e Installer-SecretPreservation son puros
+      # (solo logica y lectura de ficheros): corren en los dos SO de la
+      # matriz. Verificado en pwsh 7 sobre Ubuntu y sobre Windows.
+      - name: Test MFA/TOTP helpers (RFC 6238)
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Mfa-Totp.Tests.ps1"'
+      - name: Test service security guards
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/ServiceSecurity.Tests.ps1"'
+      - name: Test installer secret preservation
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Installer-SecretPreservation.Tests.ps1"'
+      # Sync-AtlasDirectory.Tests.ps1 usa $env:TEMP (null en Linux) y
+      # Smoke-Test-AtlasBalance.Tests.ps1 usa ACL de Windows (Get-Acl,
+      # icacls.exe): comprobado que fallan en ubuntu-24.04, asi que solo
+      # se ejecutan en windows-2022.
+      - name: Test directory sync (Windows only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Sync-AtlasDirectory.Tests.ps1"'
+      - name: Test smoke script secret handling (Windows only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& "./Atlas Balance/scripts/Smoke-Test-AtlasBalance.Tests.ps1"'
       - name: Verify version alignment
         shell: pwsh
         run: '& "./Atlas Balance/scripts/Check-VersionAlignment.ps1"'
@@ -172,3 +197,46 @@ jobs:
       - name: Build frontend
         working-directory: "Atlas Balance/frontend"
         run: npm run build
+
+  e2e:
+    name: E2E visual (Playwright)
+    # LOTE 8 (T-1): los e2e de e2e/visual/ usan la API simulada
+    # (e2e/visual/mockApi.ts) y arrancan su propio servidor de Vite
+    # (webServer de playwright.config.ts): no necesitan backend, base de
+    # datos ni credenciales.
+    #
+    # e2e/admin-smoke.spec.ts queda EXCLUIDO a proposito: exige un backend
+    # real y E2E_ADMIN_PASSWORD (ver e2e/README.md) y CI no tiene
+    # credenciales; el propio spec aborta si faltan.
+    #
+    # Solo en push a main: instalar navegadores en CI cuesta minutos y el
+    # resto de gates (lint, test:unit, build) ya cubren cada PR.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: ".node-version"
+          cache: npm
+          cache-dependency-path: "Atlas Balance/frontend/package-lock.json"
+
+      - name: Install frontend dependencies
+        working-directory: "Atlas Balance/frontend"
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: "Atlas Balance/frontend"
+        run: npx playwright install --with-deps chromium
+
+      - name: Run visual E2E
+        working-directory: "Atlas Balance/frontend"
+        env:
+          # Fuera de la carpeta de salida de Playwright: Playwright borra su
+          # outputDir al arrancar y las capturas se perderian.
+          VISUAL_OUT: pw-visual-captures
+        run: npx playwright test e2e/visual --reporter=list --output pw-test-results

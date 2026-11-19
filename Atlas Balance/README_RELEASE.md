@@ -1,33 +1,36 @@
-# Atlas Balance V-02-03 - release Windows x64
+# Atlas Balance V-03.02 - release Windows x64
 
 Este paquete es autonomo para servidor Windows: el frontend ya esta compilado, el backend y Watchdog van publicados self-contained y la base de datos se prepara desde el instalador.
 
-El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-02-03-win-x64.zip`; dentro deben existir `api\AtlasBalance.API.exe` y `watchdog\AtlasBalance.Watchdog.exe`.
+El ZIP `main` de GitHub no sirve como instalador. Usa `AtlasBalance-V-03-02-win-x64.zip`; dentro deben existir `api\AtlasBalance.API.exe` y `watchdog\AtlasBalance.Watchdog.exe`.
 
 ## Scripts de un clic
 
-- `install.cmd`: instala dependencias, prepara PostgreSQL, crea base de datos, copia API/Watchdog/frontend estatico, genera configuracion de produccion, servicios Windows y atajos. En modo directo genera certificado local; en modo reverse proxy deja TLS al proxy.
-- `update.cmd`: actualiza una instalacion existente, crea backup previo de PostgreSQL, conserva configuracion y deja que la API aplique migraciones al arrancar.
+El lanzador canonico de cada operacion lleva el nombre en espanol. Los lanzadores en ingles son alias finos que delegan en el canonico y se pueden usar indistintamente.
+
+- `Instalar Atlas Balance.cmd` (alias `install.cmd`): instala dependencias, prepara PostgreSQL, crea base de datos, copia API/Watchdog/frontend estatico, genera configuracion de produccion, servicios Windows y atajos. En modo directo genera certificado local; en modo reverse proxy deja TLS al proxy.
+- `Actualizar Atlas Balance.cmd` (alias `update.cmd`): actualiza una instalacion existente, crea backup previo de PostgreSQL, conserva configuracion y deja que la API aplique migraciones al arrancar.
+- `Atlas Balance.cmd`: arranca PostgreSQL gestionado, Watchdog y API en ese orden; el frontend se sirve desde la API. Opera por defecto sobre la instalacion que contiene el propio lanzador.
+- `start.cmd`: mismo arranque que `Atlas Balance.cmd` (`scripts\start.ps1` -> `scripts\Launch-AtlasBalance.ps1`), pero apuntando por defecto a `C:\AtlasBalance`.
 - `uninstall.cmd`: elimina servicios, reglas de firewall, atajos, claves de Data Protection, carpeta instalada y PostgreSQL gestionado si lo instalo Atlas Balance.
-- `start.cmd`: arranca PostgreSQL gestionado, Watchdog y API en ese orden; el frontend se sirve desde la API.
 
 ## Uso rapido
 
 Ejecuta los `.cmd` con doble clic. Si Windows pide permisos de administrador, aceptalo; sin eso no se pueden crear servicios ni abrir firewall.
 
 ```powershell
-.\install.cmd
-.\start.cmd
-.\update.cmd
+& ".\Instalar Atlas Balance.cmd"
+& ".\Atlas Balance.cmd"
+& ".\Actualizar Atlas Balance.cmd"
 .\uninstall.cmd
 ```
 
 Por defecto la instalacion queda en `C:\AtlasBalance`. Para usar otra ruta:
 
 ```powershell
-.\install.cmd -InstallPath D:\AtlasBalance
-.\start.cmd -InstallPath D:\AtlasBalance
-.\update.cmd -InstallPath D:\AtlasBalance
+& ".\Instalar Atlas Balance.cmd" -InstallPath D:\AtlasBalance
+& ".\Atlas Balance.cmd" -InstallPath D:\AtlasBalance
+& ".\Actualizar Atlas Balance.cmd" -InstallPath D:\AtlasBalance
 .\uninstall.cmd -InstallPath D:\AtlasBalance
 ```
 
@@ -48,7 +51,7 @@ El directorio `config` queda restringido a Administrators/SYSTEM antes de escrib
 Si ya tienes PostgreSQL y quieres usarlo:
 
 ```powershell
-.\install.cmd -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
+& ".\Instalar Atlas Balance.cmd" -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
 ```
 
 No documentes passwords reales en tickets, docs ni chats.
@@ -72,7 +75,7 @@ curl.exe -k -v https://localhost/api/health
 Para exponer la app en `https://balance.tudominio.com`, instala Atlas Balance detras de un proxy inverso. La API queda solo en loopback, la URL base se siembra con el dominio publico y el certificado lo gestiona el proxy:
 
 ```powershell
-.\install.cmd -InstallPath C:\AtlasBalance -UseReverseProxy -PublicHost balance.tudominio.com -InternalApiPort 5000 -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
+& ".\Instalar Atlas Balance.cmd" -InstallPath C:\AtlasBalance -UseReverseProxy -PublicHost balance.tudominio.com -InternalApiPort 5000 -PostgresAdminPassword "PASSWORD_POSTGRES" -PostgresBinPath "C:\Program Files\PostgreSQL\17\bin"
 ```
 
 Despues configura el proxy para reenviar a `http://127.0.0.1:5000`. El paquete incluye `scripts\Caddyfile.example`:
@@ -91,13 +94,13 @@ En DNS, apunta el dominio al servidor. En firewall, deja abiertos solo `80/tcp` 
 Desde la carpeta descomprimida de este paquete:
 
 ```powershell
-.\update.cmd -InstallPath C:\AtlasBalance
+& ".\Actualizar Atlas Balance.cmd" -InstallPath C:\AtlasBalance
 ```
 
 Si la instalacion ya tiene los scripts nuevos, tambien puedes lanzar desde la carpeta instalada apuntando al paquete:
 
 ```powershell
-C:\AtlasBalance\update.cmd -PackagePath C:\Temp\AtlasBalance-V-02-03-win-x64 -InstallPath C:\AtlasBalance
+C:\AtlasBalance\Actualizar Atlas Balance.cmd -PackagePath C:\Temp\AtlasBalance-V-03-02-win-x64 -InstallPath C:\AtlasBalance
 ```
 
 El actualizador crea backup previo, conserva configuracion, reemplaza API/Watchdog, actualiza scripts operativos instalados, actualiza `VERSION`/runtime y valida `/api/health` con `curl.exe -k`.

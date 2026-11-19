@@ -32,6 +32,7 @@
     "src/utils/usuarioBloqueo.ts",
     "src/utils/theme.ts",
     "src/utils/formatters.ts",
+    "src/utils/chartColors.ts",
     "src/utils/dispositivosMfa.ts",
     "src/utils/revertirLote.ts",
     "src/utils/paginacion.ts",

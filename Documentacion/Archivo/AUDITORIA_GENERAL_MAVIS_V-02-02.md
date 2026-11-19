@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-06-30
 **Alcance:** revisión estática del código actual (`V-02-02`) — frontend (`Atlas Balance/frontend/src`), backend (`Atlas Balance/backend/src/AtlasBalance.API`), tests, esquema y docs. **No se modificó ningún archivo** durante la auditoría.
-**Método:** lectura de código + cruce con `Documentacion/SPEC.md`, `Diseno/AUDITORIA_UI_UX_GLOBAL_V-02-02.md`, `SEGURIDAD_AUDITORIA_V-01.06.md` y bitácoras existentes. Sin ejecutar la app, sin docker, sin tests dinámicos.
+**Método:** lectura de código + cruce con `Documentacion/SPEC.md`, `Documentacion/Archivo/AUDITORIA_UI_UX_GLOBAL_V-02-02.md`, `SEGURIDAD_AUDITORIA_V-01.06.md` y bitácoras existentes. Sin ejecutar la app, sin docker, sin tests dinámicos.
 **Construye sobre:** las auditorías internas previas. Esta auditoría **añade hallazgos nuevos** y consolida los vivos.
 
 ## Resumen ejecutivo

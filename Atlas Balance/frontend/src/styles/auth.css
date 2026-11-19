@@ -120,7 +120,7 @@
   margin: 0;
   color: var(--auth-heading);
   font-size: clamp(1.75rem, 2.5vw, 2.25rem);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
   line-height: 1.05;
 }
 
@@ -148,7 +148,7 @@
   color: var(--auth-heading);
   font-family: var(--font-display);
   font-size: clamp(2.35rem, 2.8vw, 2.65rem);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
   line-height: 1.08;
 }
 
@@ -240,7 +240,7 @@
   margin: 0;
   color: var(--auth-heading);
   font-size: var(--text-28);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
   line-height: 1.14;
 }
 
@@ -449,7 +449,7 @@
   color: var(--text-primary);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1023.98px) {
   .auth-page {
     grid-template-columns: 1fr;
     overflow: auto;
@@ -486,7 +486,7 @@
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 767.98px) {
   .auth-brand-panel {
     padding-right: 4.5rem;
   }

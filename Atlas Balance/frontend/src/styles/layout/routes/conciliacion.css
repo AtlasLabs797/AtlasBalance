@@ -1,3 +1,15 @@
+/* L8/R-9: reglas exclusivas de la ruta "conciliacion".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+/* Cabecera sin borde inferior (Conciliacion): es la unica pantalla que
+   hoy no lo lleva. */
+.page-header--plain {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
 .conciliacion-page {
   display: grid;
   gap: var(--space-5);
@@ -62,7 +74,7 @@
   gap: var(--space-2);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1023.98px) {
   .conciliacion-header,
   .conciliacion-section-header {
     display: grid;

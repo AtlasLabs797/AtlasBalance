@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import Modal from '@/components/common/Modal';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import UsuarioModal, {
   type CatalogCuenta,
@@ -17,6 +18,7 @@ import { useUiStore } from '@/stores/uiStore';
 import type { PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatearTiempoRestante, isUsuarioBloqueado } from '@/utils/usuarioBloqueo';
+import '@/styles/layout/routes/usuarios.css';
 
 interface UsuarioRow {
   id: string;
@@ -92,15 +94,6 @@ export default function UsuariosPage() {
   const [mfaCandidate, setMfaCandidate] = useState<DeleteCandidate | null>(null);
   const [unblockCandidate, setUnblockCandidate] = useState<DeleteCandidate | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const deleteDialogRef = useDialogFocus<HTMLDivElement>(Boolean(deleteCandidate), {
-    onEscape: actionLoading ? undefined : () => setDeleteCandidate(null),
-  });
-  const mfaDialogRef = useDialogFocus<HTMLDivElement>(Boolean(mfaCandidate), {
-    onEscape: actionLoading ? undefined : () => setMfaCandidate(null),
-  });
-  const unblockDialogRef = useDialogFocus<HTMLDivElement>(Boolean(unblockCandidate), {
-    onEscape: actionLoading ? undefined : () => setUnblockCandidate(null),
-  });
 
   const activeCount = useMemo(
     () => rows.filter((row) => !row.deleted_at && row.activo).length,
@@ -289,11 +282,11 @@ export default function UsuariosPage() {
   };
 
   return (
-    <section className="users-page">
-      <header className="users-header">
-        <div>
-          <h1>Usuarios</h1>
-          <p className="users-subtitle">
+    <section className="users-page page">
+      <header className="users-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Usuarios</h1>
+          <p className="users-subtitle page-header__subtitle">
             Administra accesos, emails de notificación y permisos granulares.
           </p>
         </div>
@@ -352,7 +345,7 @@ export default function UsuariosPage() {
 
       <div className="users-table-card">
         {loading ? (
-          <p>Cargando usuarios...</p>
+          <PageSkeleton variant="table" rows={5} columns={9} label="Cargando usuarios..." />
         ) : rows.length === 0 ? (
           <div className="users-empty-state">
             <h2>Sin usuarios en esta vista</h2>
@@ -361,6 +354,7 @@ export default function UsuariosPage() {
         ) : (
           <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de usuarios">
             <table>
+            <caption className="sr-only">Usuarios</caption>
             <thead>
               <tr>
                 <th scope="col">Email</th>
@@ -498,115 +492,100 @@ export default function UsuariosPage() {
         onSaved={loadData}
       />
 
-      {deleteCandidate && (
-        <div
-          className="modal-backdrop modal-backdrop--fullscreen-mobile"
-          onClick={() => setDeleteCandidate(null)}
-        >
-          <div
-            ref={deleteDialogRef}
-            className="users-confirm-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-user-title"
-            tabIndex={-1}
+      <Modal
+        open={Boolean(deleteCandidate)}
+        onClose={() => setDeleteCandidate(null)}
+        titleId="delete-user-title"
+        title="Eliminar usuario"
+        variant="fullscreen-mobile"
+        panelClassName="users-confirm-modal"
+        headerClassName=""
+        showCloseButton={false}
+        bareBody
+        busy={actionLoading}
+      >
+        <p>
+          Vas a enviar a papelera a <strong>{deleteCandidate?.email}</strong>.
+        </p>
+        <p>Se conservará para restauración posterior y la acción quedará auditada.</p>
+        <div className="users-form-actions">
+          <button
+            type="button"
+            onClick={() => setDeleteCandidate(null)}
+            disabled={actionLoading}
           >
-            <h2 id="delete-user-title">Eliminar usuario</h2>
-            <p>
-              Vas a enviar a papelera a <strong>{deleteCandidate.email}</strong>.
-            </p>
-            <p>Se conservará para restauración posterior y la acción quedará auditada.</p>
-            <div className="users-form-actions">
-              <button
-                type="button"
-                onClick={() => setDeleteCandidate(null)}
-                disabled={actionLoading}
-              >
-                Cancelar
-              </button>
-              <button type="button" className="button-danger" onClick={() => void softDelete()} disabled={actionLoading}>
-                {actionLoading ? 'Enviando...' : 'Enviar a papelera'}
-              </button>
-            </div>
-          </div>
+            Cancelar
+          </button>
+          <button type="button" className="button-danger" onClick={() => void softDelete()} disabled={actionLoading}>
+            {actionLoading ? 'Enviando...' : 'Enviar a papelera'}
+          </button>
         </div>
-      )}
+      </Modal>
 
-      {mfaCandidate && (
-        <div
-          className="modal-backdrop modal-backdrop--fullscreen-mobile"
-          onClick={() => setMfaCandidate(null)}
-        >
-          <div
-            ref={mfaDialogRef}
-            className="users-confirm-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="mfa-user-title"
-            tabIndex={-1}
+      <Modal
+        open={Boolean(mfaCandidate)}
+        onClose={() => setMfaCandidate(null)}
+        titleId="mfa-user-title"
+        title="Revocar Authenticator"
+        variant="fullscreen-mobile"
+        panelClassName="users-confirm-modal"
+        headerClassName=""
+        showCloseButton={false}
+        bareBody
+        busy={actionLoading}
+      >
+        <p>
+          Vas a quitar el Authenticator de <strong>{mfaCandidate?.email}</strong>.
+        </p>
+        {mfaCandidate && mfaRequiredForCandidate(rows, mfaCandidate.id) ? (
+          <p>Este usuario es administrador o la política actual le obliga a usar Authenticator. Tras la revocación deberá configurarlo de nuevo al iniciar sesión.</p>
+        ) : (
+          <p>El usuario no esta obligado a usar Authenticator por la política actual. La revocación solo borra el Authenticator configurado.</p>
+        )}
+        <p>Se cerraran sus sesiones activas en cualquier caso.</p>
+        <div className="users-form-actions">
+          <button
+            type="button"
+            onClick={() => setMfaCandidate(null)}
+            disabled={actionLoading}
           >
-            <h2 id="mfa-user-title">Revocar Authenticator</h2>
-            <p>
-              Vas a quitar el Authenticator de <strong>{mfaCandidate.email}</strong>.
-            </p>
-            {mfaCandidate && mfaRequiredForCandidate(rows, mfaCandidate.id) ? (
-              <p>Este usuario es administrador o la política actual le obliga a usar Authenticator. Tras la revocación deberá configurarlo de nuevo al iniciar sesión.</p>
-            ) : (
-              <p>El usuario no esta obligado a usar Authenticator por la política actual. La revocación solo borra el Authenticator configurado.</p>
-            )}
-            <p>Se cerraran sus sesiones activas en cualquier caso.</p>
-            <div className="users-form-actions">
-              <button
-                type="button"
-                onClick={() => setMfaCandidate(null)}
-                disabled={actionLoading}
-              >
-                Cancelar
-              </button>
-              <button type="button" className="button-danger" onClick={() => void revokeMfa()} disabled={actionLoading}>
-                {actionLoading ? 'Revocando...' : 'Revocar Authenticator'}
-              </button>
-            </div>
-          </div>
+            Cancelar
+          </button>
+          <button type="button" className="button-danger" onClick={() => void revokeMfa()} disabled={actionLoading}>
+            {actionLoading ? 'Revocando...' : 'Revocar Authenticator'}
+          </button>
         </div>
-      )}
+      </Modal>
 
-      {unblockCandidate && (
-        <div
-          className="modal-backdrop modal-backdrop--fullscreen-mobile"
-          onClick={() => setUnblockCandidate(null)}
-        >
-          <div
-            ref={unblockDialogRef}
-            className="users-confirm-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="unblock-user-title"
-            tabIndex={-1}
+      <Modal
+        open={Boolean(unblockCandidate)}
+        onClose={() => setUnblockCandidate(null)}
+        titleId="unblock-user-title"
+        title="Desbloquear usuario"
+        variant="fullscreen-mobile"
+        panelClassName="users-confirm-modal"
+        headerClassName=""
+        showCloseButton={false}
+        bareBody
+        busy={actionLoading}
+      >
+        <p>
+          Vas a desbloquear a <strong>{unblockCandidate?.email}</strong>.
+        </p>
+        <p>Se retirará el bloqueo por intentos fallidos y el usuario podrá volver a iniciar sesión.</p>
+        <div className="users-form-actions">
+          <button
+            type="button"
+            onClick={() => setUnblockCandidate(null)}
+            disabled={actionLoading}
           >
-            <h2 id="unblock-user-title">Desbloquear usuario</h2>
-            <p>
-              Vas a desbloquear a <strong>{unblockCandidate.email}</strong>.
-            </p>
-            <p>Se retirará el bloqueo por intentos fallidos y el usuario podrá volver a iniciar sesión.</p>
-            <div className="users-form-actions">
-              <button
-                type="button"
-                onClick={() => setUnblockCandidate(null)}
-                disabled={actionLoading}
-              >
-                Cancelar
-              </button>
-              <button type="button" className="button-secondary" onClick={() => void unblock()} disabled={actionLoading}>
-                {actionLoading ? 'Desbloqueando...' : 'Desbloquear'}
-              </button>
-            </div>
-          </div>
+            Cancelar
+          </button>
+          <button type="button" className="button-secondary" onClick={() => void unblock()} disabled={actionLoading}>
+            {actionLoading ? 'Desbloqueando...' : 'Desbloquear'}
+          </button>
         </div>
-      )}
+      </Modal>
     </section>
   );
 }

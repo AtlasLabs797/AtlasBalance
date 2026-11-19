@@ -4,6 +4,7 @@ import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { IntegrationAuditTable } from '@/components/auditoria/IntegrationAuditTable';
@@ -13,7 +14,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { AuditoriaFiltros, AuditoriaListItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatDateTime } from '@/utils/formatters';
+import { formatDateTime, sinSignoPrevio } from '@/utils/formatters';
+import '@/styles/layout/routes/auditoria.css';
 
 type ExpandedRowsState = Record<string, boolean>;
 type AuditTab = 'sistema' | 'integraciones';
@@ -217,11 +219,11 @@ export default function AuditoriaPage() {
   };
 
   return (
-    <section className="auditoria-page">
-      <header className="auditoria-header">
-        <div>
-          <h1>Auditoría</h1>
-          <p className="dashboard-subtitle">Historial completo con filtros combinados y exportación CSV</p>
+    <section className="auditoria-page page">
+      <header className="auditoria-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Auditoría</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Historial completo con filtros combinados y exportación CSV</p>
         </div>
       </header>
 
@@ -238,7 +240,7 @@ export default function AuditoriaPage() {
 
       {tab === 'sistema' ? (
         <>
-          <div className="auditoria-header auditoria-actions-header">
+          <div className="auditoria-header auditoria-actions-header page-header">
             <button type="button" onClick={exportCsv} disabled={exporting || loading}>
               {exporting ? 'Exportando...' : 'Exportar CSV'}
             </button>
@@ -322,9 +324,10 @@ export default function AuditoriaPage() {
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
           <div className="users-table-card auditoria-table-card">
-            {loading ? <p className="import-muted">Cargando auditoría...</p> : null}
+            {loading ? <PageSkeleton variant="table" rows={5} columns={8} label="Cargando auditoría..." /> : null}
             {!loading && rows.length === 0 ? (
               <EmptyState
+                headingLevel="h2"
                 title="Sin registros para los filtros seleccionados."
                 subtitle="Amplía el rango de fechas o quita algún filtro para ver más resultados."
               />
@@ -333,6 +336,7 @@ export default function AuditoriaPage() {
               <>
                 <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de auditoría">
                   <table>
+                    <caption className="sr-only">Registro de auditoría</caption>
                     <thead>
                       <tr>
                         <th scope="col" />
@@ -373,7 +377,7 @@ export default function AuditoriaPage() {
                                   <div>
                                     <strong>Valor anterior:</strong>{' '}
                                     {isAmountColumn(row.columna_nombre) && row.valor_anterior != null ? (
-                                      <SignedAmount value={row.valor_anterior} showSign>{row.valor_anterior}</SignedAmount>
+                                      <SignedAmount value={row.valor_anterior} showSign={sinSignoPrevio(row.valor_anterior)}>{row.valor_anterior}</SignedAmount>
                                     ) : (
                                       row.valor_anterior ?? 'Sin valor'
                                     )}
@@ -381,7 +385,7 @@ export default function AuditoriaPage() {
                                   <div>
                                     <strong>Valor nuevo:</strong>{' '}
                                     {isAmountColumn(row.columna_nombre) && row.valor_nuevo != null ? (
-                                      <SignedAmount value={row.valor_nuevo} showSign>{row.valor_nuevo}</SignedAmount>
+                                      <SignedAmount value={row.valor_nuevo} showSign={sinSignoPrevio(row.valor_nuevo)}>{row.valor_nuevo}</SignedAmount>
                                     ) : (
                                       row.valor_nuevo ?? 'Sin valor'
                                     )}

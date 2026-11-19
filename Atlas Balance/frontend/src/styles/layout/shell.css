@@ -112,13 +112,13 @@
   color: var(--text-link);
   font-family: var(--font-display);
   font-size: var(--text-17);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
 }
 
 .app-brand-subtitle {
   color: var(--text-tertiary);
   font-size: var(--text-12);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
 }
 
 .app-sidebar--collapsed .app-brand-text {
@@ -446,7 +446,7 @@
 .app-topbar-breadcrumb {
   color: var(--text-secondary);
   font-size: var(--text-12);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -718,6 +718,13 @@
   gap: var(--space-2);
 }
 
+/* D-10 (LOTE 8): el titulo de un estado vacio puede ser h2 (cuando el estado
+   cuelga del h1 de la pagina) o h3. Globalmente h2 es de 28px y h3 de 21px,
+   asi que se fija aqui el mismo tamano que tenia el h3: el aspecto no cambia. */
+.empty-state h2 {
+  font-size: var(--text-21);
+}
+
 /* Espejo de .atl-empty__mark (design-system/components/components.css):
    pastilla de 48px, redonda, sobre superficie hundida y con borde capilar. */
 .empty-state-icon {
@@ -762,6 +769,33 @@
 .skeleton-line--title {
   width: min(22rem, 60%);
   height: 1.4rem;
+}
+
+/* D-3: esqueleto de tabla (cabecera + filas de celdas) y esqueleto inline
+   (panel o seccion). Reutilizan las clases y tokens del esqueleto de pagina. */
+.skeleton-table {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.skeleton-table__head,
+.skeleton-table__row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeleton-line--cell {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 0.85rem;
+}
+
+.skeleton-table__head .skeleton-line--cell {
+  height: 0.7rem;
+}
+
+.skeleton-line--compact {
+  height: 0.8rem;
 }
 
 @keyframes skeleton-shimmer {
@@ -1205,7 +1239,11 @@
   }
 }
 
-@media (max-width: 360px) {
+/* D-4 (LOTE 8): el movil estrecho (360 px) se integro en el unico umbral
+   movil del sistema (767.98 px). La barra inferior aprieta el hueco entre
+   items y baja la tipografia de las etiquetas para que las cinco caben sin
+   recorte; el ancho de cada item de la rejilla no cambia. */
+@media (max-width: 767.98px) {
   .bottom-nav {
     gap: var(--space-1);
     padding-inline: var(--space-1);
@@ -1485,5 +1523,64 @@
 @media (hover: none), (pointer: coarse) {
   .app-search {
     min-height: var(--control-height);
+  }
+}
+
+/* D-5 (LOTE 8): controles del shell. Movidos desde layout/system-coherence.css
+   (que se cargaba la ultima y por eso ganaba por orden de fuente); aqui se
+   mantienen al final de la hoja del shell, con la misma precedencia. */
+.page-placeholder {
+  border-color: var(--border-default);
+  background: var(--surface-raised);
+}
+
+.app-nav-link--active .app-nav-icon {
+  color: var(--text-link);
+  transform: scale(1.04);
+}
+
+.sidebar-toggle,
+.theme-toggle,
+.logout-button,
+.bottom-nav-link,
+.bottom-nav-sheet-link {
+  border-color: var(--border-control);
+  background: var(--surface-raised);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--duration-instant) var(--ease-premium);
+}
+
+.sidebar-toggle:hover,
+.theme-toggle:hover,
+.logout-button:hover,
+.bottom-nav-link:hover,
+.bottom-nav-sheet-link:hover {
+  border-color: var(--border-control-hover);
+  background: var(--surface-hover);
+}
+
+.sidebar-toggle:active:not(:disabled),
+.theme-toggle:active:not(:disabled),
+.logout-button:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+@media (max-width: 767.98px) {
+  .bottom-nav-sheet-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bottom-nav-sheet-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-start;
+  }
+
+  .bottom-nav-sheet-close {
+    width: var(--control-height);
+    justify-self: end;
   }
 }

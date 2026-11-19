@@ -1,8 +1,4 @@
-.extractos-page {
-  display: grid;
-  gap: var(--space-5);
-  min-width: 0;
-}
+
 
 .extractos-header {
   display: grid;
@@ -14,22 +10,6 @@
 .extractos-header h1,
 .extractos-filters {
   min-width: 0;
-}
-
-.extractos-heading {
-  display: grid;
-  gap: var(--space-1);
-  min-width: min(100%, 24rem);
-}
-
-.extractos-heading h1 {
-  font-size: var(--text-28);
-  font-weight: var(--font-weight-heavy);
-}
-
-.extractos-heading p {
-  margin: 0;
-  color: var(--text-secondary);
 }
 
 .extractos-mode-toggle {
@@ -91,11 +71,6 @@
   min-height: 2.625rem;
 }
 
-.extractos-clear-period {
-  min-height: 2.625rem;
-  white-space: nowrap;
-}
-
 .add-row-field {
   display: grid;
   gap: var(--space-1);
@@ -145,7 +120,7 @@
   color: var(--text-primary);
   font-family: var(--font-display);
   font-size: var(--text-17);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
 }
 
 .extracto-table-toolbar span {
@@ -808,144 +783,6 @@
   margin: 0;
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  backdrop-filter: var(--blur-overlay);
-  -webkit-backdrop-filter: var(--blur-overlay);
-  z-index: var(--z-modal-backdrop);
-  display: grid;
-  place-items: center;
-  animation: modal-backdrop-in var(--duration-fast) var(--ease-premium);
-}
-
-/* Modificadores del backdrop unico. --padded deja aire alrededor del panel;
-   --stack-top lo sube por encima de otros modales abiertos (importacion);
-   --fullscreen-mobile hace que el panel ocupe toda la pantalla en movil. */
-.modal-backdrop--padded {
-  padding: var(--space-3);
-}
-
-.modal-backdrop--stack-top {
-  z-index: calc(var(--z-modal-backdrop) + 2);
-}
-
-@media (max-width: 720px) {
-  .modal-backdrop--fullscreen-mobile {
-    place-items: stretch;
-    padding: 0;
-  }
-}
-
-/* Modal comun (components/common/Modal.tsx): panel con cabecera, cuerpo con
-   scroll y pie. Los modales con estructura propia siguen usando sus clases. */
-.modal-panel {
-  --modal-width: 640px;
-  display: flex;
-  flex-direction: column;
-  width: min(var(--modal-width), 96vw);
-  max-height: min(90dvh, 1000px);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-modal);
-  box-shadow: var(--shadow-xl);
-  overscroll-behavior: contain;
-}
-
-.modal-panel--sm { --modal-width: 440px; }
-.modal-panel--md { --modal-width: 640px; }
-.modal-panel--lg { --modal-width: 1040px; }
-
-.modal-panel__header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-default);
-}
-
-.modal-panel__title {
-  margin: 0;
-  font: var(--type-title-3);
-  color: var(--text-primary);
-  overflow-wrap: anywhere;
-}
-
-.modal-panel__subtitle {
-  margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
-}
-
-.modal-panel__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--space-4);
-}
-
-.modal-panel__body > :first-child { margin-top: 0; }
-.modal-panel__body > :last-child { margin-bottom: 0; }
-
-.modal-panel__footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-default);
-}
-
-.modal-panel__footer > button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
-  min-height: var(--control-height);
-}
-
-/* Accion secundaria alineada a la izquierda del pie (p. ej. "Anadir linea"). */
-.modal-panel__footer > .modal-panel__footer-start {
-  margin-right: auto;
-}
-
-@media (max-width: 720px) {
-  .modal-panel__header,
-  .modal-panel__footer {
-    padding: var(--space-3);
-  }
-
-  .modal-panel__body {
-    padding: var(--space-3);
-  }
-
-  /* Pie apilado a ancho completo: accion principal arriba, 44px de alto cada una. */
-  .modal-panel__footer {
-    flex-direction: column-reverse;
-    align-items: stretch;
-    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
-  }
-
-  .modal-panel__footer > .modal-panel__footer-start {
-    margin-right: 0;
-  }
-
-  .modal-panel__footer > button {
-    width: 100%;
-    height: var(--control-height);
-  }
-}
-
-.modal-panel__body > table {
-  min-width: 640px;
-}
-
-.modal-panel__body td {
-  overflow-wrap: anywhere;
-}
-
 .desglose-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1028,19 +865,15 @@
   place-items: center;
 }
 
-@media (max-width: 1200px) {
-  .extractos-header {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 1199.98px) {
 
   .extractos-mode-toggle,
   .extractos-filters {
     justify-self: stretch;
     justify-content: flex-start;
-  }
-}
+  }}
 
-@media (max-width: 900px) {
+@media (max-width: 1023.98px) {
   .desglose-summary {
     grid-template-columns: 1fr;
   }
@@ -1075,8 +908,7 @@
   .extractos-date-field {
     min-width: min(100%, 12rem);
     flex: 1 1 12rem;
-  }
-}
+  }}
 
 @media (hover: none), (pointer: coarse) {
   .extracto-table-section {
@@ -1144,53 +976,13 @@
 
   .cell--fila_numero > span:not(.cell-edit-shell) {
     padding-left: calc(var(--control-height) + var(--space-1));
-  }
-}
-
-/* V-03.01: Extractos — jerarquía de página y rejilla densa de movimientos. */
-.extractos-page {
-  gap: var(--space-9);
-  padding-bottom: var(--space-9);
-}
+  }}
 
 .extractos-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-7);
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.extractos-heading {
-  gap: var(--space-2);
-}
-
-.extractos-eyebrow,
-.extractos-filter-eyebrow {
-  color: var(--accent-text);
-  font: var(--type-overline);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
-.extractos-heading h1 {
-  margin: 0;
-  color: var(--text-primary);
-  font: var(--type-title-2);
-  letter-spacing: var(--tracking-display);
-}
-
-.extractos-heading p {
-  max-width: 62ch;
-  color: var(--text-secondary);
-  font: var(--type-body-sm);
-}
-
-.extractos-header-actions {
-  display: flex;
-  align-items: center;
-  flex: none;
 }
 
 .extractos-mode-toggle {
@@ -1220,41 +1012,6 @@
   border-color: var(--border-default);
   background: var(--surface-card);
   color: var(--text-primary);
-}
-
-.extractos-filter-bar {
-  display: grid;
-  gap: var(--space-6);
-  padding: var(--pad-card-compact);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-card);
-}
-
-.extractos-filter-bar-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-7);
-}
-
-.extractos-filter-bar-head > div {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.extractos-filter-bar h2 {
-  margin: 0;
-  color: var(--text-primary);
-  font: var(--type-title-3);
-  letter-spacing: var(--tracking-heading);
-}
-
-.extractos-filter-summary {
-  color: var(--text-tertiary);
-  font: var(--type-mono);
-  font-size: var(--text-12);
-  white-space: nowrap;
 }
 
 .extractos-filters {
@@ -1298,48 +1055,6 @@
   padding-inline: var(--space-5);
 }
 
-.searchable-select-control {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  min-height: var(--control-height);
-  gap: var(--space-2);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-control);
-  background: var(--surface-card);
-  color: var(--text-primary);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
-}
-
-.searchable-select-control:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-control-hover);
-}
-
-.searchable-select-control:focus-within {
-  border-color: var(--accent-500);
-  box-shadow: var(--ring-focus);
-}
-
-.searchable-select-input {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: inherit;
-  font: var(--type-body-sm);
-}
-
-.searchable-select-input::placeholder {
-  color: var(--text-tertiary);
-}
-
 .searchable-select-control .app-select-chevron {
   pointer-events: none;
 }
@@ -1347,67 +1062,6 @@
 .searchable-select[data-state='open'] .app-select-chevron {
   transform: translateY(0.12rem) rotate(225deg);
   opacity: 1;
-}
-
-.extractos-searchable-select-popover {
-  position: fixed;
-  z-index: var(--z-dropdown);
-  display: grid;
-  gap: 0.15rem;
-  max-height: min(18rem, 54vh);
-  overflow: auto;
-  padding: var(--space-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-xl);
-}
-
-.extractos-searchable-select-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: var(--control-height-compact);
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font: var(--type-body-sm);
-  cursor: pointer;
-  user-select: none;
-}
-
-.extractos-searchable-select-option:hover,
-.extractos-searchable-select-option[data-active='true'] {
-  background: var(--surface-hover);
-}
-
-.extractos-searchable-select-option[aria-selected='true'] {
-  color: var(--accent-text);
-  font-weight: var(--weight-semibold);
-}
-
-.extractos-searchable-select-empty {
-  padding: var(--space-3);
-  color: var(--text-tertiary);
-  font: var(--type-caption);
-}
-
-.extractos-clear-period {
-  align-self: end;
-  min-height: var(--control-height);
-  padding-inline: var(--space-5);
-  border-color: transparent;
-  background: transparent;
-  color: var(--accent-text);
-  font: var(--type-label);
-  white-space: nowrap;
-}
-
-.extractos-clear-period:hover:not(:disabled) {
-  border-color: var(--accent-soft-border);
-  background: var(--accent-soft);
-  color: var(--accent-text);
 }
 
 .extracto-table-section {
@@ -1703,8 +1357,7 @@
 
   :root[data-density="compacto"] .cell-edit-shell:has(.cell-save-state) .cell-edit-button {
     min-height: calc(var(--sheet-row-height) - 2px);
-  }
-}
+  }}
 
 .extracto-table-footer {
   min-height: 44px;
@@ -1715,42 +1368,13 @@
   font: var(--type-caption);
 }
 
-.extractos-page > .users-pagination {
-  margin-top: calc(var(--space-9) * -1 + var(--space-4));
-  padding: var(--space-4) var(--pad-card-compact);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-card);
-}
-
-.extractos-page > .users-pagination span {
-  color: var(--text-tertiary);
-  font: var(--type-caption);
-}
-
-@media (max-width: 1180px) {
-  .extractos-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .extractos-header-actions {
-    width: 100%;
-  }
+@media (max-width: 1199.98px) {
 
   .extractos-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+  }}
 
-@media (max-width: 720px) {
-  .extractos-page {
-    gap: var(--space-7);
-  }
-
-  .extractos-heading h1 {
-    font-size: var(--text-28);
-  }
+@media (max-width: 767.98px) {
 
   .extractos-header-actions,
   .extractos-mode-toggle {
@@ -1761,26 +1385,8 @@
     flex: 1;
   }
 
-  .extractos-filter-bar {
-    padding: var(--space-6);
-  }
-
-  .extractos-filter-bar-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .extractos-filter-summary {
-    white-space: normal;
-  }
-
   .extractos-filters {
     grid-template-columns: 1fr;
-  }
-
-  .extractos-clear-period {
-    justify-self: start;
   }
 
   .extracto-table-toolbar {
@@ -1817,13 +1423,7 @@
   .extracto-table-footer {
     flex-wrap: wrap;
     padding-block: var(--space-4);
-  }
-
-  .extractos-page > .users-pagination {
-    margin-top: calc(var(--space-7) * -1 + var(--space-4));
-    flex-wrap: wrap;
-  }
-}
+  }}
 
 /* Alto Contraste: el inset box-shadow de la celda activa desaparece; se pinta con outline del sistema */
 @media (forced-colors: active) {
@@ -1832,5 +1432,16 @@
   .cell[aria-selected="true"] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
-  }
+  }}
+
+/* D-5 (LOTE 8): coherencia de superficies de esta hoja. Movida desde
+   layout/system-coherence.css (que se cargaba la ultima); al final de la hoja
+   conserva la precedencia que tenia sobre las reglas de la propia hoja. */
+.extracto-table-section {
+  border-color: var(--border-default);
+  background: var(--surface-raised);
+}
+
+.extracto-table-section {
+  overflow: clip;
 }

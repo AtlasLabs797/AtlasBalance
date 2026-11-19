@@ -1,9 +1,9 @@
 // F-9: si el guardado de una celda falla, lo que el usuario ha escrito no debe
 // descartarse. Esta regla vive aqui (sin dependencias) para que se pueda
 // comprobar sin DOM: el componente EditableCell la aplica y el test la verifica.
-export type EditableCellSaveState = 'idle' | 'saved' | 'error';
+type EditableCellSaveState = 'idle' | 'saved' | 'error';
 
-export interface EditableCellState {
+interface EditableCellState {
   /** Texto que el usuario esta escribiendo (borrador). */
   draft: string;
   /** Si el campo editable esta abierto. */
@@ -12,7 +12,7 @@ export interface EditableCellState {
   saveState: EditableCellSaveState;
 }
 
-export type EditableCellSaveResult = 'saved' | 'failed';
+type EditableCellSaveResult = 'saved' | 'failed';
 
 /**
  * Aplica el resultado de un intento de guardado a una celda editable.

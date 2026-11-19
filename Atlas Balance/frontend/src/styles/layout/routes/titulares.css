@@ -1,0 +1,144 @@
+/* L8/R-9: reglas exclusivas de la ruta "titulares".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.titular-open-button {
+  background: var(--accent-solid);
+  color: var(--text-inverse);
+  border: 1px solid transparent;
+  font-weight: var(--weight-semibold);
+}
+
+.titular-open-button:hover {
+  background: var(--accent-solid-hover);
+}
+
+.titular-open-button:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--ring-focus);
+}
+
+.titulares-page .titular-card-meta {
+  grid-template-columns: minmax(0, 1fr) minmax(8.5rem, auto);
+  gap: var(--space-3);
+}
+
+.titulares-page .titular-card-notes {
+  grid-column: 1 / -1;
+}
+
+.titulares-page .titular-card-balance {
+  align-self: start;
+}
+
+.titulares-balance-list {
+  display: grid;
+  gap: var(--space-1);
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
+  padding: var(--space-2);
+}
+
+.titulares-balance-heading,
+.titulares-balance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(11rem, 0.8fr) 5.5rem;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.titulares-balance-heading {
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.titulares-balance-heading span:nth-child(2) {
+  text-align: right;
+}
+
+.titulares-balance-heading span:last-child {
+  text-align: right;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .titulares-balance-row:hover {
+    border-color: color-mix(in srgb, var(--accent-solid) 20%, var(--border-default));
+    background: var(--surface-card);
+    text-decoration: none;
+  }
+  .titulares-balance-row:hover .titulares-balance-avatar,
+  .titulares-balance-row:hover .titulares-balance-open {
+    background: var(--accent-solid);
+    color: var(--text-inverse);
+  }
+}
+
+.titulares-balance-row:active {
+  transform: scale(var(--press-scale-surface));
+}
+
+.titulares-balance-row:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--ring-focus);
+}
+
+.titulares-balance-owner {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.titulares-balance-avatar {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  color: var(--text-link);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+.titulares-balance-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 767.98px) {
+  .titulares-balance-heading {
+    display: none;
+  }
+
+  .titulares-balance-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "owner owner"
+      "amount open";
+    gap: var(--space-2);
+  }
+
+  .titulares-balance-owner {
+    grid-area: owner;
+  }
+
+  .titulares-balance-open {
+    grid-area: open;
+  }
+}

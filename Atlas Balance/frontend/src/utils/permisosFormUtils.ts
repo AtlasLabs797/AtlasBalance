@@ -4,7 +4,7 @@
 // La jerarquia es Pais > Titular > Cuenta. Cada dimension null = "todas" en esa
 // dimension; un valor concreto limita el alcance a esa dimension.
 
-export interface CatalogCuenta {
+interface CatalogCuenta {
   id: string;
   nombre: string;
   titular_id: string;
@@ -14,18 +14,12 @@ export interface CatalogCuenta {
   activa?: boolean;
 }
 
-export interface CatalogTitular {
+interface CatalogTitular {
   id: string;
   nombre: string;
 }
 
-export interface CatalogPais {
-  id: string;
-  nombre: string;
-  codigo_iso2?: string | null;
-}
-
-export interface PermisoDraft {
+interface PermisoDraft {
   pais_id: string;
   titular_id: string;
   cuenta_id: string;
@@ -37,7 +31,7 @@ export interface PermisoDraft {
   puede_ver_dashboard?: boolean;
 }
 
-export type CoherenceState = 'coherent' | 'partial' | 'dangling';
+type CoherenceState = 'coherent' | 'partial' | 'dangling';
 
 // V-03.02: fila editable de la matriz de permisos y su equivalente en API.
 // Se movieron aqui desde UsuarioModal para poder testear el payload sin React.
@@ -225,7 +219,7 @@ export function mapPermisoApiRow(permiso: PermisoApiRow, key: string): PermisoFo
 
 // Parsea las columnas separadas por coma. Devuelve undefined si no hay
 // ninguna, para no mandar listas vacias.
-export function parsePermisoColumns(value: string): string[] | undefined {
+function parsePermisoColumns(value: string): string[] | undefined {
   const parsed = value
     .split(',')
     .map((item) => item.trim())
@@ -234,7 +228,7 @@ export function parsePermisoColumns(value: string): string[] | undefined {
 }
 
 // Indica si la fila tiene algun flag de permiso activo.
-export function permisoHasFlags(permiso: PermisoFormRow): boolean {
+function permisoHasFlags(permiso: PermisoFormRow): boolean {
   return (
     permiso.puede_ver_cuentas ||
     permiso.puede_agregar_lineas ||

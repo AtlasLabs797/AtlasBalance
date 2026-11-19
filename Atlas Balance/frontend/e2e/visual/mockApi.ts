@@ -12,6 +12,15 @@ const PAIS_DO = ID(12);
 const TIT = [ID(21), ID(22), ID(23)];
 const CTA = [ID(31), ID(32), ID(33), ID(34), ID(35)];
 
+// LOTE 8 (T-2): la pantalla /cambiar-password solo es alcanzable con
+// primer_login=true (ProtectedRoute con allowPrimerLogin). El resto de
+// pantallas necesitan primer_login=false, asi que /auth/me consulta esta
+// bandera: el arnes la activa solo durante esa captura y la apaga despues.
+let primerLoginActivo = false;
+export function setPrimerLoginMock(activo: boolean): void {
+  primerLoginActivo = activo;
+}
+
 const usuario = {
   id: USER_ID, email: 'admin@atlasbalance.local', nombre_completo: 'Marta Admin', rol: 'ADMIN',
   activo: true, primer_login: false, puede_usar_ia: true, mfa_enabled: true, mfa_required: true,
@@ -263,6 +272,74 @@ const conciliacionesFixture = [
   },
 ];
 
+// LOTE 8 (T-2): fixtures de las pantallas que se anaden al arnes de capturas
+// (detalle de titular y de cuenta, auditoria y revision).
+const cuentaResumenDe = (cuentaId: string) => {
+  const c = cuentasBase.find((x) => x.id === cuentaId) ?? cuentasBase[0];
+  return {
+    cuenta_id: c.id, cuenta_nombre: c.nombre, iban: c.iban, banco_nombre: c.banco_nombre, divisa: c.divisa,
+    pais_id: c.pais_id, pais_nombre: c.pais_nombre, titular_id: c.titular_id, titular_nombre: c.titular_nombre,
+    es_efectivo: c.es_efectivo, tipo_cuenta: c.tipo_cuenta, plazo_fijo: c.plazo_fijo, notas: c.notas,
+    saldo_actual: c.saldo_actual, ingresos_mes: c.ingresos_mes, egresos_mes: c.egresos_mes,
+    ultima_actualizacion: '2026-11-14T18:00:00Z',
+  };
+};
+
+const titularConCuentasDe = (titularId: string) => {
+  const t = titulares.find((x) => x.id === titularId) ?? titulares[0];
+  return { titular_id: t.id, titular_nombre: t.nombre, cuentas: resumenCuentas(t.id) };
+};
+
+const auditoriaFixture = [
+  {
+    id: ID(1401), timestamp: '2026-11-15T10:12:00Z', usuario_id: USER_ID, usuario_nombre: 'Marta Admin',
+    tipo_accion: 'EDITAR_CELDA', entidad_tipo: 'Extracto', entidad_id: ID(1000),
+    cuenta_id: CTA[0], cuenta_nombre: 'Operativa BBVA', titular_id: TIT[0], titular_nombre: titulares[0].nombre,
+    celda_referencia: 'Fila 60 · 14/11/2026', columna_nombre: 'monto',
+    valor_anterior: '-120,00', valor_nuevo: '-125,00',
+    ip_address: '192.168.1.24', detalles_json: null,
+  },
+  {
+    id: ID(1402), timestamp: '2026-11-14T08:05:00Z', usuario_id: ID(2), usuario_nombre: 'Pablo Gerente',
+    tipo_accion: 'MARCAR', entidad_tipo: 'Extracto', entidad_id: ID(1001),
+    cuenta_id: CTA[1], cuenta_nombre: 'Nominas Santander', titular_id: TIT[0], titular_nombre: titulares[0].nombre,
+    celda_referencia: 'Fila 59 · 13/11/2026', columna_nombre: 'flagged',
+    valor_anterior: null, valor_nuevo: 'Importe a confirmar',
+    ip_address: '203.0.113.45', detalles_json: '{"motivo":"Revisar con contabilidad"}',
+  },
+  {
+    id: ID(1403), timestamp: '2026-11-13T17:41:00Z', usuario_id: USER_ID, usuario_nombre: 'Marta Admin',
+    tipo_accion: 'IMPORTAR', entidad_tipo: 'LoteImportacion', entidad_id: ID(1301),
+    cuenta_id: CTA[0], cuenta_nombre: 'Operativa BBVA', titular_id: TIT[0], titular_nombre: titulares[0].nombre,
+    celda_referencia: null, columna_nombre: null,
+    valor_anterior: null, valor_nuevo: '48 filas',
+    ip_address: '192.168.1.24', detalles_json: null,
+  },
+];
+
+const auditoriaFiltrosFixture = {
+  usuarios: [
+    { id: USER_ID, nombre: 'Marta Admin' },
+    { id: ID(2), nombre: 'Pablo Gerente' },
+    { id: ID(3), nombre: 'Ana Empleada' },
+  ],
+  cuentas: cuentasBase.map((c) => ({
+    id: c.id, nombre: c.nombre, titular_id: c.titular_id, titular_nombre: c.titular_nombre,
+  })),
+  tipos_accion: ['EDITAR_CELDA', 'MARCAR', 'IMPORTAR', 'RESTAURAR'],
+};
+
+const revisionComisionesFixture = [
+  { extracto_id: ID(1001), cuenta_id: CTA[0], titular_id: TIT[0], pais_id: PAIS_ES, titular: titulares[0].nombre, cuenta: 'Operativa BBVA', fecha: '2026-11-13', monto: -15.5, concepto: 'Comision mantenimiento', estado_devolucion: 'PENDIENTE', devolucion_extracto_id: null, devolucion_fecha: null, divisa: 'EUR' },
+  { extracto_id: ID(1002), cuenta_id: CTA[0], titular_id: TIT[0], pais_id: PAIS_ES, titular: titulares[0].nombre, cuenta: 'Operativa BBVA', fecha: '2026-11-10', monto: -12, concepto: 'Comision mantenimiento', estado_devolucion: 'DEVUELTA', devolucion_extracto_id: ID(1010), devolucion_fecha: '2026-11-11', divisa: 'EUR' },
+  { extracto_id: ID(1003), cuenta_id: CTA[1], titular_id: TIT[0], pais_id: PAIS_ES, titular: titulares[0].nombre, cuenta: 'Nominas Santander', fecha: '2026-11-08', monto: -8.9, concepto: 'Comision mantenimiento', estado_devolucion: 'DESCARTADA', devolucion_extracto_id: null, devolucion_fecha: null, divisa: 'EUR' },
+];
+
+const revisionSegurosFixture = [
+  { extracto_id: ID(1004), cuenta_id: CTA[0], titular_id: TIT[0], pais_id: PAIS_ES, titular: titulares[0].nombre, cuenta: 'Operativa BBVA', fecha: '2026-11-12', importe: -120, concepto: 'Cuota seguro', estado: 'PENDIENTE', divisa: 'EUR' },
+  { extracto_id: ID(1005), cuenta_id: CTA[1], titular_id: TIT[0], pais_id: PAIS_ES, titular: titulares[0].nombre, cuenta: 'Nominas Santander', fecha: '2026-11-05', importe: -95.4, concepto: 'Cuota seguro', estado: 'CORRECTO', divisa: 'EUR' },
+];
+
 // Titulares eliminados (solo se devuelven con incluirEliminados=true; alimentan Papelera).
 const titularesEliminados = [
   { id: ID(24), nombre: 'Sociedad Archivada Demo', tipo: 'EMPRESA', notas: null, fecha_creacion: '2024-02-01T10:00:00Z', cuentas_count: 0, deleted_at: '2026-11-01T10:00:00Z' },
@@ -286,7 +363,7 @@ function paged<T>(data: T[], page = 1, pageSize = 50, extra: Record<string, unkn
 
 type Handler = (url: URL) => unknown;
 const routes: Array<[RegExp, Handler]> = [
-  [/^\/auth\/me$/, () => ({ usuario, permisos: [] })],
+  [/^\/auth\/me$/, () => ({ usuario: primerLoginActivo ? { ...usuario, primer_login: true } : usuario, permisos: [] })],
   [/^\/auth\/mfa\/trusted-devices$/, () => mfaDispositivosFixture],
   [/^\/auth\/(logout|refresh-token)$/, () => ({ csrf_token: 'x'.repeat(43) + '=', usuario, permisos: [] })],
   [/^\/alertas\/activas$/, () => [{ alerta_id: ID(701), cuenta_id: CTA[1], titular_id: TIT[0], cuenta_nombre: 'Nominas Santander', titular_nombre: titulares[0].nombre, saldo_actual: 12980.1, saldo_minimo: 15000, divisa: 'EUR' }]],
@@ -301,15 +378,50 @@ const routes: Array<[RegExp, Handler]> = [
   [/^\/dashboard\/saldos-divisa$/, () => saldosDivisa],
   [/^\/dashboard\/titular\/.+/, () => ({ titular_id: TIT[0], titular_nombre: titulares[0].nombre, divisa_principal: 'EUR', saldos_por_divisa: dashboardPrincipal.saldos_por_divisa, ingresos_mes: 21400.5, egresos_mes: 15870.2, total_convertido: 67380, saldos_por_cuenta: saldosPorCuenta.slice(0, 3), saldos_por_pais: dashboardPrincipal.saldos_por_pais, chart_colors: chartColors })],
   [/^\/extractos\/titulares-resumen$/, () => titularesResumen],
-  [/^\/extractos\/columnas-visibles$/, () => ({ columnas_visibles: null, columnas_restringidas: [] })],
-  [/^\/extractos$/, (u) => paged(extractos, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 200), { columnas_disponibles: ['fecha', 'concepto', 'comentarios', 'monto', 'saldo'] })],
+  // LOTE 8 (T-1): `columnas_restringidas` es la WHITELIST del administrador
+  // (backend ExtractosController: null = "el administrador no restringe").
+  // Antes devolvia [] y el frontend, que trata la lista como whitelist,
+  // excluia TODAS las columnas: la tabla se quedaba sin celdas y los e2e de
+  // extractos fallaban. null = admin sin restricciones (caso real por defecto).
+  [/^\/extractos\/columnas-visibles$/, () => ({ columnas_visibles: null, columnas_restringidas: null })],
+  [/^\/extractos$/, (u) => {
+    // LOTE 8 (T-2): Papelera pide soloEliminados=true; no hay extractos
+    // eliminados en el fixture.
+    if (u.searchParams.get('soloEliminados') === 'true') {
+      return paged([], Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 200), { columnas_disponibles: [] });
+    }
+    return paged(extractos, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 200), { columnas_disponibles: ['fecha', 'concepto', 'comentarios', 'monto', 'saldo'] });
+  }],
   [/^\/extractos\/[^/]+\/desglose$/, () => ({ extracto_id: ID(1000), extracto_monto: 0, count: 0, total: 0, diferencia: 0, estado: 'sin_desglose', version: '1', lineas: [] })],
-  [/^\/titulares$/, (u) => paged(u.searchParams.get('incluirEliminados') === 'true' ? [...titulares, ...titularesEliminados] : titulares, 1, Number(u.searchParams.get('pageSize') ?? 50))],
+  // LOTE 8 (T-2): detalle de titular (/titulares/:id) y detalle de cuenta
+  // (/cuentas/:id y /dashboard/cuenta/:id).
+  [/^\/extractos\/titulares\/[^/]+\/cuentas$/, (u) => titularConCuentasDe(/\/extractos\/titulares\/([^/]+)\/cuentas$/.exec(u.pathname)?.[1] ?? '')],
+  [/^\/extractos\/cuentas\/[^/]+\/resumen$/, (u) => cuentaResumenDe(/\/extractos\/cuentas\/([^/]+)\/resumen$/.exec(u.pathname)?.[1] ?? '')],
+  [/^\/titulares$/, (u) => {
+    // LOTE 8 (T-2): Papelera pide soloEliminados=true; el listado pide
+    // incluirEliminados=true para marcar los eliminados sin borrarlos.
+    if (u.searchParams.get('soloEliminados') === 'true') {
+      return paged(titularesEliminados, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50));
+    }
+    const incluir = u.searchParams.get('incluirEliminados') === 'true';
+    return paged(incluir ? [...titulares, ...titularesEliminados] : titulares, 1, Number(u.searchParams.get('pageSize') ?? 50));
+  }],
   [/^\/titulares\/[^/]+$/, () => titulares[0]],
   [/^\/cuentas\/divisas-activas$/, () => divisas.map((d) => ({ codigo: d.codigo, nombre: d.nombre }))],
-  [/^\/cuentas$/, (u) => paged(cuentasBase, 1, Number(u.searchParams.get('pageSize') ?? 50))],
+  [/^\/cuentas$/, (u) => {
+    // LOTE 8 (T-2): Papelera pide soloEliminados=true. No hay cuentas
+    // eliminadas en el fixture, asi que la respuesta va vacia.
+    if (u.searchParams.get('soloEliminados') === 'true') {
+      return paged([], Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50));
+    }
+    return paged(cuentasBase, 1, Number(u.searchParams.get('pageSize') ?? 50));
+  }],
   [/^\/cuentas\/[^/]+$/, () => cuentasBase[0]],
-  [/^\/formatos-importacion$/, () => paged([{ id: ID(801), nombre: 'BBVA CSV', banco_nombre: 'BBVA', divisa: 'EUR' }])],
+  [/^\/formatos-importacion$/, () => paged([
+    { id: ID(801), nombre: 'BBVA CSV', banco_nombre: 'BBVA', divisa: 'EUR', mapeo_json: { tipo_monto: 'una_columna', fecha: 0, concepto: 1, monto: 2, saldo: 3, columnas_extra: [] }, activo: true, deleted_at: null },
+    { id: ID(802), nombre: 'Santander Excel', banco_nombre: 'Santander', divisa: 'EUR', mapeo_json: { tipo_monto: 'dos_columnas', fecha: 0, concepto: 1, ingreso: 2, egreso: 3, saldo: 4, columnas_extra: [{ nombre: 'Referencia', indice: 5, etiqueta: 'Referencia' }] }, activo: true, deleted_at: null },
+    { id: ID(803), nombre: 'Formato antiguo', banco_nombre: 'BBVA', divisa: 'EUR', mapeo_json: { tipo_monto: 'una_columna', fecha: 0, concepto: 1, monto: 2, saldo: 3, columnas_extra: [] }, activo: false, deleted_at: null },
+  ])],
   [/^\/formatos-importacion\/columnas-extra-sugeridas$/, () => ({ data: [] })],
   [/^\/importacion\/contexto$/, () => importContexto],
   [/^\/importacion\/lotes$/, (u) => {
@@ -317,7 +429,14 @@ const routes: Array<[RegExp, Handler]> = [
     const filtrados = cuentaId ? lotesImportacionFixture.filter((l) => l.cuenta_id === cuentaId) : lotesImportacionFixture;
     return paged(filtrados, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 20));
   }],
-  [/^\/usuarios$/, () => paged(usuariosRows)],
+  [/^\/usuarios$/, (u) => {
+    // LOTE 8 (T-2): Papelera pide soloEliminados=true; no hay usuarios
+    // eliminados en el fixture.
+    if (u.searchParams.get('soloEliminados') === 'true') {
+      return paged([], Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50));
+    }
+    return paged(usuariosRows);
+  }],
   [/^\/usuarios\/catalogos-permisos$/, () => catalogos],
   [/^\/usuarios\/[^/]+$/, () => ({ ...usuariosRows[1], permisos: [] })],
   [/^\/backups$/, (u) => paged(backups, 1, Number(u.searchParams.get('pageSize') ?? 10))],
@@ -335,9 +454,18 @@ const routes: Array<[RegExp, Handler]> = [
     usuarios: usuariosRows.map((u) => ({ id: u.id, nombre_completo: u.nombre_completo, email_login: u.email, email: u.email, rol: u.rol })),
   })],
   [/^\/exportaciones$/, () => paged(exportacionesFixture)],
-  [/^\/conciliacion\/movimientos-esperados$/, () => movimientosEsperadosFixture],
-  [/^\/conciliacion$/, () => conciliacionesFixture],
+  // LOTE 8 (T-1): /conciliacion y /conciliacion/movimientos-esperados devuelven
+  // PaginatedResponse (data/total/total_pages). El fixture devolvia un array
+  // suelto y la pagina leia response.data.data -> 0 filas.
+  [/^\/conciliacion\/movimientos-esperados$/, (u) => paged(movimientosEsperadosFixture, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50))],
+  [/^\/conciliacion$/, (u) => paged(conciliacionesFixture, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50))],
   [/^\/extractos\/[^/]+\/audit-celda$/, () => []],
+  // LOTE 8 (T-2): auditoria del sistema y sus filtros.
+  [/^\/auditoria\/filtros$/, () => auditoriaFiltrosFixture],
+  [/^\/auditoria$/, (u) => paged(auditoriaFixture, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50))],
+  // LOTE 8 (T-2): revision automatica de comisiones y seguros.
+  [/^\/revision\/comisiones$/, (u) => paged(revisionComisionesFixture, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50))],
+  [/^\/revision\/seguros$/, (u) => paged(revisionSegurosFixture, Number(u.searchParams.get('page') ?? 1), Number(u.searchParams.get('pageSize') ?? 50))],
 ];
 
 export const unknownPaths = new Set<string>();

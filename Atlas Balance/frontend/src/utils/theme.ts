@@ -1,7 +1,7 @@
 export type Theme = 'light' | 'dark';
 
-export const THEME_COLOR_LIGHT = '#F5F5F7';
-export const THEME_COLOR_DARK = '#000000';
+const THEME_COLOR_LIGHT = '#F5F5F7';
+const THEME_COLOR_DARK = '#000000';
 
 // Resuelve el tema inicial: la preferencia guardada (solo si es valida) gana;
 // si no hay o es invalida, se sigue al sistema.
@@ -23,7 +23,7 @@ export function systemPrefersDark(): boolean {
 }
 
 // Sincroniza <meta name="theme-color"> con el tema activo (barra del navegador).
-export function applyThemeColorMeta(theme: Theme): void {
+function applyThemeColorMeta(theme: Theme): void {
   if (typeof document === 'undefined') return;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', theme === 'dark' ? THEME_COLOR_DARK : THEME_COLOR_LIGHT);

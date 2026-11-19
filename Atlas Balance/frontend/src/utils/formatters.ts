@@ -104,6 +104,13 @@ export function parseEuropeanNumber(value: string | number | null | undefined): 
 
 export type AmountTone = 'positive' | 'negative' | 'neutral';
 
+// D-11 (LOTE 8): el "+" visible de un importe positivo solo se anade cuando el
+// dato CRUDO no lo trae ya, para no pintar "++500". El backend guarda la celda
+// tal cual (sin normalizar), asi que un "+1234,56" es posible.
+export function sinSignoPrevio(valor: string | number | null | undefined): boolean {
+  return !String(valor ?? '').trim().startsWith('+');
+}
+
 export function getAmountTone(value: unknown): AmountTone {
   const safeValue = toSafeNumber(value);
   if (safeValue > 0) return 'positive';
@@ -167,6 +174,71 @@ export function formatNumber(value: number, decimals: number = 2): string {
       maximumFractionDigits: decimals,
     }).format(value),
   );
+}
+
+// D-1 (LOTE 8): los porcentajes se pintan con el locale es-ES (coma decimal),
+// el menos real "−" (U+2212) y el separador que el propio locale pone antes del
+// "%" (espacio fino no separable, U+00A0). Nunca el "%" pegado.
+//
+// El valor entra YA en unidades de porcentaje (12.34 -> "12,3 %"), por eso no
+// se usa style: 'percent' de Intl: ese multiplica por 100.
+//
+// El cero se escribe "0,0 %", nunca "+0,0 %": el "+" de las variaciones lo
+// decide quien pinta la cifra, no el formateador.
+//
+// Valor ausente o no numerico -> "—", el marcador de valor ausente que ya usa
+// la app. Mismo criterio que formatBytes con "Sin tamaño": si no hay dato, se
+// dice que no lo hay, en vez de inventar un "0,0 %".
+const PERCENT_ABSENT = '—';
+
+const percentFormatters: Record<number, Intl.NumberFormat> = {};
+
+// Separador entre la cifra y el "%" segun el locale. Se extrae de Intl en vez
+// de fijarlo a mano para que no se desincronice del locale.
+let percentSeparator: string | null = null;
+
+function getPercentSeparator(): string {
+  if (percentSeparator === null) {
+    const parts = new Intl.NumberFormat('es-ES', { style: 'percent' }).formatToParts(0);
+    const signIndex = parts.findIndex((part) => part.type === 'percentSign');
+    const previous = signIndex > 0 ? parts[signIndex - 1] : undefined;
+    percentSeparator = previous && previous.type === 'literal' ? previous.value : ' ';
+  }
+  return percentSeparator;
+}
+
+function parsePercentValue(value: number | string | null | undefined): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return parseEuropeanNumber(value);
+}
+
+// Porcentaje en formato es-ES: "12,3 %", "−5,2 %", "0,0 %".
+// decimals admite 0, 1 (por defecto) o 2.
+export function formatPercent(value: number | string | null | undefined, decimals: number = 1): string {
+  const numeric = parsePercentValue(value);
+  if (numeric === null) return PERCENT_ABSENT;
+
+  // Una cifra que redondea a cero se muestra sin signo: "−0,0 %" no significa
+  // nada y el menos real delataria una variacion negativa inexistente.
+  const factor = 10 ** decimals;
+  const safeNumeric = Math.round(numeric * factor) / factor === 0 ? 0 : numeric;
+
+  if (!percentFormatters[decimals]) {
+    percentFormatters[decimals] = new Intl.NumberFormat('es-ES', {
+      useGrouping: true,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+
+  return `${withRealMinusSign(percentFormatters[decimals].format(safeNumeric))}${getPercentSeparator()}%`;
 }
 
 export function formatBytes(value: number | null | undefined): string {

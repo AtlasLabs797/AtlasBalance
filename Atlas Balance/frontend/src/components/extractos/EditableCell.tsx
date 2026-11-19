@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { applyEditableCellSaveResult } from '@/utils/editableCellSave';
 
 interface EditableCellProps {
   value: string;
   editable: boolean;
   onSave: (next: string) => Promise<void> | void;
-  displayValue?: string;
+  displayValue?: ReactNode;
   displayClassName?: string;
   tabIndex?: number;
 }

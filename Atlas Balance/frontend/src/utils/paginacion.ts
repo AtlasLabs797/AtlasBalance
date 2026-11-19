@@ -20,7 +20,7 @@ export function hayPaginaSiguiente(page: number, totalPages: number): boolean {
   return page < totalPages;
 }
 
-export interface RangoMostrado {
+interface RangoMostrado {
   desde: number;
   hasta: number;
 }

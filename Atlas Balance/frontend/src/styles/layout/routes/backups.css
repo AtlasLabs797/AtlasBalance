@@ -1,0 +1,259 @@
+/* L8/R-9: reglas exclusivas de la ruta "backups".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.backups-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.backup-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.backup-config-panel {
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.backup-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.backup-panel-heading h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-21);
+  font-weight: var(--weight-bold);
+  line-height: 1.15;
+}
+
+.backup-config-form,
+.backup-drive-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.backup-config-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.backup-config-facts div,
+.backup-drive-state,
+.backup-link-box,
+.backup-drive-file {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  padding: var(--space-3);
+}
+
+.backup-config-facts dt,
+.backup-link-box span {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.backup-config-facts dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.backup-drive-state {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.backup-drive-state p,
+.backup-link-box small,
+.backup-drive-file span,
+.backup-cloud-error {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.backup-drive-error,
+.backup-cloud-error {
+  color: var(--status-danger-text);
+}
+
+.backup-drive-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.backup-link-box {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.backup-link-box--status {
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.backup-link-box strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-28);
+  letter-spacing: 0;
+}
+
+.backup-link-box a {
+  overflow-wrap: anywhere;
+}
+
+.backup-drive-files {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.backup-drive-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.backup-drive-file div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.backup-drive-file strong,
+.backup-drive-file span {
+  overflow-wrap: anywhere;
+}
+
+.backup-cloud-error {
+  display: block;
+  max-width: 16rem;
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.backup-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1.4fr) repeat(3, minmax(10rem, 1fr));
+  gap: var(--space-3);
+}
+
+.backup-summary-card {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  background: var(--surface-card);
+}
+
+.backup-summary-card--primary {
+  border-color: color-mix(in srgb, var(--status-success-text) 24%, var(--border-default));
+  background: color-mix(in srgb, var(--status-success-bg) 72%, var(--surface-card) 28%);
+}
+
+.backup-summary-card span {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.backup-summary-card strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--text-21);
+  font-weight: var(--weight-bold);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.backup-file-path {
+  display: inline-block;
+  max-width: min(26rem, 38vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.loading-overlay {
+  width: min(480px, 92vw);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-modal);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-xl);
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+
+@media (max-width: 1023.98px) {
+  .backups-header,
+  .backup-panel-heading,
+  .backup-drive-file {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .backup-admin-grid,
+  .backup-config-facts,
+  .backup-drive-file,
+  .backup-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backup-drive-actions {
+    flex-direction: column;
+  }
+
+  .backup-file-path {
+    max-width: 70vw;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .backups-header > div,
+  .backup-panel-heading > *,
+  .backup-link-box,
+  .backup-drive-state {
+    min-width: 0;
+  }
+
+  .backup-panel-heading {
+    flex-wrap: wrap;
+  }
+
+  .backup-config-panel {
+    padding: var(--space-3);
+  }
+
+  .backup-link-box strong,
+  .backup-link-box small,
+  .backup-drive-state p,
+  .backup-drive-error {
+    overflow-wrap: anywhere;
+  }
+}

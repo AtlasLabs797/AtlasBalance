@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
-import { CloseIconButton } from '@/components/common/CloseIconButton';
 import { EmptyState } from '@/components/common/EmptyState';
+import Modal from '@/components/common/Modal';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -84,7 +84,7 @@ export default function PaisesPage() {
       setItems(data.data ?? []);
       setTotalPages(Math.max(data.total_pages ?? 1, 1));
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron cargar paises.'));
+      setError(extractErrorMessage(err, 'No se pudieron cargar los países. Revisa la conexión con el servidor e inténtalo de nuevo.'));
     } finally {
       setLoading(false);
     }
@@ -116,7 +116,7 @@ export default function PaisesPage() {
     if (isFormDirty) {
       const discard = await confirmDiscard({
         title: 'Descartar cambios',
-        message: 'Tienes cambios sin guardar en este pais. Si cierras, se perderan. ¿Descartar?',
+        message: 'Tienes cambios sin guardar en este país. Si cierras, se perderán. ¿Descartar?',
         confirmLabel: 'Descartar',
         tone: 'reversible',
         cancelLabel: 'Seguir editando',
@@ -131,10 +131,6 @@ export default function PaisesPage() {
     setFormError(null);
     resetForm();
   };
-
-  const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
-    onEscape: saving ? undefined : () => void closeFormModal(),
-  });
 
   const startEdit = (row: PaisRow) => {
     setEditingId(row.id);
@@ -153,12 +149,12 @@ export default function PaisesPage() {
     if (!isAdmin) return;
     const nombre = form.nombre.trim();
     if (!nombre) {
-      setFormError('Escribe el nombre del pais.');
+      setFormError('Escribe el nombre del país.');
       return;
     }
     const codigoIso2 = form.codigoIso2.trim().toUpperCase();
     if (codigoIso2 && (codigoIso2.length !== 2 || !/^[A-Z]{2}$/.test(codigoIso2))) {
-      setFormError('El codigo ISO2 debe tener exactamente dos letras.');
+      setFormError('El código ISO2 debe tener exactamente dos letras.');
       return;
     }
 
@@ -181,7 +177,7 @@ export default function PaisesPage() {
       await loadPaises();
       await invalidate('pais');
     } catch (err) {
-      setFormError(extractErrorMessage(err, 'No se pudo guardar país'));
+      setFormError(extractErrorMessage(err, 'No se pudo guardar el país. Revisa el nombre y el código ISO2 e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -197,7 +193,7 @@ export default function PaisesPage() {
       await loadPaises();
       await invalidate('pais');
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo eliminar pais'));
+      setError(extractErrorMessage(err, 'No se pudo enviar el país a la papelera. Recarga la lista e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -210,7 +206,7 @@ export default function PaisesPage() {
       await loadPaises();
       await invalidate('pais');
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo restaurar país'));
+      setError(extractErrorMessage(err, 'No se pudo restaurar el país. Recarga la lista e inténtalo de nuevo.'));
     }
   };
 
@@ -227,23 +223,23 @@ export default function PaisesPage() {
   };
 
   return (
-    <section className="phase2-page paises-page">
-      <header className="phase2-header">
-        <div>
-          <p className="dashboard-subtitle"><Link to="/configuracion">Configuracion</Link> {' / '} Paises</p>
-          <h1>Países</h1>
-          <p className="dashboard-subtitle">
-            Catalogo de paises disponibles para asignar a cuentas y permisos por pais.
+    <section className="entity-page paises-page page">
+      <header className="entity-header page-header">
+        <div className="page-header__lead">
+          <p className="dashboard-subtitle page-header__subtitle"><Link to="/configuracion">Configuración</Link> {' / '} Países</p>
+          <h1 className="page-header__title">Países</h1>
+          <p className="dashboard-subtitle page-header__subtitle">
+            Catálogo de países disponibles para asignar a cuentas y permisos por país.
           </p>
         </div>
         {isAdmin && (
           <button type="button" className="button-primary" onClick={openCreateModal}>
-            Nuevo pais
+            Nuevo país
           </button>
         )}
       </header>
 
-      <div className="phase2-filters">
+      <div className="entity-filters">
         <input
           type="search"
           autoComplete="off"
@@ -284,18 +280,24 @@ export default function PaisesPage() {
 
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-      <div className="phase2-grid">
-        <div className="phase2-cards paises-table-card">
-          {loading ? <p className="import-muted">Cargando paises...</p> : null}
+      <div className="entity-grid">
+        <div className="entity-cards paises-table-card">
+          {loading ? (
+            <div className="import-muted">
+              <PageSkeleton variant="table" rows={5} columns={4} label="Cargando países..." />
+            </div>
+          ) : null}
           {!loading && items.length === 0 ? (
             <EmptyState
-              title="No hay paises con estos filtros."
-              subtitle="Ajusta la busqueda o crea un pais nuevo."
+              headingLevel="h2"
+              title="No hay países con estos filtros."
+              subtitle="Ajusta la búsqueda o crea un país nuevo."
             />
           ) : null}
           {!loading && items.length > 0 ? (
             <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de países">
               <table className="users-table paises-table">
+                <caption className="sr-only">Países</caption>
                 <thead>
                   <tr>
                     <th scope="col">Nombre</th>
@@ -317,7 +319,7 @@ export default function PaisesPage() {
                               type="button"
                               onClick={() => startEdit(row)}
                               disabled={saving}
-                              aria-label={`Editar pais ${row.nombre}`}
+                              aria-label={`Editar país ${row.nombre}`}
                             >
                               Editar
                             </button>
@@ -326,7 +328,7 @@ export default function PaisesPage() {
                               className="button-danger"
                               onClick={() => setDeleteCandidate({ id: row.id, nombre: row.nombre })}
                               disabled={saving}
-                              aria-label={`Eliminar pais ${row.nombre}`}
+                              aria-label={`Eliminar país ${row.nombre}`}
                             >
                               Eliminar
                             </button>
@@ -337,7 +339,7 @@ export default function PaisesPage() {
                             type="button"
                             onClick={() => restore(row.id)}
                             disabled={saving}
-                            aria-label={`Restaurar pais ${row.nombre}`}
+                            aria-label={`Restaurar país ${row.nombre}`}
                           >
                             Restaurar
                           </button>
@@ -370,99 +372,89 @@ export default function PaisesPage() {
         </div>
       </div>
 
-      {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop modal-backdrop--fullscreen-mobile" onClick={() => void closeFormModal()}>
-          <div
-            ref={formDialogRef}
-            className="users-modal phase2-form-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="paises-modal-title"
-            tabIndex={-1}
+      {isAdmin ? (
+        <Modal
+          open={isFormModalOpen}
+          onClose={() => void closeFormModal()}
+          titleId="paises-modal-title"
+          title={editingId ? 'Editar país' : 'Nuevo país'}
+          subtitle="Alta y edición del catálogo de países. Solo accesible para administradores."
+          variant="fullscreen-mobile"
+          panelClassName="users-modal modal-form"
+          headerClassName="users-modal-header"
+          bareBody
+          busy={saving}
+          closeButtonClassName="users-modal-close"
+          closeLabel="Cerrar modal de país"
+        >
+          <form
+            className="users-modal-body modal-form-body"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save();
+            }}
           >
-            <div className="users-modal-header">
-              <div>
-                <h2 id="paises-modal-title">{editingId ? 'Editar país' : 'Nuevo país'}</h2>
-                <p>Alta y edición del catálogo de países. Solo accesible para administradores.</p>
+            {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
+
+            <section className="users-modal-section">
+              <h3>Datos del país</h3>
+              <div className="users-form-grid">
+                <label>
+                  <span>Nombre</span>
+                  <input
+                    value={form.nombre}
+                    onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+                    maxLength={128}
+                    required
+                  />
+                </label>
+
+                <label>
+                  <span>Código ISO2</span>
+                  <input
+                    value={form.codigoIso2}
+                    onChange={(e) => setForm((f) => ({ ...f, codigoIso2: e.target.value.toUpperCase().slice(0, 2) }))}
+                    maxLength={2}
+                    placeholder="ES"
+                    aria-describedby="paises-iso2-hint"
+                  />
+                  <small id="paises-iso2-hint" className="import-muted">
+                    Dos letras en mayúsculas. Opcional pero recomendado para el selector de organización.
+                  </small>
+                </label>
+
+                <label className="paises-activo-field">
+                  <input
+                    type="checkbox"
+                    checked={form.activo}
+                    onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
+                  />
+                  <span>Activo</span>
+                </label>
               </div>
-              <CloseIconButton
-                className="users-modal-close"
-                onClick={() => void closeFormModal()}
-                disabled={saving}
-                ariaLabel="Cerrar modal de país"
-              />
+            </section>
+
+            <div className="users-form-actions modal-form-actions">
+              <button type="button" onClick={() => void closeFormModal()} disabled={saving}>
+                Cancelar
+              </button>
+              <button type="submit" disabled={saving}>
+                {saving ? 'Guardando...' : 'Guardar'}
+              </button>
             </div>
-
-            <form
-              className="users-modal-body phase2-modal-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void save();
-              }}
-            >
-              {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
-
-              <section className="users-modal-section">
-                <h3>Datos del país</h3>
-                <div className="users-form-grid">
-                  <label>
-                    <span>Nombre</span>
-                    <input
-                      value={form.nombre}
-                      onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                      maxLength={128}
-                      required
-                    />
-                  </label>
-
-                  <label>
-                    <span>Código ISO2</span>
-                    <input
-                      value={form.codigoIso2}
-                      onChange={(e) => setForm((f) => ({ ...f, codigoIso2: e.target.value.toUpperCase().slice(0, 2) }))}
-                      maxLength={2}
-                      placeholder="ES"
-                      aria-describedby="paises-iso2-hint"
-                    />
-                    <small id="paises-iso2-hint" className="import-muted">
-                      Dos letras en mayusculas. Opcional pero recomendado para el selector de organizacion.
-                    </small>
-                  </label>
-
-                  <label className="paises-activo-field">
-                    <input
-                      type="checkbox"
-                      checked={form.activo}
-                      onChange={(e) => setForm((f) => ({ ...f, activo: e.target.checked }))}
-                    />
-                    <span>Activo</span>
-                  </label>
-                </div>
-              </section>
-
-              <div className="users-form-actions phase2-modal-actions">
-                <button type="button" onClick={() => void closeFormModal()} disabled={saving}>
-                  Cancelar
-                </button>
-                <button type="submit" disabled={saving}>
-                  {saving ? 'Guardando...' : 'Guardar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       ) : null}
 
       <ConfirmDialog
         open={!!deleteCandidate}
-        title="Eliminar pais"
+        title="Eliminar país"
         message={
           deleteCandidate
-            ? `Vas a enviar a papelera ${deleteCandidate.nombre}. Las cuentas con este pais conservaran su etiqueta y la accion quedara auditada.`
+            ? `Vas a enviar a papelera ${deleteCandidate.nombre}. Las cuentas con este país conservarán su etiqueta y la acción quedará auditada.`
             : ''
         }
-        confirmLabel="Confirmar eliminacion"
+        confirmLabel="Confirmar eliminación"
         tone="reversible"
         loadingLabel="Enviando..."
         loading={saving}

@@ -1,8 +1,8 @@
 export type Density = 'comodo' | 'compacto';
 
 export const DENSITY_STORAGE_KEY = 'density';
-export const DENSITY_ROW_HEIGHT_COMODO = 44;
-export const DENSITY_ROW_HEIGHT_COMPACTO = 36;
+const DENSITY_ROW_HEIGHT_COMODO = 44;
+const DENSITY_ROW_HEIGHT_COMPACTO = 36;
 
 // Resuelve la densidad inicial: solo vale 'compacto'; cualquier otra cosa
 // (null, vacio, valor invalido) es 'comodo'.

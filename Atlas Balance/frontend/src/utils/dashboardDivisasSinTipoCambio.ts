@@ -3,7 +3,7 @@
 // decide que divisas se listan y con que texto se avisa, para que el total
 // no se lea mas bajo sin explicacion.
 
-export interface AvisoDivisasSinTipoCambio {
+interface AvisoDivisasSinTipoCambio {
   lead: string;
   detalle: string;
 }

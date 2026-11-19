@@ -5,6 +5,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
@@ -20,6 +21,7 @@ import { hoy } from '@/utils/hoy';
 // ExtractosPage y CuentaDetailPage, pero testeables sin React).
 import { hayPaginaAnterior, hayPaginaSiguiente, textoMostrando, totalPaginas } from '@/utils/paginacion';
 import type { Conciliacion, ImportContextoResponse, ImportCuentaContexto, MovimientoEsperado, PaginatedResponse } from '@/types';
+import '@/styles/layout/routes/conciliacion.css';
 
 // Consulta vigente del listado. El backend pagina y ordena el server-side,
 // asi que la pantalla solo tiene que saber que pagina, tamano, orden y estado
@@ -338,7 +340,11 @@ export default function ConciliacionPage() {
   };
 
   if (loading) {
-    return <section className="conciliacion-page"><p>Cargando conciliación...</p></section>;
+    return (
+      <section className="conciliacion-page">
+        <PageSkeleton label="Cargando conciliación..." />
+      </section>
+    );
   }
 
   if (error && cuentas.length === 0) {
@@ -351,7 +357,7 @@ export default function ConciliacionPage() {
 
   return (
     <section className="conciliacion-page">
-      <header className="conciliacion-header">
+      <header className="conciliacion-header page-header page-header--plain">
         <div>
           <h1>Conciliación</h1>
           <p>Libro esperado interno contra extractos reales, con score y cierre auditado.</p>
@@ -454,6 +460,7 @@ export default function ConciliacionPage() {
 
         <div className="import-validation-table-wrap">
           <table className="import-validation-table">
+            <caption className="sr-only">Sugerencias de conciliación</caption>
             <thead>
               <tr>
                 <th scope="col">Estado</th>
@@ -473,7 +480,7 @@ export default function ConciliacionPage() {
                     {item.movimiento_esperado ? (
                       <>
                         <strong>{item.movimiento_esperado.fecha_esperada}</strong><br />
-                        <SignedAmount value={item.movimiento_esperado.monto}>
+                        <SignedAmount value={item.movimiento_esperado.monto} showSign>
                           {formatCurrency(item.movimiento_esperado.monto, item.movimiento_esperado.divisa)}
                         </SignedAmount><br />
                         <span>{item.movimiento_esperado.concepto ?? item.movimiento_esperado.referencia ?? ''}</span>
@@ -484,7 +491,7 @@ export default function ConciliacionPage() {
                     {item.extracto ? (
                       <>
                         <strong>{item.extracto.fecha}</strong><br />
-                        <SignedAmount value={item.extracto.monto}>
+                        <SignedAmount value={item.extracto.monto} showSign>
                           {formatCurrency(item.extracto.monto, selectedCuenta?.divisa ?? item.movimiento_esperado?.divisa ?? 'EUR')}
                         </SignedAmount><br />
                         <span>{item.extracto.concepto ?? ''}</span>

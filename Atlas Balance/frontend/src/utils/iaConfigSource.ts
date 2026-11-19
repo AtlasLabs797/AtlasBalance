@@ -13,11 +13,8 @@
 // se avisa aparte (notifyIaConfigChanged) para refrescar en el acto.
 export const IA_CONFIG_STALE_MS = 5 * 60_000;
 
-// Endpoint que devuelve la configuracion de IA del usuario.
-export const IA_CONFIG_PATH = '/ia/config';
-
 // Configuracion de IA minima para decidir si el usuario puede usarla.
-export interface IaAvailabilityConfig {
+interface IaAvailabilityConfig {
   habilitada?: boolean | null;
   usuario_puede_usar?: boolean | null;
 }

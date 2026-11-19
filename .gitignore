@@ -34,6 +34,12 @@ Atlas Balance/frontend/dist-*/
 Atlas Balance/frontend/.dist-*/
 Atlas Balance/frontend/.test-dist/
 Atlas Balance/frontend/.test-dist-*/
+Atlas Balance/frontend/playwright-report/
+# Capturas y artefactos de las validaciones visuales locales (Playwright)
+Atlas Balance/frontend/pw-*/
+Atlas Balance/frontend/test-results/
+Atlas Balance/frontend/.l8-*
+Atlas Balance/frontend/.l7-*
 
 # IDE
 .idea/
@@ -57,6 +63,9 @@ qa-artifacts/
 .codex-logs/
 .codex-runlogs/
 .learnings/
+# Restos temporales de los lotes (copias de trabajo de los subagentes)
+.l7-tmp/
+.l8-*/
 output/
 .tmp*/
 tmp*

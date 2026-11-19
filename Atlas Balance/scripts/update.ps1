@@ -1,3 +1,8 @@
+<#
+    Alias fino en ingles del actualizador canonico Actualizar-AtlasBalance.ps1.
+    Aporta solo autoelevacion y validacion previa del paquete de origen.
+#>
+
 param(
     [string]$PackagePath = "",
     [string]$InstallPath = "C:\AtlasBalance",
@@ -39,7 +44,7 @@ if (-not (Test-Path $updater)) {
 $apiExe = Join-Path $packageRoot "api\AtlasBalance.API.exe"
 $watchdogExe = Join-Path $packageRoot "watchdog\AtlasBalance.Watchdog.exe"
 if (-not (Test-Path $apiExe) -or -not (Test-Path $watchdogExe)) {
-    throw "Esta carpeta no es el paquete de actualizacion. Usa -PackagePath con la carpeta descomprimida de AtlasBalance-V-XX-win-x64 o ejecuta update.cmd desde dentro del paquete."
+    throw "Esta carpeta no es el paquete de actualizacion. Usa -PackagePath con la carpeta descomprimida de AtlasBalance-V-XX-win-x64 o ejecuta Actualizar Atlas Balance.cmd desde dentro del paquete."
 }
 
 if (-not (Test-IsAdmin)) {

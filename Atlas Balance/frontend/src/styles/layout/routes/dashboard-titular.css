@@ -1,0 +1,17 @@
+/* L8/R-9: reglas exclusivas de la ruta "dashboard-titular".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(380px, 2fr);
+  gap: var(--space-3);
+}
+
+@media (max-width: 1199.98px) {
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}

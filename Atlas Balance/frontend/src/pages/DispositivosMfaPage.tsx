@@ -110,11 +110,11 @@ export default function DispositivosMfaPage() {
   const hasCurrentDevice = devices.some((device) => device.current);
 
   return (
-    <section className="users-page">
-      <header className="users-header">
-        <div>
-          <h1>Dispositivos MFA de confianza</h1>
-          <p className="users-subtitle">
+    <section className="users-page page">
+      <header className="users-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Dispositivos MFA de confianza</h1>
+          <p className="users-subtitle page-header__subtitle">
             Equipos desde los que ya has validado el código MFA y en los que no te lo volverán a pedir.
           </p>
         </div>
@@ -141,6 +141,7 @@ export default function DispositivosMfaPage() {
 
       {error ? (
         <EmptyState
+          headingLevel="h2"
           variant="error"
           title="No se pudieron cargar los dispositivos MFA de confianza."
           subtitle={error}
@@ -156,6 +157,7 @@ export default function DispositivosMfaPage() {
 
       {!error && !loading && devices.length === 0 ? (
         <EmptyState
+          headingLevel="h2"
           icon={<ShieldCheck size={24} aria-hidden="true" />}
           title="No hay dispositivos MFA de confianza"
           subtitle="Cuando marques 'Recordar este dispositivo durante N días' al entrar con tu código MFA, aparecerá aquí y podrás revocarlo cuando quieras."
@@ -166,6 +168,7 @@ export default function DispositivosMfaPage() {
         <div className="users-table-card">
           <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de dispositivos MFA de confianza">
             <table>
+              <caption className="sr-only">Dispositivos MFA de confianza</caption>
               <thead>
                 <tr>
                   <th scope="col">Dispositivo</th>

@@ -1,32 +1,4 @@
-.import-page {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-5);
-}
 
-.import-header {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.import-header p {
-  color: var(--text-secondary);
-}
-
-.import-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.import-tabs button {
-  min-height: 2.4rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-  background: var(--surface-card);
-  color: var(--text-secondary);
-  padding: 0 var(--space-3);
-}
 
 .import-tabs button.active {
   border-color: var(--accent-solid);
@@ -34,96 +6,10 @@
   background: var(--accent-soft);
 }
 
-.import-steps {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.import-steps li {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
-  text-align: center;
-  background: var(--surface-sunken);
-  color: var(--text-secondary);
-  font-weight: var(--weight-semibold);
-  line-height: 1.2;
-}
-
 .import-steps li.active {
   border-color: var(--accent-solid);
   color: var(--accent-solid);
   background: var(--accent-soft);
-}
-
-.import-card {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-card);
-  padding: var(--space-5);
-  display: grid;
-  gap: var(--space-3);
-}
-
-.import-card textarea {
-  width: 100%;
-  font-family: var(--font-mono);
-  min-height: 16rem;
-  line-height: 1.55;
-  resize: vertical;
-}
-
-.import-card > h3 {
-  margin: 0;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-primary);
-  font-size: var(--text-17);
-  font-weight: var(--font-weight-heavy);
-}
-
-.import-extra-row {
-  display: grid;
-  grid-template-columns: 1fr 120px auto;
-  gap: var(--space-2);
-}
-
-.import-plazo-grid {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr);
-  gap: var(--space-3);
-  align-items: end;
-}
-
-.import-plazo-grid label,
-.import-card > label {
-  display: grid;
-  gap: var(--space-1);
-  color: var(--text-secondary);
-  font-size: var(--text-13);
-}
-
-.import-plazo-grid input,
-.import-card > label input {
-  width: 100%;
-  color: var(--text-primary);
-  font-size: var(--text-17);
-}
-
-.import-preview-grid {
-  overflow: auto;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-card);
-  scrollbar-gutter: stable;
 }
 
 .import-preview-grid table,
@@ -198,134 +84,16 @@
   gap: var(--space-2);
 }
 
-.import-history-header,
-.import-warning-accept {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.import-warning-accept {
-  justify-content: flex-start;
-  border: 1px solid color-mix(in srgb, var(--status-warning-text) 30%, var(--border-default));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--status-warning-bg) 74%, var(--surface-card) 26%);
-  color: var(--status-warning-text);
-  padding: var(--space-2) var(--space-3);
-}
-
-.import-muted {
-  color: var(--text-secondary);
-}
-
-.import-result-box {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  padding: var(--space-3);
-  background: var(--surface-muted);
-  display: grid;
-  gap: var(--space-1);
-}
-
-.import-result-box p {
-  margin: 0;
-}
-
 .import-success {
   border: 1px solid color-mix(in srgb, var(--status-success-text) 24%, transparent);
   border-radius: var(--radius-card);
   padding: var(--space-3);
   background: var(--status-success-bg);
   color: var(--status-success-text);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
 }
 
-.import-validation-summary {
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-  background: color-mix(in srgb, var(--surface-card) 78%, var(--surface-sunken) 22%);
-}
-
-.import-validation-summary strong {
-  display: block;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-28);
-  font-weight: var(--font-weight-heavy);
-  line-height: 1;
-}
-
-.import-validation-summary div:nth-child(1) strong,
-.import-validation-summary div:nth-child(4) strong {
-  color: var(--status-success-text);
-}
-
-.import-validation-summary div:nth-child(2) strong {
-  color: var(--status-danger-text);
-}
-
-.import-validation-summary div:nth-child(3) strong {
-  color: var(--status-warning-text);
-}
-
-.import-validation-summary span {
-  color: var(--text-secondary);
-  font-size: var(--text-13);
-}
-
-.import-modal {
-  width: min(1280px, 96vw);
-  height: min(92vh, 940px);
-  background: var(--surface-card);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-modal);
-  box-shadow: var(--shadow-xl);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  animation: modal-surface-in var(--duration-slow) var(--ease-premium) both;
-}
-
-.import-modal-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-bottom: 1px solid var(--border-default);
-}
-
-.import-modal-close {
-  justify-self: end;
-}
-
-.import-modal-header h2 {
-  margin: 0;
-}
-
-.import-modal-header p {
-  margin: var(--space-1) 0 0;
-}
-
-.import-modal-body {
-  min-height: 0;
-}
-
-.import-modal-frame {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: var(--surface-card);
-}
-
-@media (max-width: 760px) {
-  .import-plazo-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .import-card {
-    padding: var(--space-4);
-  }
+@media (max-width: 767.98px) {
 
   .import-actions {
     flex-direction: column;
@@ -335,8 +103,7 @@
   .import-actions a {
     width: 100%;
     justify-content: center;
-  }
-}
+  }}
 
 @media (hover: none), (pointer: coarse) {
   .import-validation-table input[type="checkbox"] {
@@ -344,5 +111,4 @@
     min-width: var(--control-height);
     height: var(--control-height);
     min-height: var(--control-height);
-  }
-}
+  }}

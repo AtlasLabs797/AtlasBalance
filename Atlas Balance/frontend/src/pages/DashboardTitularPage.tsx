@@ -11,7 +11,7 @@ import type {
   DashboardTitular,
   PeriodoDashboard,
 } from '@/types';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatPercent } from '@/utils/formatters';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { EmptyState } from '@/components/common/EmptyState';
 import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
@@ -24,6 +24,7 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
 import { queryKeys } from '@/queries/queryKeys';
+import '@/styles/layout/routes/dashboard-titular.css';
 
 const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '12m', '24m'];
 
@@ -173,11 +174,11 @@ export default function DashboardTitularPage() {
   const currency = titular?.divisa_principal ?? divisaPrincipal;
 
   return (
-    <section className="dashboard-page">
-      <header className="dashboard-toolbar">
-        <div>
-          <h1>{titular?.titular_nombre ?? 'Dashboard titular'}</h1>
-          <p className="dashboard-subtitle">Dashboard por titular</p>
+    <section className="dashboard-page page">
+      <header className="dashboard-toolbar page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">{titular?.titular_nombre ?? 'Dashboard titular'}</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Dashboard por titular</p>
         </div>
         <div className="dashboard-toolbar-actions">
           <button type="button" onClick={() => navigate(`/dashboard?periodo=${periodo}&divisa=${currency}`)}>
@@ -202,16 +203,17 @@ export default function DashboardTitularPage() {
       ) : titular ? (
         <div className="dashboard-kpi-grid">
           <KpiCard
+            headingLevel="h2"
             title="Saldo total"
             featured
             value={
-              <SignedAmount value={titular.total_convertido}>
+              <SignedAmount value={titular.total_convertido} showSign>
                 {formatCurrency(titular.total_convertido, titular.divisa_principal)}
               </SignedAmount>
             }
             helper={variacionPct !== null ? (
               <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}% vs. inicio del período
+                {variacionPct > 0 ? '+' : ''}{formatPercent(variacionPct)} vs. inicio del período
               </span>
             ) : undefined}
           />
@@ -227,6 +229,7 @@ export default function DashboardTitularPage() {
           ) : (
             <>
               <KpiCard
+                headingLevel="h2"
                 title="Ingresos período"
                 value={
                   <SignedAmount value={periodTotals.ingresos}>
@@ -235,11 +238,12 @@ export default function DashboardTitularPage() {
                 }
                 helper={variacionIngPct !== null ? (
                   <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                    {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}% vs. anterior
+                    {variacionIngPct > 0 ? '+' : ''}{formatPercent(variacionIngPct)} vs. anterior
                   </span>
                 ) : undefined}
               />
               <KpiCard
+                headingLevel="h2"
                 title="Egresos período"
                 value={
                   <SignedAmount value={periodTotals.egresos} tone="negative">
@@ -248,7 +252,7 @@ export default function DashboardTitularPage() {
                 }
                 helper={variacionEgrPct !== null ? (
                   <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                    {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}% vs. anterior
+                    {variacionEgrPct > 0 ? '+' : ''}{formatPercent(variacionEgrPct)} vs. anterior
                   </span>
                 ) : undefined}
               />
@@ -296,6 +300,7 @@ export default function DashboardTitularPage() {
           ) : titular ? (
             <div className="dashboard-table-wrap">
               <table>
+                <caption className="sr-only">Desglose por cuenta</caption>
                 <thead>
                   <tr>
                     <th scope="col">Cuenta</th>
@@ -313,12 +318,12 @@ export default function DashboardTitularPage() {
                       <td>{cuenta.pais_nombre || 'Sin pais'}</td>
                       <td>{cuenta.es_efectivo ? 'Efectivo' : 'Bancaria'}</td>
                       <td>
-                        <SignedAmount value={cuenta.saldo_convertido}>
+                        <SignedAmount value={cuenta.saldo_convertido} showSign>
                           {formatCurrency(cuenta.saldo_convertido, titular.divisa_principal)}
                         </SignedAmount>
                       </td>
                       <td>
-                        <SignedAmount value={cuenta.saldo_actual}>
+                        <SignedAmount value={cuenta.saldo_actual} showSign>
                           {formatCurrency(cuenta.saldo_actual, cuenta.divisa)}
                         </SignedAmount>
                       </td>

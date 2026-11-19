@@ -125,7 +125,7 @@
 ### 2026-09-25 - V-03.01 - Cerrado - Revision 2026-09-24: escalada en actualizador elevado, actualizacion desde V-02.09 bloqueada y privacidad IA
 
 - **Contexto:** correccion de los 8 hallazgos de
-  `Documentacion/INFORME_REVISION_2026-09-24.md` mas 1 hallazgo nuevo (#9)
+  `Documentacion/Archivo/INFORME_REVISION_2026-09-24.md` mas 1 hallazgo nuevo (#9)
   encontrado durante el propio arreglo. Verificado por el orquestador contra
   codigo real, no solo contra el informe.
 - **Cerrados (9):**
@@ -177,7 +177,7 @@
      eliminacion de renderizado muerto de `enlaces`/`AssistantLink` en el
      chat IA.
 - **Detalle completo:** `Documentacion/LOG_ERRORES_INCIDENCIAS.md` y
-  `Documentacion/INFORME_REVISION_2026-09-24.md` (seccion "Estado
+  `Documentacion/Archivo/INFORME_REVISION_2026-09-24.md` (seccion "Estado
   (2026-09-25)" con el detalle del hallazgo #9 y los pendientes de
   verificacion manual).
 - **Estado:** cerrado en codigo. Backend 935/935, frontend lint/tsc/build/
@@ -777,7 +777,7 @@
 ### 2026-07-27 - V-02.07 - Cerrado - CONC-027 cache de tipos de cambio con race benigno
 
 - **Contexto:** la auditoria de concurrencia 2026-07-10
-  (`AUDITORIA_CONCURRENCIA_2026-07-10.md:302`) documentaba que
+  (`Archivo/AUDITORIA_CONCURRENCIA_2026-07-10.md:302`) documentaba que
   `TiposCambioService.GetRateCatalogAsync` podia repoblar la cache con
   datos viejos cuando `InvalidateCache` se ejecutaba entre la query y
   el `_cache.Set` del hilo lector.
@@ -1129,7 +1129,7 @@
   unica on-premise, anadir estado distribuido seria complejidad
   especulativa sin caso de uso actual. Misma familia de deuda que la
   migracion a Redis/`IDistributedCache` ya documentada para la capa de
-  cache (`SEGURIDAD_AUDITORIA_V-01.03.md:85`).
+  cache (`Archivo/SEGURIDAD_AUDITORIA_V-01.03.md:85`).
 
 ### 2026-07-28 - V-02.07 - Cerrado con matiz - Sesiones no ancladas a IP ni User-Agent (severidad BAJA)
 
@@ -2807,7 +2807,7 @@ un gate externo pendiente. Se conservan juntos para trazabilidad del plan.
 
 ## Hallazgos audit V-02-04 pre-internet (2026-07-10)
 
-Origen: `Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`.
+Origen: `Documentacion/Archivo/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`.
 Severidad global: el mas alto de los 3 CRITICAL bloquea el despliegue
 publico; los 11 HIGH requieren arreglo antes de exponer a internet.
 
@@ -2867,7 +2867,7 @@ publico; los 11 HIGH requieren arreglo antes de exponer a internet.
 ### MEDIUM
 
 Los 30+ MEDIUM del audit se aceptan como deuda documentada. Detalle en
-`Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md` seccion 3.
+`Documentacion/Archivo/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md` seccion 3.
 Los mas relevantes a cerrar pronto:
 - MED-1 `PassthroughSecretProtector` fallback silencioso.
 - MED-2 `ProtectForStorage` se basa en prefijo sin MAC.

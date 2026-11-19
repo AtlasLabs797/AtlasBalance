@@ -1,12 +1,12 @@
 ﻿// Mirror of DB schema + API response types
 
-export type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO';
+type RolUsuario = 'ADMIN' | 'GERENTE' | 'EMPLEADO';
 export type TipoTitular = 'EMPRESA' | 'AUTONOMO' | 'PARTICULAR';
 export type TipoCuenta = 'NORMAL' | 'EFECTIVO' | 'PLAZO_FIJO';
-export type EstadoPlazoFijo = 'ACTIVO' | 'PROXIMO_VENCER' | 'VENCIDO' | 'RENOVADO' | 'CANCELADO';
-export type FuenteTipoCambio = 'API' | 'MANUAL';
-export type EstadoBackup = 'PENDING' | 'SUCCESS' | 'FAILED';
-export type TipoBackup = 'AUTO' | 'MANUAL';
+type EstadoPlazoFijo = 'ACTIVO' | 'PROXIMO_VENCER' | 'VENCIDO' | 'RENOVADO' | 'CANCELADO';
+type FuenteTipoCambio = 'API' | 'MANUAL';
+type EstadoBackup = 'PENDING' | 'SUCCESS' | 'FAILED';
+type TipoBackup = 'AUTO' | 'MANUAL';
 export type BackupFrequency = 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
 export type BackupDestination = 'LOCAL' | 'LOCAL_Y_GOOGLE_DRIVE';
 
@@ -57,7 +57,7 @@ export interface Cuenta {
   egresos_mes?: number;
 }
 
-export interface PlazoFijo {
+interface PlazoFijo {
   id: string;
   cuenta_id: string;
   cuenta_referencia_id: string | null;
@@ -103,9 +103,9 @@ export interface Extracto {
   divisa?: string;
 }
 
-export type DesgloseEstado = 'sin_desglose' | 'cuadrado' | 'descuadrado';
+type DesgloseEstado = 'sin_desglose' | 'cuadrado' | 'descuadrado';
 
-export interface ExtractoDesglose {
+interface ExtractoDesglose {
   id: string;
   extracto_id: string;
   orden: number;
@@ -164,18 +164,7 @@ export interface AuditCellEntry {
   usuario_id: string | null;
 }
 
-export type TipoMontoImportacion = 'una_columna' | 'dos_columnas' | 'tres_columnas';
-
-export interface MapeoColumnas {
-  tipo_monto?: TipoMontoImportacion;
-  fecha: number;
-  concepto: number;
-  monto?: number | null;
-  ingreso?: number | null;
-  egreso?: number | null;
-  saldo: number;
-  columnas_extra?: { nombre: string; indice: number }[];
-}
+type TipoMontoImportacion = 'una_columna' | 'dos_columnas' | 'tres_columnas';
 
 export interface PermisoUsuario {
   id: string;
@@ -195,13 +184,6 @@ export interface PermisoUsuario {
   puede_cerrar_conciliacion: boolean;
   columnas_visibles: string[] | null;
   columnas_editables: string[] | null;
-}
-
-export interface AlertaDestinatario {
-  id: string;
-  alerta_id: string;
-  usuario_id: string;
-  usuario?: Usuario;
 }
 
 export interface Auditoria {
@@ -239,12 +221,12 @@ export interface AuditoriaListItem {
   detalles_json: string | null;
 }
 
-export interface AuditoriaFiltroUsuario {
+interface AuditoriaFiltroUsuario {
   id: string;
   nombre: string;
 }
 
-export interface AuditoriaFiltroCuenta {
+interface AuditoriaFiltroCuenta {
   id: string;
   nombre: string;
   titular_id: string;
@@ -282,13 +264,6 @@ export interface Pais {
   fecha_creacion: string;
   fecha_modificacion: string | null;
   deleted_at: string | null;
-}
-
-export interface Configuracion {
-  clave: string;
-  valor: string;
-  tipo: string | null;
-  descripcion: string | null;
 }
 
 export interface ConfiguracionSistema {
@@ -476,20 +451,10 @@ export interface IaModel {
 
 // V-02.09 (Fase UI): el backend publica los modos de pensamiento que admite el
 // provider configurado. Se renderizan en el selector dentro del composer.
-export interface IaThinkingModeOption {
+interface IaThinkingModeOption {
   value: string;
   label: string;
 }
-
-// V-02.09 (Fase 1.6): tipos del chat reexportados desde el store para que
-// componentes y stores compartan el mismo contrato sin acoplamiento circular.
-// El store es la fuente canonica; aqui solo se reexporta para que el resto
-// del frontend pueda seguir haciendo `import type { ChatMessage } from '@/types'`.
-export type {
-  AssistantClarificationOption,
-  AssistantMessageMeta,
-  ChatMessage,
-} from '@/stores/aiChatStore';
 
 export interface BackupItem {
   id: string;
@@ -510,7 +475,7 @@ export interface BackupItem {
   cloud_error_message: string | null;
 }
 
-export interface GoogleDriveBackupConfig {
+interface GoogleDriveBackupConfig {
   client_id: string;
   client_secret_configured: boolean;
   connected: boolean;
@@ -605,7 +570,7 @@ export interface VersionDisponibleResponse {
   mensaje: string | null;
 }
 
-export interface IntegrationPermissionItem {
+interface IntegrationPermissionItem {
   id: string;
   titular_id: string | null;
   cuenta_id: string | null;
@@ -632,25 +597,9 @@ export interface IntegrationTokenListItem {
   deleted_at: string | null;
 }
 
-export interface IntegrationTokenDetail {
+interface IntegrationTokenDetail {
   token: IntegrationTokenListItem;
   permisos: IntegrationPermissionItem[];
-}
-
-export interface CreateIntegrationTokenRequest {
-  nombre: string;
-  descripcion?: string;
-  permiso_lectura: boolean;
-  permiso_escritura: boolean;
-  fecha_expiracion?: string | null;
-  sin_expiracion_confirmada?: boolean;
-  scopes: string[];
-  permisos: Array<{
-    titular_id: string | null;
-    cuenta_id: string | null;
-    pais_id: string | null;
-    acceso_tipo: string;
-  }>;
 }
 
 export interface CreateIntegrationTokenResponse {
@@ -720,7 +669,7 @@ export interface DashboardPrincipal {
   chart_colors: DashboardChartColors;
 }
 
-export interface DashboardPlazosFijosResumen {
+interface DashboardPlazosFijosResumen {
   monto_total_convertido: number;
   intereses_previstos_convertidos: number;
   dias_hasta_proximo_vencimiento: number | null;
@@ -780,7 +729,7 @@ export interface DashboardSaldoTitular {
   saldo_disponible_convertido: number;
 }
 
-export interface DashboardSaldoCuenta {
+interface DashboardSaldoCuenta {
   cuenta_id: string;
   cuenta_nombre: string;
   titular_id: string;
@@ -795,7 +744,7 @@ export interface DashboardSaldoCuenta {
   saldo_convertido: number;
 }
 
-export interface DashboardSaldoPais {
+interface DashboardSaldoPais {
   pais_id: string | null;
   pais_nombre: string;
   saldos_por_divisa: Record<string, number>;
@@ -833,7 +782,7 @@ export interface ImportValidationResult {
   }[];
 }
 
-export interface ImportRowResult {
+interface ImportRowResult {
   indice: number;
   valida: boolean;
   datos: Record<string, string | null>;
@@ -841,7 +790,7 @@ export interface ImportRowResult {
   advertencias: string[];
 }
 
-export interface ImportMapExtraColumn {
+interface ImportMapExtraColumn {
   nombre: string;
   indice: number;
 }
@@ -937,7 +886,7 @@ export interface MovimientoEsperado {
   fecha_creacion: string;
 }
 
-export interface ExtractoConciliacion {
+interface ExtractoConciliacion {
   id: string;
   fecha: string;
   concepto: string | null;

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { installMockApi, unknownPaths } from './mockApi';
+import { installMockApi, setPrimerLoginMock, unknownPaths } from './mockApi';
 
 // Arnes de capturas visuales con API mockeada.
 // VISUAL_OUT  carpeta de salida (por defecto test-results/visual, ignorada por git)
@@ -11,8 +11,20 @@ const OUT = process.env.VISUAL_OUT
 mkdirSync(OUT, { recursive: true });
 
 const themes = ['light', 'dark'] as const;
-const viewports = [{ w: 1440, h: 900 }, { w: 390, h: 844 }];
-const routes = ['/login', '/dashboard', '/extractos', '/importacion', '/cuentas', '/configuracion', '/backups', '/usuarios', '/seguridad/dispositivos-mfa'];
+// LOTE 8 (D-4): se anade la anchura de tablet (1024 x 768) para poder validar
+// la banda 901-1023.98 px, que es justo donde el mapeo de breakpoints cambia
+// el numero de columnas. Antes solo se media escritorio (1440) y movil (390).
+const viewports = [{ w: 1440, h: 900 }, { w: 1024, h: 768 }, { w: 390, h: 844 }];
+// LOTE 8 (T-2): cobertura de las 20 pantallas de la app (antes 9). Los ids
+// de titular y cuenta son los del fixture de mockApi (TIT[0] y CTA[0]).
+const routes = [
+  '/login', '/dashboard', '/extractos', '/importacion', '/cuentas', '/configuracion', '/backups', '/usuarios', '/seguridad/dispositivos-mfa',
+  '/titulares', '/titulares/00000000-0000-4000-8000-000000000021',
+  '/auditoria', '/papelera', '/alertas', '/conciliacion',
+  '/formatos-importacion', '/configuracion/paises', '/revision',
+  '/dashboard/titular/00000000-0000-4000-8000-000000000021', '/dashboard/cuenta/00000000-0000-4000-8000-000000000031',
+  '/cambiar-password',
+];
 const slug = (r: string) => r.replace(/^\//, '').replace(/\//g, '_') || 'root';
 
 // El paquete @playwright/test puede esperar una revision de Chromium distinta de la
@@ -31,7 +43,13 @@ function findChromium(): string | undefined {
 test.use({ launchOptions: { executablePath: findChromium() } });
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(240_000);
+// LOTE 8 (T-1): el job e2e de CI corre esto en un runner mas lento que el
+// equipo local (en local el caso mas lento tarda ~84s). 240s dejaba el margen
+// justo; 300s evita que un runner lento ponga el job en rojo sin un fallo real.
+// LOTE 8 (T-2): la cobertura pasa de 9 a 21 rutas por combinacion de tema y
+// viewport, asi que el caso se casi duplica. 600s deja margen para el runner
+// lento de CI sin convertir un timeout real en un falso verde.
+test.setTimeout(600_000);
 
 for (const theme of themes) {
   for (const vp of viewports) {
@@ -56,8 +74,20 @@ for (const theme of themes) {
       };
 
       for (const route of routes) {
+        // LOTE 8 (T-2): /cambiar-password solo es alcanzable con
+        // primer_login=true (ProtectedRoute con allowPrimerLogin). La
+        // bandera se enciende solo para esa navegacion y se apaga justo
+        // despues, para que el resto de pantallas sigan con sesion normal.
+        if (route === '/cambiar-password') setPrimerLoginMock(true);
         await page.goto(route);
+        // LOTE 8 (T-2): /configuracion/paises se renderiza en el Outlet de
+        // ConfiguracionPage, por debajo del pliegue. Se hace scroll hasta el
+        // bloque de paises para que su tabla entre en la captura.
+        if (route === '/configuracion/paises') {
+          await page.locator('.paises-page').scrollIntoViewIfNeeded().catch(() => undefined);
+        }
         await shoot(slug(route));
+        if (route === '/cambiar-password') setPrimerLoginMock(false);
       }
 
       // Modal abierto: nuevo titular

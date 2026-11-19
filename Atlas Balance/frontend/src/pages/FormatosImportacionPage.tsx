@@ -6,11 +6,13 @@ import type { ComboboxOption } from '@/components/common/Combobox';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import '@/styles/layout/routes/formatos-importacion.css';
 
 interface ColumnaExtra {
   nombre: string;
@@ -431,13 +433,13 @@ export default function FormatosImportacionPage() {
   };
 
   return (
-    <section className="phase2-page formatos-page">
-      <header className="phase2-header">
-        <h1>Formatos de Importación</h1>
+    <section className="entity-page formatos-page page">
+      <header className="entity-header page-header">
+        <h1 className="page-header__title">Formatos de Importación</h1>
         {isAdmin && <button type="button" className="users-primary-button" onClick={resetForm}>Nuevo Formato</button>}
       </header>
 
-      <div className="phase2-filters">
+      <div className="entity-filters">
         <input
           type="search"
           autoComplete="off"
@@ -478,11 +480,12 @@ export default function FormatosImportacionPage() {
 
       {error && <p className="auth-error" role="alert">{error}</p>}
 
-      <div className="phase2-grid">
+      <div className="entity-grid">
         <div className="users-table-card">
-          {loading ? <p className="import-muted">Cargando formatos...</p> : null}
+          {loading ? <PageSkeleton variant="table" rows={5} columns={6} label="Cargando formatos..." /> : null}
           {!loading && items.length === 0 ? (
             <EmptyState
+              headingLevel="h2"
               title="No hay formatos con estos filtros."
               subtitle="Crea un formato para importar extractos bancarios sin mapear columnas a mano cada vez."
             />
@@ -490,6 +493,7 @@ export default function FormatosImportacionPage() {
           {!loading && items.length > 0 && (
             <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de formatos de importación">
             <table>
+              <caption className="sr-only">Formatos de importación</caption>
               <colgroup>
                 <col className="formatos-col-banco" />
                 <col className="formatos-col-divisa" />
@@ -543,7 +547,7 @@ export default function FormatosImportacionPage() {
                     </td>
                     {isAdmin && (
                       <td>
-                        <div className="phase2-row-actions formatos-row-actions">
+                        <div className="entity-row-actions formatos-row-actions">
                         <button type="button" onClick={() => startEdit(item.id)} disabled={saving} aria-label={`Editar formato ${item.nombre}`}>Editar</button>
                         {!item.deleted_at ? (
                           <button

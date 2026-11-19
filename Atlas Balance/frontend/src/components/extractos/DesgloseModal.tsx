@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import Modal from '@/components/common/Modal';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import type { Extracto, ExtractoDesgloseResumen } from '@/types';
 import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
@@ -181,7 +182,7 @@ export default function DesgloseModal({
         </section>
 
         {loading ? (
-          <p>Cargando desglose...</p>
+          <PageSkeleton variant="table" rows={3} columns={4} label="Cargando desglose..." />
         ) : (
           <>
             {(error || localError) ? <p className="auth-error" role="alert">{localError ?? error}</p> : null}

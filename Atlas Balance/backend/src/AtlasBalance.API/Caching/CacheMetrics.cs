@@ -38,13 +38,3 @@ public readonly struct CacheMetricsSnapshot
 
     public double HitRatio => Hits + Misses == 0 ? 0d : (double)Hits / (Hits + Misses);
 }
-
-/// <summary>
-/// Snapshot inmutable que devuelve <see cref="ICacheMetricsSink.FlushAsync"/>
-/// cuando el sink concreto quiere publicar periodicamente las metricas
-/// de cache. La implementacion por defecto es nula (no hacer nada).
-/// </summary>
-public interface ICacheMetricsSink
-{
-    Task FlushAsync(CacheMetricsSnapshot snapshot, CancellationToken cancellationToken);
-}

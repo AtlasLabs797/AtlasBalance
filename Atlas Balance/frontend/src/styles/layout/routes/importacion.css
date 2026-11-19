@@ -1,0 +1,216 @@
+/* L8/R-9: reglas exclusivas de la ruta "importacion".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+/* Cabecera en rejilla (Importacion): la rejilla no admite el reparto en flex
+   de la clase comun (align-items/justify-content). */
+.page-header--stacked {
+  align-items: stretch;
+  justify-content: normal;
+}
+
+.import-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+}
+
+.import-header {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.import-header p {
+  color: var(--text-secondary);
+}
+
+.import-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.import-tabs button {
+  min-height: 2.4rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  padding: 0 var(--space-3);
+}
+
+.import-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.import-steps li {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  text-align: center;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+}
+
+.import-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  padding: var(--space-5);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.import-card textarea {
+  width: 100%;
+  font-family: var(--font-mono);
+  min-height: 16rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+/* D-10 (LOTE 8): las cabeceras de la tarjeta de importacion pasaron de h3 a h2
+   (jerarquia h1 -> h2 sin saltos). La regla se aplica a los dos niveles para
+   que el aspecto no cambie. */
+.import-card > h3,
+.import-card > h2 {
+  margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--text-17);
+  font-weight: var(--weight-bold);
+}
+
+.import-plazo-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr);
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.import-plazo-grid label,
+.import-card > label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.import-plazo-grid input,
+.import-card > label input {
+  width: 100%;
+  color: var(--text-primary);
+  font-size: var(--text-17);
+}
+
+.import-preview-grid {
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  scrollbar-gutter: stable;
+}
+
+.import-history-header,
+.import-warning-accept {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.import-warning-accept {
+  justify-content: flex-start;
+  border: 1px solid color-mix(in srgb, var(--status-warning-text) 30%, var(--border-default));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--status-warning-bg) 74%, var(--surface-card) 26%);
+  color: var(--status-warning-text);
+  padding: var(--space-2) var(--space-3);
+}
+
+.import-result-box {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  background: var(--surface-muted);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.import-result-box p {
+  margin: 0;
+}
+
+.import-validation-summary {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  background: color-mix(in srgb, var(--surface-card) 78%, var(--surface-sunken) 22%);
+}
+
+.import-validation-summary strong {
+  display: block;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-28);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+.import-validation-summary div:nth-child(1) strong,
+.import-validation-summary div:nth-child(4) strong {
+  color: var(--status-success-text);
+}
+
+.import-validation-summary div:nth-child(2) strong {
+  color: var(--status-danger-text);
+}
+
+.import-validation-summary div:nth-child(3) strong {
+  color: var(--status-warning-text);
+}
+
+.import-validation-summary span {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+@media (max-width: 767.98px) {
+  .import-plazo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .import-card {
+    padding: var(--space-4);
+  }
+}
+
+/* D-5 (LOTE 8): coherencia de superficies de esta hoja. Movida desde
+   layout/system-coherence.css (que se cargaba la ultima); al final de la hoja
+   conserva la precedencia que tenia sobre las reglas de la propia hoja. */
+.import-card {
+  border-color: var(--border-default);
+  background: var(--surface-raised);
+}
+
+.import-card {
+  overflow: clip;
+}
+
+@media (max-width: 1023.98px) {
+  .import-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

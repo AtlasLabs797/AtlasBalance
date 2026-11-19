@@ -1,17 +1,17 @@
-export interface AiModelOption {
+interface AiModelOption {
   value: string;
   label: string;
 }
 
-export const OPENROUTER_AUTO_MODEL = 'openrouter/auto';
-export const OPENROUTER_FREE_MODEL = 'openrouter/free';
+const OPENROUTER_AUTO_MODEL = 'openrouter/auto';
+const OPENROUTER_FREE_MODEL = 'openrouter/free';
 // P2 V-03.01: el default vuelve a un modelo que respeta ZDR (zdr/data_collection=deny).
 // Los modelos gratuitos de OpenRouter no garantizan retencion cero de datos y requieren
 // que el admin active "Permitir modelos gratuitos" en Configuracion > IA.
 export const OPENROUTER_DEFAULT_RUNTIME_MODEL = OPENROUTER_AUTO_MODEL;
-export const OPENROUTER_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
-export const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
-export const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3';
+const OPENROUTER_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
+const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
+const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3';
 
 export const aiProviderOptions: AiModelOption[] = [
   { value: 'OPENROUTER', label: 'OpenRouter' },
@@ -19,7 +19,7 @@ export const aiProviderOptions: AiModelOption[] = [
   { value: 'MINIMAX', label: 'MiniMax' },
 ];
 
-export const openRouterModelOptions: AiModelOption[] = [
+const openRouterModelOptions: AiModelOption[] = [
   { value: OPENROUTER_AUTO_MODEL, label: 'OpenRouter Auto' },
   { value: OPENROUTER_FREE_MODEL, label: 'Modelos gratis (OpenRouter)' },
   { value: OPENROUTER_NEMOTRON_MODEL, label: 'Nemotron 3 Super (gratis)' },
@@ -30,13 +30,13 @@ export const openRouterModelOptions: AiModelOption[] = [
   { value: 'qwen/qwen3-coder:free', label: 'Qwen3 Coder 480B A35B (free)' },
 ];
 
-export const openAiModelOptions: AiModelOption[] = [
+const openAiModelOptions: AiModelOption[] = [
   { value: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
   { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
   { value: 'gpt-4o', label: 'GPT-4o' },
 ];
 
-export const miniMaxModelOptions: AiModelOption[] = [
+const miniMaxModelOptions: AiModelOption[] = [
   { value: DEFAULT_MINIMAX_MODEL, label: 'MiniMax M3' },
   { value: 'MiniMax-M2.7', label: 'MiniMax M2.7' },
 ];
@@ -98,7 +98,7 @@ export function isOpenRouterFreeModel(model: string | null | undefined) {
 // definimos como fallback cuando el backend no las envia.
 export type ThinkingMode = 'auto' | 'low' | 'medium' | 'high' | 'on' | 'off';
 
-export interface ThinkingModeOption {
+interface ThinkingModeOption {
   value: ThinkingMode;
   label: string;
 }

@@ -1,4 +1,63 @@
-﻿## 2026-11-18 - V-03.02 - LOTE 6 del informe de revision integral: S-1, S-3, S-7, S-8, S-9, M-3 y D-13 (CORREGIDO EN CODIGO)
+﻿## 2026-11-18 - V-03.02 - LOTE 8 del informe de revision integral: D-1 a D-12, M-1, M-2, M-6, M-10 a M-15, M-17, R-9, T-1 y T-2 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 8. Solo estos IDs; ningun otro tocado. Rama `V-03.02`. Sin commit ni push.
+
+Decisiones del usuario (cuestionario respondido de forma explicita): **M-1** el servicio inalcanzable se borra; **M-15** los lanzadores se unifican en espanol y los ingleses quedan como alias, sin borrar nada; **M-17** los informes anteriores a V-03 se archivan y la bitacora se parte en dos ficheros; **T-1** los e2e de Playwright se ejecutan **solo en push a `main` y en el release**. **M-16** (los dos `.gitignore`) solo se propone, no se aplica.
+
+**Verificacion global del LOTE 8:** backend `AtlasBalance.API.Tests` **1282/1282** (suite completa, incluida la de PostgreSQL real con Testcontainers) y `AtlasBalance.Caching.Tests` **15/15**. Frontend: `npx tsc --noEmit` sin errores, `eslint src tests --max-warnings 0` sin errores, **332/332** pruebas unitarias y build de Vite correcto. Capturas: el arnes visual se amplia de 9 a **21 rutas** y de 2 a **3 anchuras** (1440 escritorio, **1024 tablet**, 390 movil), en claro y oscuro, con la API simulada (6/6 en verde, 134 PNG por pasada). Los comandos canonicos `npm run test:unit` y `npm run build` siguen rotos por el bloqueo historico de permisos de `frontend/.test-dist/` y `frontend/dist/` (otra cuenta de sandbox; ver la entrada de este mismo lote): las mismas comprobaciones pasaron con carpetas de salida nuevas.
+
+Ademas de los IDs del informe, el lote destapo seis defectos reales que no estaban en el informe y que quedan aqui registrados:
+
+### T-1 (defecto del arnes) - Los tres specs visuales fallaban: el mock de la API simulada estaba obsoleto
+
+- **Causa 1:** `e2e/visual/mockApi.ts` devolvia `columnas_restringidas: []` en `GET /api/extractos`. El backend usa `null` para "el administrador no restringe columnas" y una lista no nula como *whitelist*; el frontend la trata como whitelist, asi que con `[]` **excluia todas las columnas**: la fila se pintaba sin ninguna celda y `row.querySelector('.cell')` devolvia `null` (error `getComputedStyle: parameter 1 is not of type 'Element'`). La misma causa quitaba la columna de desglose.
+- **Causa 2:** el mock de `/conciliacion` y `/conciliacion/movimientos-esperados` devolvia un array suelto, pero la pagina espera `{ data, total, page, page_size, total_pages }`: cero filas y sin boton "Conciliar".
+- **Solucion:** `columnas_restringidas: null` y respuestas paginadas en el mock. Con eso los tres specs pasan (29 pasan, 1 queda saltado por un `test.fixme` preexistente) y T-1 deja de estar bloqueado por el arnes. No se toco `frontend/src/**`.
+
+### M-13 (defecto introducido por la propia limpieza) - La ampliacion `declare module 'axios'` se quedaba sin modulo que ampliar
+
+- **Causa:** al quitarle el `export` al tipo `RequestOptions` de `src/utils/errorToast.ts` (que solo se usaba dentro del fichero), se elimino tambien el `import type { AxiosRequestConfig } from 'axios'` que sostenia la ampliacion. Sin ese import, `axios` deja de estar en el programa y el compilador responde **TS2664: "Invalid module name in augmentation, module 'axios' cannot be found"** al compilar el programa aislado de los tests (`tsconfig.test.v2.json`).
+- **Solucion:** `import type {} from 'axios'` (import de tipo sin nombre: mete el modulo en el programa sin dependencia en tiempo de ejecucion, que es justo lo que exigia el comentario del propio fichero).
+
+### D-9 (defecto de accesibilidad) - El overlay de restauracion perdia `role="alertdialog"` y anunciaba el progreso con `aria-busy` en una region viva
+
+- **Causa:** al migrar el overlay de restauracion de `BackupsPage` al componente comun `<Modal>`, este impone `role="dialog"`, y el `aria-live="assertive"` con `aria-busy="true"` se traslado al `<p>` del mensaje. `aria-busy="true"` indica a la tecnologia de asistencia que difiera los cambios de ese elemento hasta que el atributo pase a `false`, y aqui nunca pasa: **el progreso de la restauracion no se anunciaba**.
+- **Solucion:** `aria-live="assertive"` sin `aria-busy` en el mensaje, con comentario que explica el motivo. El `role="alertdialog"` no se recupera: `<Modal>` es `role="dialog"` y forzarlo exigiria un componente propio; queda anotado como pendiente.
+
+### D-5 (defecto de maquetacion) - Un `<div>` reutilizaba la clase de cabecera y perdia 12 px de padding y su borde
+
+- **Causa:** `<div className="auditoria-header auditoria-actions-header">` en `AuditoriaPage.tsx` reutiliza la clase de la cabecera de la pagina. Al desaparecer la regla base `.auditoria-header` (la capa de parches) y no llevar `.page-header`, ese `div` perdia el `padding-bottom: var(--space-3)` y el `border-bottom`: **la tabla de Auditoria subia 13 px**.
+- **Por que no lo veian los comprobantes automaticos:** ni el comparador de triplets (media, selector, declaraciones) ni el resolutor de cascada por elemento lo detectan, porque comparan el CSS, no el DOM. Lo destapo la comparacion de capturas (15 % de pixeles con maxdelta 227 en la tabla de Auditoria).
+- **Solucion:** anadir `page-header` a ese `div`; la recaptura lo deja identico. **Regla que deja el incidente:** un selector de clase que se reutiliza en un elemento que no es la cabecera es un acoplamiento silencioso: al unificar clases hay que buscar los reutilos, no solo los elementos que la usan como cabecera.
+
+### D-5 (ajuste de cascada) - `.app-content th` perdia la ventaja al bajar a la capa global
+
+- **Causa:** la regla `.app-content th` vivia en la capa de parches, que se cargaba la ultima y por eso ganaba por orden de fuente a reglas de la misma especificidad (`.revision-table th`, `.import-validation-table th`). Al repartir esa capa, la regla baja a `global.css`, que se carga **antes** que las hojas de pagina, y perdia.
+- **Solucion:** el selector pasa a `.app-content table th` (0,1,2), que recupera la ventaja por especificidad en vez de por posicion. Con el cambio, el resolutor de cascada (25 unidades x 32 contextos, 78.869.024 comprobaciones) da **0 diferencias**.
+
+### R-9 (efecto secundario medido) - Repartir el CSS por ruta sube el peso total del bundle
+
+- **Causa:** 20 ficheros CSS comprimen peor que 1. El CSS inicial baja de 228.149 a 163.965 B (-23,3 % gzip), pero el **total** sube 9 KB gzip: R-9 **reparte** el CSS, no lo reduce. Gana quien no visite todas las rutas y pierde quien las recorra.
+- **Efecto colateral de la misma causa:** al dejar de ser global el orden de la cascada, **41 reglas** se quedaron congeladas en las hojas globales (las que al moverse invertian el orden con otra regla y cambiaban el valor final, por ejemplo `.backup-status-pill` con el shorthand `border` pisando el `border-color` del modificador `--ok`).
+- **Solucion/decision:** se acepta el reparto con las 41 reglas congeladas y queda documentado que para que R-9 compensara de verdad habria que reescribir las hojas mixtas por pantalla y prefijar cada regla con su contenedor de pantalla. El reparto no es reproducible con una herramienta en el repo: el generador (clasificador + resolutor) era temporal.
+
+### D-10 (incidente de trabajo) - Un `git checkout --` se llevo por delante trabajo en vuelo de la pagina de Auditoria
+
+- **Causa:** al ajustar a mano los niveles de encabezado, el orquestador ejecuto `git checkout -- src/pages/AuditoriaPage.tsx` para deshacer una edicion parcial de un script. Ese comando **restaura el fichero desde `HEAD` y borra TODO lo que no estuviera commiteado en ese fichero**: en `AuditoriaPage.tsx` se perdieron a la vez el esqueleto de carga (D-3), las clases compartidas de cabecera (D-5), el `<caption>` (D-10) y el `import` del CSS de ruta (R-9).
+- **Como se detecto:** la comparacion de capturas mostro un **38 % de pixeles distintos** en la pagina de Auditoria frente a la linea base, con el contenido desplazado: el `import` de `routes/auditoria.css` habia desaparecido y la pagina se dibujaba sin la rejilla, los filtros ni el separador de la barra de acciones.
+- **Solucion:** reponer a mano lo perdido (esqueleto, clases, `<caption>`, guarda `sinSignoPrevio`) y **volver a anadir el `import` de `routes/auditoria.css`**. La recaptura deja la pagina **identica a la linea base** (comparacion pixel a pixel sin diferencias atribuibles al CSS).
+- **Regla que deja el incidente:** en un arbol con trabajo sin commitear de varios agentes, `git checkout -- <fichero>` es un **borrado disfrazado**. Para deshacer una edicion parcial usa una copia del fichero o un `edit` puntual, nunca un checkout. Si aun asi hay que usarlo, comprueba antes `git status --porcelain -- <fichero>` y reponer todo lo que el fichero tenia modificado, no solo lo que estabas editando.
+
+### EPERM en `frontend/.test-dist/` y `frontend/dist/` - los comandos canonicos siguen sin poder ejecutarse (bloqueo historico del entorno)
+
+- **Sintoma:** `npm run test:unit` falla con `error TS5033: Could not write file ... EPERM` sobre 22 ficheros de `frontend/.test-dist/`, y `npm run build` falla al copiar en `frontend/dist/`. No es un fallo de codigo: el mismo codigo pasa con carpetas de salida nuevas.
+- **Causa (investigada a fondo en el LOTE 8, 18/11/2026):** `icacls` muestra que esas carpetas pertenecen a otra cuenta de sandbox y conceden a `BUILTIN\Usuarios` solo `(RX)`. Lo caracteristico es que **la carpeta SI admite ficheros nuevos** (una escritura de prueba dentro de `.test-dist/` y de `dist/` funciona) pero **los ficheros preexistentes no se pueden sobrescribir, renombrar ni borrar** (`Acceso denegado` en las tres operaciones). Por eso el error es al escribir sobre lo ya compilado, no al crear.
+- **Lo que NO funciona como via de escape:** `icacls /grant` (Acceso denegado: el usuario no tiene `WRITE_DAC`), `Move-Item` del directorio completo (Acceso denegado) y `mavis-trash` sobre el directorio (`DeleteDirectory` no es compatible con este sistema). Solo queda la carpeta de salida alternativa, que es la que ya usa el repo desde hace meses.
+- **Dato relevante para el release:** `Build-Release.ps1` **no depende de `frontend/dist`**: construye con `npm exec vite -- build --outDir <carpeta temporal del release> --emptyOutDir true` y copia desde ahi al `wwwroot` publicado. El unico flujo que si usa `frontend/dist` es la **sincronizacion local** de `frontend/dist` a `backend/src/.../wwwroot`, documentada en `AGENTS.md` §8, que es manual y opcional.
+- **Decision:** no se cambia la carpeta de salida canonica de `npm run build` ni de `npm run test:unit` en el repositorio. Redirigirlas seria romper el flujo local documentado (`frontend/dist` -> `wwwroot`) por un problema de permisos de esta maquina, que no es del repo. La verificacion se hace con `VITE_BUILD_OUT_DIR` (build) y `--outDir` + `--tsBuildInfoFile` (tests), que es exactamente lo que recomienda el propio `AGENTS.md` §8.
+- **Contexto:** es un bloqueo **historico y recurrente** de este entorno, no una consecuencia del LOTE 8: el `LOG_ERRORES_INCIDENCIAS.md` lo recoge desde el 2026-06-23 ("Build estandar bloqueada por `frontend/dist/assets`") y lo repiten los lotes 1, 2, 3, 5, 6 y 7 con la misma salida. `npm run lint` canonico si pasa en verde.
+
+## 2026-11-18 - V-03.02 - LOTE 6 del informe de revision integral: S-1, S-3, S-7, S-8, S-9, M-3 y D-13 (CORREGIDO EN CODIGO)
 
 Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 6. Solo estos IDs; ningun otro tocado. Rama `V-03.02`. Sin commit ni push.
 
@@ -796,7 +855,7 @@ Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 1 (A-1, A-7, A-8, B-12, 
 
 ## 2026-09-25 - V-03.01 - Correcciones de la revision 2026-09-24 (CORREGIDO)
 
-Grupo de 9 hallazgos de `Documentacion/INFORME_REVISION_2026-09-24.md`, cerrado el
+Grupo de 9 hallazgos de `Documentacion/Archivo/INFORME_REVISION_2026-09-24.md`, cerrado el
 mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 ### #1 (ALTO) - Escalada Watchdog->SYSTEM en el actualizador elevado
@@ -2538,7 +2597,7 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 ## 2026-07-27 - V-02.07 - Cache del scope de usuario cierra CONC-028 (CERRADO)
 
-- **Contexto:** `AUDITORIA_CONCURRENCIA_2026-07-10.md` marco
+- **Contexto:** `Archivo/AUDITORIA_CONCURRENCIA_2026-07-10.md` marco
   CONC-028 (severidad MED) sobre `UserAccessService.GetScopeAsync`:
   la query `Cuentas.Any(c => ... PermisosUsuario.Any(p => ...))`
   corria en cada endpoint autenticado (`CuentasController`,
@@ -2635,7 +2694,7 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 ## 2026-07-27 - V-02.07 - Cache de tipos de cambio con race benigno CONC-027 (CERRADO)
 
 - **Contexto:** la auditoria de concurrencia 2026-07-10
-  (`AUDITORIA_CONCURRENCIA_2026-07-10.md:302`, severidad LOW)
+  (`Archivo/AUDITORIA_CONCURRENCIA_2026-07-10.md:302`, severidad LOW)
   documentaba que `TiposCambioService.GetRateCatalogAsync` podia
   repoblar la cache con datos viejos si `InvalidateCache` se ejecutaba
   entre la query a `TIPOS_CAMBIO` y el `_cache.Set` posterior.
@@ -5263,7 +5322,7 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 ## 2026-07-10 - V-02-05 - Cierre de hallazgos CRITICAL y HIGH del audit pre-internet (PARCIAL)
 
-- Contexto: auditoria completa (`Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`)
+- Contexto: auditoria completa (`Documentacion/Archivo/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`)
   identifico 3 CRITICAL y 11 HIGH que bloquean la exposicion a internet. V-02-05
   arranca para cerrar la Fase 0.
 - Errores: los 3 CRITICAL estaban todos presentes en V-02-04 (no se habian

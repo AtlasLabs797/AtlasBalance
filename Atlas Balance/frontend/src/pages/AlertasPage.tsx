@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { IconAlertaDanger, IconAlertaWarning } from '@/components/Icons';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -12,6 +13,7 @@ import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { TipoTitular } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDateTime, parseStrictDecimal } from '@/utils/formatters';
+import '@/styles/layout/routes/alertas.css';
 
 interface AlertaContextoCuenta {
   id: string;
@@ -170,7 +172,7 @@ export default function AlertasPage() {
       setAlertas(alertasRes.data);
       hydrateForms(alertasRes.data);
     } catch (loadError: unknown) {
-      setError(extractErrorMessage(loadError, 'No se pudo cargar la configuración de alertas.'));
+      setError(extractErrorMessage(loadError, 'No se pudo cargar la configuración de alertas. Revisa la conexión con el servidor e inténtalo de nuevo.'));
     } finally {
       setConfigLoading(false);
     }
@@ -217,7 +219,7 @@ export default function AlertasPage() {
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (saveError: unknown) {
-      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta global.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta global. Revisa el saldo mínimo y los destinatarios e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -226,7 +228,7 @@ export default function AlertasPage() {
   const saveCuentaAlert = async (event: FormEvent) => {
     event.preventDefault();
     if (!cuentaForm.cuenta_id) {
-      setError('Selecciona una cuenta.');
+      setError('Selecciona una cuenta de la lista para guardar la alerta.');
       return;
     }
 
@@ -255,7 +257,7 @@ export default function AlertasPage() {
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (saveError: unknown) {
-      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta. Revisa el saldo mínimo y los destinatarios e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -293,7 +295,7 @@ export default function AlertasPage() {
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (saveError: unknown) {
-      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta por tipo.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta por tipo de titular. Revisa el saldo mínimo y los destinatarios e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -349,7 +351,7 @@ export default function AlertasPage() {
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (deleteError: unknown) {
-      setError(extractErrorMessage(deleteError, 'No se pudo eliminar la alerta.'));
+      setError(extractErrorMessage(deleteError, 'No se pudo eliminar la alerta. Recarga la lista de alertas e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -369,10 +371,10 @@ export default function AlertasPage() {
   };
 
   return (
-    <section className="alertas-page">
-      <header>
-        <h1>Alertas de Saldo Bajo</h1>
-        <p className="users-subtitle">
+    <section className="alertas-page page">
+      <header className="page-header page-header--static">
+        <h1 className="page-header__title page-header__title--bold">Alertas de Saldo Bajo</h1>
+        <p className="users-subtitle page-header__subtitle">
           {isAdmin
             ? 'Configuración y seguimiento de cuentas por debajo del mínimo.'
             : 'Estado actual de las cuentas por debajo del mínimo dentro de tu alcance.'}
@@ -398,7 +400,7 @@ export default function AlertasPage() {
         {activeError ? <p className="auth-error" role="alert">{activeError}</p> : null}
 
         {!activeError && activeLoading && alertasActivas.length === 0 ? (
-          <p className="import-muted">Cargando alertas activas...</p>
+          <PageSkeleton variant="inline" label="Cargando alertas activas..." />
         ) : null}
 
         {!activeError && !activeLoading && alertasActivas.length === 0 ? (
@@ -428,7 +430,7 @@ export default function AlertasPage() {
                       <div className="alertas-notif-amount">
                         <dt>Saldo actual</dt>
                         <dd>
-                          <SignedAmount value={item.saldo_actual}>
+                          <SignedAmount value={item.saldo_actual} showSign>
                             {formatCurrency(item.saldo_actual, item.divisa ?? 'EUR')}
                           </SignedAmount>
                         </dd>
@@ -463,7 +465,7 @@ export default function AlertasPage() {
               </div>
             </div>
 
-            {configLoading ? <p className="import-muted">Cargando configuración...</p> : null}
+            {configLoading ? <PageSkeleton variant="inline" label="Cargando configuración..." /> : null}
 
             <form className="alertas-form" onSubmit={saveGlobalAlert}>
               <label>
@@ -638,7 +640,7 @@ export default function AlertasPage() {
 
           <article className="alertas-card">
             <h2>Alertas por Tipo de Titular</h2>
-            {configLoading ? <p className="import-muted">Cargando alertas configuradas...</p> : null}
+            {configLoading ? <PageSkeleton variant="table" rows={5} columns={6} label="Cargando alertas configuradas..." /> : null}
 
             {!configLoading && tipoAlerts.length === 0 ? (
               <p className="import-muted">No hay alertas por tipo configuradas.</p>
@@ -647,6 +649,7 @@ export default function AlertasPage() {
             {tipoAlerts.length > 0 ? (
               <div className="config-table-wrap">
                 <table className="table-stack-mobile">
+                  <caption className="sr-only">Alertas por tipo de titular</caption>
                   <thead>
                     <tr>
                       <th scope="col">Alcance</th>
@@ -685,7 +688,7 @@ export default function AlertasPage() {
 
           <article className="alertas-card">
             <h2>Alertas por Cuenta</h2>
-            {configLoading ? <p className="import-muted">Cargando alertas configuradas...</p> : null}
+            {configLoading ? <PageSkeleton variant="table" rows={5} columns={8} label="Cargando alertas configuradas..." /> : null}
 
             {!configLoading && cuentaAlerts.length === 0 ? (
               <p className="import-muted">No hay alertas por cuenta configuradas.</p>
@@ -694,6 +697,7 @@ export default function AlertasPage() {
             {cuentaAlerts.length > 0 ? (
               <div className="config-table-wrap">
                 <table className="table-stack-mobile">
+                  <caption className="sr-only">Alertas por cuenta</caption>
                   <thead>
                   <tr>
                     <th scope="col">Titular</th>

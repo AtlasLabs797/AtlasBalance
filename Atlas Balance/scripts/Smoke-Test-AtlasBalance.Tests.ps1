@@ -1,3 +1,9 @@
+# LOTE 8 (T-2): se ejecuta en CI solo en windows-2022 (job policy-gates).
+# Usa ACL de Windows (Get-Acl/Set-Acl), WindowsIdentity e icacls.exe, que no
+# existen en Linux. No necesita la app instalada ni un servicio real: el
+# smoke hijo se lanza contra una API inexistente y solo se comprueba que no
+# filtra secretos.
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 

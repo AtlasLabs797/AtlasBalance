@@ -1,3 +1,4 @@
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install.ps1" %*
+rem Alias en ingles del lanzador canonico "Instalar Atlas Balance.cmd".
+call "%~dp0Instalar Atlas Balance.cmd" %*
 exit /b %ERRORLEVEL%

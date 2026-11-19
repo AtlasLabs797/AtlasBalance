@@ -9,6 +9,7 @@ import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { PeriodoDashboard, TitularConCuentas } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
+import '@/styles/layout/routes/titular-detail.css';
 
 export default function TitularDetailPage() {
   const { id } = useParams();
@@ -43,15 +44,16 @@ export default function TitularDetailPage() {
 
   return (
     <section className="page-placeholder">
-      <header className="dashboard-toolbar">
-        <div>
-          <h1>{data.titular_nombre}</h1>
-          <p className="dashboard-subtitle">Detalle por cuenta</p>
+      <header className="dashboard-toolbar page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">{data.titular_nombre}</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Detalle por cuenta</p>
         </div>
         <PeriodoSelector value={periodo} onChange={setPeriodo} />
       </header>
       <div className="dashboard-table-wrap titular-detail-table-wrap">
         <table className="titular-detail-table">
+        <caption className="sr-only">Cuentas del titular</caption>
         <thead>
           <tr>
             <th scope="col">Cuenta</th>
@@ -72,7 +74,7 @@ export default function TitularDetailPage() {
               <td>{c.cuenta_nombre}</td>
               <td>{c.divisa}</td>
               <td>
-                <SignedAmount value={c.saldo_actual}>{formatCurrency(c.saldo_actual, c.divisa)}</SignedAmount>
+                <SignedAmount value={c.saldo_actual} showSign>{formatCurrency(c.saldo_actual, c.divisa)}</SignedAmount>
               </td>
               <td>
                 <SignedAmount value={c.ingresos_mes}>{formatCurrency(c.ingresos_mes, c.divisa)}</SignedAmount>

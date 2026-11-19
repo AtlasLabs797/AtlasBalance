@@ -1,0 +1,74 @@
+/* Componente de paginacion: barra de paginacion y selector de tamano, usada por
+   14 paginas. D-6: bloque movido desde las hojas de pagina sin cambiar el
+   resultado computado. El orden interno reproduce el orden de fuente anterior
+   (users -> extractos -> entities -> admin). */
+
+/* --- Origen: layout/users.css --- */
+.pagination-select {
+  width: 5.5rem;
+}
+
+.users-pagination .pagination-select {
+  flex: 0 0 5.5rem;
+}
+
+.users-pagination {
+  margin-top: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.users-pagination span {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 767.98px) {
+  .users-pagination button,
+  .users-pagination .app-select-field {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .users-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* --- Origen: layout/extractos.css --- */
+.extractos-page > .users-pagination {
+  margin-top: calc(var(--space-9) * -1 + var(--space-4));
+  padding: var(--space-4) var(--pad-card-compact);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+
+.extractos-page > .users-pagination span {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+@media (max-width: 767.98px) {
+  .extractos-page > .users-pagination {
+    margin-top: calc(var(--space-7) * -1 + var(--space-4));
+    flex-wrap: wrap;
+  }
+}
+
+/* --- Origen: layout/entities.css --- */
+.entity-cards > .users-pagination {
+  grid-column: 1 / -1;
+}
+
+/* --- Origen: layout/admin.css --- */
+.users-page .users-pagination span,
+.auditoria-page .users-pagination span,
+.exportaciones-page .users-pagination span,
+.trash-page .users-pagination span {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

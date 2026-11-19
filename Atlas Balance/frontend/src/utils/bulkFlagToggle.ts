@@ -1,6 +1,6 @@
-export type BulkFlagAction = 'flag' | 'unflag';
+type BulkFlagAction = 'flag' | 'unflag';
 
-export interface BulkFlagToggle {
+interface BulkFlagToggle {
   action: BulkFlagAction;
   targetIds: string[];
 }

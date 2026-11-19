@@ -7,6 +7,7 @@ import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
+import { SignedAmount } from '@/components/common/SignedAmount';
 import EditableCell from '@/components/extractos/EditableCell';
 import { BASE_COLUMNS } from '@/components/extractos/extractoColumns';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -861,11 +862,23 @@ function renderCell({
     );
   }
 
+  // D-11: las columnas de importe muestran el "+" visible en los positivos
+  // (SignedAmount con showSign) para que el signo no dependa solo del color;
+  // los negativos ya muestran el "-" del formato.
+  const amountValue = column === 'monto' ? row.monto : column === 'saldo' ? row.saldo : null;
+  const displayValue = amountValue === null
+    ? getDisplayCellValue(row, column)
+    : (
+      <SignedAmount value={amountValue} showSign>
+        {getDisplayCellValue(row, column)}
+      </SignedAmount>
+    );
+
   return (
     <EditableCell
       value={getCellValue(row, column)}
       editable={canEdit}
-      displayValue={getDisplayCellValue(row, column)}
+      displayValue={displayValue}
       displayClassName={amountClassName}
       tabIndex={-1}
       onSave={(value) => onSaveCell(row, column, value)}

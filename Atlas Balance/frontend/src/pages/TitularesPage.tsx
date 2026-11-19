@@ -2,17 +2,17 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AppSelect } from '@/components/common/AppSelect';
-import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
+import Modal from '@/components/common/Modal';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
@@ -31,6 +31,7 @@ import type {
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate } from '@/utils/formatters';
+import '@/styles/layout/routes/titulares.css';
 
 const EvolucionChart = lazy(() =>
   import('@/components/dashboard/EvolucionChart').then((module) => ({ default: module.EvolucionChart }))
@@ -263,10 +264,6 @@ export default function TitularesPage() {
     resetForm();
   };
 
-  const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
-    onEscape: saving ? undefined : () => void closeFormModal(),
-  });
-
   const startEdit = async (id: string) => {
     setSaving(true);
     setError(null);
@@ -348,11 +345,11 @@ export default function TitularesPage() {
   };
 
   return (
-    <section className="phase2-page titulares-page">
-      <header className="phase2-header">
-        <div>
-          <h1>Titulares</h1>
-          <p className="dashboard-subtitle">Personas y empresas que agrupan cuentas, saldos y permisos.</p>
+    <section className="entity-page titulares-page page">
+      <header className="entity-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Titulares</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Personas y empresas que agrupan cuentas, saldos y permisos.</p>
         </div>
         {isAdmin && <button type="button" className="button-primary" onClick={openCreateModal}>Nuevo Titular</button>}
       </header>
@@ -371,7 +368,7 @@ export default function TitularesPage() {
           </header>
 
           {dashboardError ? <p className="auth-error" role="alert">{dashboardError}</p> : null}
-          {dashboardLoading ? <p className="import-muted">Cargando dashboard de titulares...</p> : null}
+          {dashboardLoading ? <PageSkeleton variant="inline" label="Cargando dashboard de titulares..." /> : null}
 
           {!dashboardLoading && !dashboardError && principal ? (
             <>
@@ -382,7 +379,7 @@ export default function TitularesPage() {
                     subtitle="Importa movimientos o revisa permisos para poblar este resumen."
                   />
                 ) : (
-                  <Suspense fallback={<p className="import-muted">Cargando gráfica...</p>}>
+                  <Suspense fallback={<PageSkeleton variant="inline" label="Cargando gráfica..." />}>
                     <TitularSaldoBarChart rows={chartRows} divisa={principal.divisa_principal} />
                   </Suspense>
                 )}
@@ -408,7 +405,7 @@ export default function TitularesPage() {
                       </span>
                       <span className="titulares-balance-name">{item.titular_nombre}</span>
                     </span>
-                    <SignedAmount value={item.total_convertido}>
+                    <SignedAmount value={item.total_convertido} showSign>
                       {formatCurrency(item.total_convertido, principal.divisa_principal)}
                     </SignedAmount>
                     <span className="titulares-balance-open" aria-hidden="true">Abrir</span>
@@ -422,7 +419,7 @@ export default function TitularesPage() {
                     <h3>Evolución</h3>
                     <span className="dashboard-subtitle">Último punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'Sin dato'}</span>
                   </header>
-                  <Suspense fallback={<p className="import-muted">Cargando evolución...</p>}>
+                  <Suspense fallback={<PageSkeleton variant="inline" label="Cargando evolución..." />}>
                     <EvolucionChart
                       points={evolucion.puntos}
                       divisa={principal.divisa_principal}
@@ -442,7 +439,7 @@ export default function TitularesPage() {
         </section>
       ) : null}
 
-      <div className="phase2-filters">
+      <div className="entity-filters">
         <input
           type="search"
           autoComplete="off"
@@ -497,9 +494,13 @@ export default function TitularesPage() {
 
       {error && <p className="auth-error" role="alert">{error}</p>}
 
-      <div className="phase2-grid">
-        <div className="phase2-cards">
-          {loading ? <p className="import-muted">Cargando titulares...</p> : null}
+      <div className="entity-grid">
+        <div className="entity-cards">
+          {loading ? (
+            <div className="import-muted">
+              <PageSkeleton variant="table" rows={3} columns={3} label="Cargando titulares..." />
+            </div>
+          ) : null}
           {!loading && items.length === 0 ? (
             <EmptyState
               title="No hay titulares con estos filtros."
@@ -527,7 +528,7 @@ export default function TitularesPage() {
                   <div className="titular-card-meta-item titular-card-balance">
                     <span className="cuenta-card-meta-label">Saldo total</span>
                     {typeof saldoTotal === 'number' ? (
-                      <SignedAmount value={saldoTotal}>
+                      <SignedAmount value={saldoTotal} showSign>
                         {formatCurrency(saldoTotal, saldoDivisa)}
                       </SignedAmount>
                     ) : (
@@ -535,7 +536,7 @@ export default function TitularesPage() {
                     )}
                   </div>
                 </div>
-                <div className="phase2-row-actions">
+                <div className="entity-row-actions">
                   {canSeeDashboard && !item.deleted_at ? (
                     <button
                       type="button"
@@ -575,72 +576,62 @@ export default function TitularesPage() {
         </div>
       </div>
 
-      {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop modal-backdrop--fullscreen-mobile" onClick={() => void closeFormModal()}>
-          <div
-            ref={formDialogRef}
-            className="users-modal phase2-form-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="titulares-modal-title"
-            tabIndex={-1}
+      {isAdmin ? (
+        <Modal
+          open={isFormModalOpen}
+          onClose={() => void closeFormModal()}
+          titleId="titulares-modal-title"
+          title={editingId ? 'Editar titular' : 'Nuevo titular'}
+          subtitle="Alta y edición de titulares usados para agrupar cuentas y permisos."
+          variant="fullscreen-mobile"
+          panelClassName="users-modal modal-form"
+          headerClassName="users-modal-header"
+          bareBody
+          busy={saving}
+          closeButtonClassName="users-modal-close"
+          closeLabel="Cerrar modal de titular"
+        >
+          <form
+            className="users-modal-body modal-form-body"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
           >
-            <div className="users-modal-header">
-              <div>
-                <h2 id="titulares-modal-title">{editingId ? 'Editar titular' : 'Nuevo titular'}</h2>
-                <p>Alta y edición de titulares usados para agrupar cuentas y permisos.</p>
+            {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
+
+            <section className="users-modal-section">
+              <h3>Datos del titular</h3>
+              <div className="users-form-grid">
+                <label>
+                  <span>Nombre</span>
+                  <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} />
+                </label>
+
+                <AppSelect
+                  label="Tipo"
+                  value={form.tipo}
+                  options={[
+                    { value: 'EMPRESA', label: 'Empresa' },
+                    { value: 'AUTONOMO', label: 'Autónomo' },
+                    { value: 'PARTICULAR', label: 'Particular' },
+                  ]}
+                  onChange={(next) => setForm((f) => ({ ...f, tipo: next as TipoTitular }))}
+                />
+
+                <label className="modal-form-wide-field">
+                  <span>Notas</span>
+                  <textarea rows={4} value={form.notas} onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))} />
+                </label>
               </div>
-              <CloseIconButton
-                className="users-modal-close"
-                onClick={() => void closeFormModal()}
-                disabled={saving}
-                ariaLabel="Cerrar modal de titular"
-              />
+            </section>
+
+            <div className="users-form-actions modal-form-actions">
+              <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
+              <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
             </div>
-
-            <form
-              className="users-modal-body phase2-modal-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void save();
-              }}
-            >
-              {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
-
-              <section className="users-modal-section">
-                <h3>Datos del titular</h3>
-                <div className="users-form-grid">
-                  <label>
-                    <span>Nombre</span>
-                    <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} />
-                  </label>
-
-                  <AppSelect
-                    label="Tipo"
-                    value={form.tipo}
-                    options={[
-                      { value: 'EMPRESA', label: 'Empresa' },
-                      { value: 'AUTONOMO', label: 'Autónomo' },
-                      { value: 'PARTICULAR', label: 'Particular' },
-                    ]}
-                    onChange={(next) => setForm((f) => ({ ...f, tipo: next as TipoTitular }))}
-                  />
-
-                  <label className="phase2-modal-wide-field">
-                    <span>Notas</span>
-                    <textarea rows={4} value={form.notas} onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))} />
-                  </label>
-                </div>
-              </section>
-
-              <div className="users-form-actions phase2-modal-actions">
-                <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
-                <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       ) : null}
 
       <ConfirmDialog

@@ -1,0 +1,431 @@
+/* Componente modal: backdrop comun, panel generico, modales de usuarios, de
+   formulario de entidad, de importacion y los keyframes de entrada.
+   D-6: bloque movido desde las hojas de pagina sin cambiar el resultado
+   computado. El orden interno reproduce el orden de fuente anterior
+   (users -> extractos -> entities -> importacion -> admin -> system-coherence)
+   para que las reglas que compiten por cascada sigan ganando las mismas. */
+
+/* --- Origen: layout/users.css --- */
+.users-modal,
+.users-confirm-modal {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-modal);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-xl);
+  padding: var(--space-4);
+}
+
+.users-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1080px, 96vw);
+  max-height: min(90vh, 1000px);
+  overflow: auto;
+  padding: 0;
+  overscroll-behavior: contain;
+}
+
+.users-modal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-card);
+}
+
+.users-modal-header p {
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.users-modal-header h2 {
+  margin: 0;
+  font-size: var(--text-28);
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.users-modal-close {
+  justify-self: end;
+}
+
+.users-modal-body {
+  display: grid;
+  /* Sin esto, en movil (modal a 100dvh) las filas se estiran y los botones del pie salen como pastillas altas. */
+  align-content: start;
+  gap: var(--space-5);
+  padding: var(--space-4);
+}
+
+.users-modal-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.users-modal-section + .users-modal-section {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+.users-modal-section > h3 {
+  margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--text-17);
+  font-weight: var(--weight-bold);
+  line-height: 1.2;
+}
+
+.users-modal-section textarea {
+  width: 100%;
+  min-height: 7rem;
+  line-height: var(--leading-normal);
+  resize: vertical;
+}
+
+.users-confirm-modal {
+  width: min(440px, 94vw);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.users-modal-loading {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1023.98px) {
+  .users-modal {
+    width: min(96vw, 920px);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .users-confirm-modal {
+    padding: var(--space-3);
+  }
+
+  .users-modal {
+    width: 100%;
+    max-width: 100dvw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .users-modal-header,
+  .users-modal-body {
+    padding: var(--space-3);
+  }
+
+  .users-modal-body {
+    gap: var(--space-4);
+  }
+
+  .modal-form-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .modal-form-actions button {
+    width: 100%;
+    height: var(--control-height);
+  }
+}
+
+/* --- Origen: layout/extractos.css --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: var(--blur-overlay);
+  -webkit-backdrop-filter: var(--blur-overlay);
+  z-index: var(--z-modal-backdrop);
+  display: grid;
+  place-items: center;
+  animation: modal-backdrop-in var(--duration-fast) var(--ease-premium);
+}
+
+/* Modificadores del backdrop unico. --padded deja aire alrededor del panel;
+   --stack-top lo sube por encima de otros modales abiertos (importacion);
+   --fullscreen-mobile hace que el panel ocupe toda la pantalla en movil. */
+.modal-backdrop--padded {
+  padding: var(--space-3);
+}
+
+.modal-backdrop--stack-top {
+  z-index: calc(var(--z-modal-backdrop) + 2);
+}
+
+@media (max-width: 767.98px) {
+  .modal-backdrop--fullscreen-mobile {
+    place-items: stretch;
+    padding: 0;
+  }
+}
+
+/* Modal comun (components/common/Modal.tsx): panel con cabecera, cuerpo con
+   scroll y pie. Los modales con estructura propia siguen usando sus clases. */
+.modal-panel {
+  --modal-width: 640px;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--modal-width), 96vw);
+  max-height: min(90dvh, 1000px);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-xl);
+  overscroll-behavior: contain;
+}
+
+.modal-panel--sm { --modal-width: 440px; }
+.modal-panel--md { --modal-width: 640px; }
+.modal-panel--lg { --modal-width: 1040px; }
+
+.modal-panel__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.modal-panel__title {
+  margin: 0;
+  font: var(--type-title-3);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.modal-panel__subtitle {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.modal-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+}
+
+.modal-panel__body > :first-child { margin-top: 0; }
+.modal-panel__body > :last-child { margin-bottom: 0; }
+
+.modal-panel__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-default);
+}
+
+.modal-panel__footer > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+}
+
+/* Accion secundaria alineada a la izquierda del pie (p. ej. "Anadir linea"). */
+.modal-panel__footer > .modal-panel__footer-start {
+  margin-right: auto;
+}
+
+@media (max-width: 767.98px) {
+  .modal-panel__header,
+  .modal-panel__footer {
+    padding: var(--space-3);
+  }
+
+  .modal-panel__body {
+    padding: var(--space-3);
+  }
+
+  /* Pie apilado a ancho completo: accion principal arriba, 44px de alto cada una. */
+  .modal-panel__footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+
+  .modal-panel__footer > .modal-panel__footer-start {
+    margin-right: 0;
+  }
+
+  .modal-panel__footer > button {
+    width: 100%;
+    height: var(--control-height);
+  }
+}
+
+.modal-panel__body > table {
+  min-width: 640px;
+}
+
+.modal-panel__body td {
+  overflow-wrap: anywhere;
+}
+
+/* --- Origen: layout/entities.css (antes modal-form*) --- */
+.modal-form {
+  width: min(720px, 94vw);
+}
+
+.modal-form--wide {
+  width: min(880px, 94vw);
+}
+
+.modal-form-body {
+  gap: var(--space-4);
+}
+
+.modal-form-body .auth-error {
+  margin: 0;
+}
+
+.modal-form-wide-field {
+  grid-column: 1 / -1;
+}
+
+.modal-form-actions {
+  justify-content: flex-end;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-default);
+}
+
+/* --- Origen: layout/importacion.css --- */
+.import-modal {
+  width: min(1280px, 96vw);
+  height: min(92vh, 940px);
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-xl);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  animation: modal-surface-in var(--duration-slow) var(--ease-premium) both;
+}
+
+.import-modal-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.import-modal-close {
+  justify-self: end;
+}
+
+.import-modal-header h2 {
+  margin: 0;
+}
+
+.import-modal-header p {
+  margin: var(--space-1) 0 0;
+}
+
+.import-modal-body {
+  min-height: 0;
+}
+
+.import-modal-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--surface-card);
+}
+
+/* --- Origen: layout/admin.css --- */
+@media (max-width: 1023.98px) {
+  .import-modal {
+    width: min(96vw, 1080px);
+    height: min(94vh, 900px);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .import-modal {
+    width: 100%;
+    max-width: 100dvw;
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .import-modal-header {
+    padding: var(--space-2);
+    align-items: flex-start;
+  }
+}
+
+/* --- Origen: layout/system-coherence.css --- */
+.users-modal,
+.users-confirm-modal {
+  border-color: var(--border-default);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-xl);
+}
+
+.users-modal-header {
+  gap: var(--space-3);
+}
+
+/* Modales: backdrop */
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Modales: superficie del panel */
+@keyframes modal-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.45rem) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-panel,
+.users-confirm-modal,
+.users-modal,
+.modal-form,
+.modal-form--wide {
+  animation: modal-surface-in var(--duration-slow) var(--ease-premium) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .modal-panel,
+  .users-confirm-modal,
+  .users-modal,
+  .modal-form,
+  .modal-form--wide {
+    animation: none !important;
+    animation-delay: 0ms !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-modal {
+    animation: none;
+  }
+}

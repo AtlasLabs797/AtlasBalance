@@ -25,7 +25,7 @@ Actualizacion 2026-11-16: estado de estos hallazgos en la seccion 9.
 
 ## 1. Dictamen
 
-La base es solida y ya paso varias auditorias (`AUDITORIA_SEGURIDAD_PRE_LAUNCH_2026-08-04.md`, `SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md`). La mayoria del checklist ya esta cubierto, a menudo mejor que lo que pide el texto (RLS con FORCE, auditoria firmada y append-only, rotacion de refresh con deteccion de reuso, MFA, CSRF doble capa).
+La base es solida y ya paso varias auditorias (`Archivo/AUDITORIA_SEGURIDAD_PRE_LAUNCH_2026-08-04.md`, `Archivo/SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md`). La mayoria del checklist ya esta cubierto, a menudo mejor que lo que pide el texto (RLS con FORCE, auditoria firmada y append-only, rotacion de refresh con deteccion de reuso, MFA, CSRF doble capa).
 
 Lo que cambia respecto a agosto, y es lo urgente:
 
@@ -230,7 +230,7 @@ Sin medir en esta sesion: tiempos reales de respuesta ni volumen de consultas. C
 
 ### Gates operativos aun abiertos (de agosto)
 
-Siguen sin evidencia en este informe: `ASPNETCORE_ENVIRONMENT=Production` efectivo, ACL de `backups`/`exports`, BitLocker, certificado y HSTS reales, 17 tests Postgres en CI, `pg_dump` + restauracion con rol owner. Ver `AUDITORIA_SEGURIDAD_PRE_LAUNCH_2026-08-04.md`.
+Siguen sin evidencia en este informe: `ASPNETCORE_ENVIRONMENT=Production` efectivo, ACL de `backups`/`exports`, BitLocker, certificado y HSTS reales, 17 tests Postgres en CI, `pg_dump` + restauracion con rol owner. Ver `Archivo/AUDITORIA_SEGURIDAD_PRE_LAUNCH_2026-08-04.md`.
 
 ## 7. Que NO recomiendo hacer
 

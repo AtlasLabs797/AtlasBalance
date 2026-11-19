@@ -10,33 +10,24 @@
 --font-ui:"Geist","SF Pro Text",system-ui,-apple-system,"Helvetica Neue",sans-serif;
 --font-display:"Geist","SF Pro Display",system-ui,-apple-system,"Helvetica Neue",sans-serif;
 --font-mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
---text-10:0.625rem;--text-11:0.6875rem;--text-12:0.75rem;--text-13:0.8125rem;--text-14:0.875rem;--text-17:1.0625rem;--text-18:1.125rem;--text-21:1.3125rem;--text-24:1.5rem;--text-28:1.75rem;--text-34:2.125rem;--text-40:2.5rem;--text-48:3rem;--text-56:3.5rem;
+--text-10:0.625rem;--text-11:0.6875rem;--text-12:0.75rem;--text-13:0.8125rem;--text-14:0.875rem;--text-17:1.0625rem;--text-21:1.3125rem;--text-28:1.75rem;--text-34:2.125rem;--text-40:2.5rem;--text-48:3rem;--text-56:3.5rem;
 --text-kpi:clamp(1.375rem,3.2vw,2.75rem);
-/* legacy aliases kept so nothing breaks; both resolve into the new ladder */
---text-16:var(--text-17);--text-20:var(--text-21);--text-32:var(--text-34);
---leading-tight:1.07;--leading-snug:1.19;--leading-normal:1.47;--leading-relaxed:1.6;--leading-dense-link:2.41;
-/* Ladder is 300 / 400 / 600 / 700. Weight 500 is deliberately absent — mid-weight reads at 600. */
---weight-light:300;--weight-regular:400;--weight-medium:600;--weight-semibold:600;--weight-bold:700;
---tracking-display:-0.005em;--tracking-heading:-0.011em;--tracking-body:-0.011em;--tracking-label:-0.016em;--tracking-caps:0.08em;
---type-hero:var(--weight-semibold) var(--text-56)/1.07 var(--font-display);
---type-display:var(--weight-semibold) var(--text-56)/1.07 var(--font-display);
---type-title-1:var(--weight-semibold) var(--text-40)/1.1 var(--font-display);
+--leading-tight:1.07;--leading-snug:1.19;--leading-normal:1.47;
+/* Ladder is 400 / 600 / 700 (300 se elimino por no usarse). Weight 500 is deliberately absent — mid-weight reads at 600.
+   LOTE 8 (D-12): --weight-medium era un alias de --weight-semibold (los dos 600) y sus usos vivian en
+   hojas de layout. Ya no queda ningun uso: sus 24 referencias se han sustituido por
+   --weight-semibold, de modo que el peso 600 tiene un solo nombre. */
+--weight-regular:400;--weight-semibold:600;--weight-bold:700;
+--tracking-display:-0.005em;--tracking-heading:-0.011em;--tracking-body:-0.011em;--tracking-caps:0.08em;
 --type-title-2:var(--weight-semibold) var(--text-28)/1.14 var(--font-display);
 --type-title-3:var(--weight-semibold) var(--text-21)/1.19 var(--font-display);
---type-lead:var(--weight-regular) var(--text-28)/1.14 var(--font-display);
---type-lead-airy:var(--weight-light) var(--text-24)/1.5 var(--font-ui);
 --type-subhead:var(--weight-semibold) var(--text-17)/1.24 var(--font-ui);
 --type-body:var(--weight-regular) var(--text-17)/1.47 var(--font-ui);
 --type-body-sm:var(--weight-regular) var(--text-14)/1.43 var(--font-ui);
 --type-label:var(--weight-semibold) var(--text-14)/1.29 var(--font-ui);
 --type-caption:var(--weight-regular) var(--text-14)/1.43 var(--font-ui);
 --type-overline:var(--weight-semibold) var(--text-12)/1.3 var(--font-ui);
---type-fine:var(--weight-regular) var(--text-12)/1.3 var(--font-ui);
---type-micro:var(--weight-regular) var(--text-10)/1.3 var(--font-ui);
---type-nav:var(--weight-regular) var(--text-12)/1 var(--font-ui);
 --type-mono:var(--weight-regular) var(--text-14)/1.43 var(--font-mono);
 --type-mono-lg:var(--weight-regular) var(--text-21)/1.19 var(--font-mono);
 --type-kpi:var(--weight-semibold) var(--text-kpi)/1.05 var(--font-mono);
---type-editorial:var(--weight-light) var(--text-24)/1.5 var(--font-ui);
---type-dense-link:var(--weight-regular) var(--text-17)/2.41 var(--font-ui);
 }

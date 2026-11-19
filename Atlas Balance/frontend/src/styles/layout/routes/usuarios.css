@@ -1,0 +1,139 @@
+/* L8/R-9: reglas exclusivas de la ruta "usuarios".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.users-summary-card {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.users-summary-card strong {
+  font-size: var(--text-40);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+.users-summary-card span {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.users-filters {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.users-filters > input[type='search'] {
+  flex: 1 1 20rem;
+  min-width: min(100%, 18rem);
+}
+
+.users-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+}
+
+.users-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  text-align: center;
+  color: var(--text-secondary);
+  gap: var(--space-2);
+}
+
+.users-form-actions--sticky {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface-card);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.users-notification-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.users-notification-field > span {
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+}
+
+.users-check-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.users-check-grid label.users-check-danger:has(input:checked) {
+  border-color: color-mix(in srgb, var(--status-danger-text) 28%, transparent);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.users-section-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.users-permisos-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.permiso-row {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-field);
+  background: var(--surface-page);
+  padding: var(--space-3);
+}
+
+.permiso-row-title {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.permiso-scope {
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+}
+
+.remove-permiso {
+  align-self: start;
+  min-height: 2.5rem;
+}
+
+@media (max-width: 767.98px) {
+
+  .users-form-actions--sticky {
+    margin: 0 calc(var(--space-3) * -1) calc(var(--space-3) * -1);
+    padding: var(--space-3);
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+
+  .users-form-actions--sticky button {
+    flex: 1 1 100%;
+    min-height: 2.9rem;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .remove-permiso {
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+  }
+}

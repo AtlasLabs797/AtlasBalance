@@ -197,7 +197,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   background: var(--surface-card);
   color: var(--text-primary);
   text-align: left;
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
   box-shadow: none;
 }
 
@@ -485,7 +485,7 @@ button {
   color: var(--text-primary);
   padding: var(--space-2) var(--space-4);
   min-height: var(--control-height);
-  font-weight: var(--weight-medium);
+  font-weight: var(--weight-semibold);
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
@@ -548,10 +548,8 @@ th {
 .button,
 .button-primary,
 .button-secondary,
-.button-tertiary,
 .button-warning,
-.button-danger,
-.button-icon {
+.button-danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -601,17 +599,6 @@ th {
   background: color-mix(in srgb, var(--accent-500) 12%, transparent);
 }
 
-.button-tertiary {
-  background: transparent;
-  color: var(--text-link);
-  padding-inline: var(--space-2);
-}
-
-.button-tertiary:hover {
-  background: var(--accent-soft);
-  text-decoration: none;
-}
-
 .button-warning {
   background: var(--status-warning-bg);
   border-color: color-mix(in srgb, var(--status-warning-text) 32%, transparent);
@@ -637,11 +624,6 @@ th {
   text-decoration: none;
 }
 
-.button-icon {
-  width: var(--control-height);
-  padding: 0;
-}
-
 /* Confirmaciones: tres niveles distinguibles por forma e icono, no solo color. */
 .confirm-action {
   min-height: 44px;
@@ -663,40 +645,6 @@ th {
   border-radius: var(--radius-control);
   background: var(--status-danger-bg);
   color: var(--status-danger-text);
-}
-
-.ab-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 1.65rem;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  font-size: var(--text-12);
-  font-weight: var(--weight-semibold);
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.ab-badge--info {
-  border-color: color-mix(in srgb, var(--status-info-text) 28%, transparent);
-  background: var(--status-info-bg);
-  color: var(--status-info-text);
-}
-
-.ab-badge--success {
-  border-color: color-mix(in srgb, var(--status-success-text) 28%, transparent);
-  background: var(--status-success-bg);
-  color: var(--status-success-text);
-}
-
-.ab-badge--warning {
-  border-color: color-mix(in srgb, var(--status-warning-text) 28%, transparent);
-  background: var(--status-warning-bg);
-  color: var(--status-warning-text);
 }
 
 .ab-tabs {
@@ -722,50 +670,10 @@ th {
 }
 
 .ab-tab[aria-pressed="true"],
-.ab-tab[aria-checked="true"],
-.ab-tab--active {
+.ab-tab[aria-checked="true"] {
   border-color: var(--border-default);
   background: var(--surface-card);
   color: var(--text-primary);
-}
-
-.ab-field {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.ab-field > span,
-.ab-label {
-  color: var(--text-secondary);
-  font: var(--type-label);
-}
-
-.ab-input {
-  width: 100%;
-}
-
-.ab-empty {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  padding: var(--space-5);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-card);
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-}
-
-.ab-button--block {
-  width: 100%;
-}
-
-.ab-button--sm {
-  min-height: var(--control-height-sm);
-  padding: 0 var(--space-7);
-  font: var(--type-caption);
 }
 
 .close-icon-button {
@@ -1027,4 +935,98 @@ th {
   .date-picker-grid span {
     min-height: var(--control-height);
   }
+}
+
+/* Utilidad global de texto secundario. D-6: movida desde layout/importacion.css
+   porque la usan 10 paginas y 4 componentes (entre ellos PageSkeleton, que
+   aparece en cualquier ruta). No hay ninguna otra regla para esta clase. */
+.import-muted {
+  color: var(--text-secondary);
+}
+
+/* D-5 (LOTE 8): capa de coherencia reubicada. Antes vivia en
+   layout/system-coherence.css, que era la ultima hoja de pagina y por eso
+   ganaba por orden de fuente. Aqui estas reglas son la base transversal de la
+   aplicacion, asi que global.css es su sitio natural: se cargan antes que las
+   hojas de pagina y no hay ninguna regla de pagina que compita con ellas. */
+.app-content {
+  background: transparent;
+}
+
+label,
+.auth-label,
+.app-select-label,
+.config-field > span,
+.config-manual-form label,
+.auditoria-filtros label,
+.exportaciones-toolbar label {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.users-table-scroll th,
+.config-table-wrap th,
+.extracto-table-section th,
+.dashboard-table-wrap th,
+.import-preview-grid th,
+.import-validation-table-wrap th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.users-table-scroll,
+.config-table-wrap,
+.dashboard-table-wrap,
+.import-preview-grid,
+.import-validation-table-wrap,
+.revision-table-wrap,
+.account-excel-wrap {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+}
+
+tbody tr {
+  transition: background-color var(--transition-fast);
+}
+
+tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.pill,
+.config-badge {
+  border-radius: var(--radius-full);
+}
+
+.button-danger {
+  border-color: color-mix(in srgb, var(--status-danger-text) 28%, transparent);
+}
+
+/* Coherencia de cabecera de pagina. El barrido en navegador encontro titulos a
+   28/700 en casi todas las pantallas y a 40/600 en Conciliacion, que hereda la
+   regla base de `h1`. El sistema compone los titulos con --type-title-2
+   (28/600); el 700 venia del alias legacy --font-weight-heavy. Esta capa se
+   carga la ultima, asi que normaliza sin tocar 30 reglas por archivo. */
+.app-content h1 {
+  font-size: var(--text-28);
+  font-weight: var(--weight-semibold);
+}
+
+/* Cabeceras de tabla: overline de 12/600 en mayusculas, como .atl-table th y
+   .atl-datagrid__table th. Antes convivian 13/600 sin mayusculas (Titulares) y
+   12/700 con mayusculas (Usuarios, Auditoria, Conciliacion).
+   El selector baja a `table th` (0,1,2) para conservar el reparto: antes ganaba
+   por orden de fuente a `.revision-table th` y `.import-validation-table th`
+   (0,1,1), y desde global.css, que se carga antes, la especificidad hace ese
+   mismo trabajo. */
+.app-content table th {
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }

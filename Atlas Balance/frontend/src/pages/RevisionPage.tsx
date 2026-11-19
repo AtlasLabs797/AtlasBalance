@@ -12,6 +12,7 @@ import type { PaginatedResponse, RevisionComisionItem, RevisionEstadoComision, R
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { Check, RotateCcw, X } from 'lucide-react';
+import '@/styles/layout/routes/revision.css';
 
 type RevisionTab = 'comisiones' | 'seguros';
 type EstadoFiltro = 'TODAS' | 'PENDIENTE' | 'DEVUELTA' | 'CORRECTO' | 'DESCARTADA';
@@ -172,11 +173,11 @@ export default function RevisionPage() {
   };
 
   return (
-    <section className="revision-page">
-      <header className="dashboard-toolbar">
-        <div>
-          <h1>Revisión</h1>
-          <p className="dashboard-subtitle">Detección automática de comisiones y seguros en todos los extractos.</p>
+    <section className="revision-page page">
+      <header className="dashboard-toolbar page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Revisión</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Detección automática de comisiones y seguros en todos los extractos.</p>
         </div>
         <AppSelect
           className="revision-filter"
@@ -278,12 +279,13 @@ function ComisionesTable({
   onVerificar: (item: RevisionComisionItem) => void;
 }) {
   if (rows.length === 0) {
-    return <EmptyState title="Sin comisiones detectadas." subtitle="Ajusta el umbral en Configuración si necesitas afinar la revisión." />;
+    return <EmptyState headingLevel="h2" title="Sin comisiones detectadas." subtitle="Ajusta el umbral en Configuración si necesitas afinar la revisión." />;
   }
 
   return (
     <div className="revision-table-wrap">
       <table className="revision-table">
+        <caption className="sr-only">Comisiones detectadas</caption>
         <thead>
           <tr>
             <th scope="col">Titular</th>
@@ -302,7 +304,7 @@ function ComisionesTable({
               <td data-label="Cuenta">{item.cuenta}</td>
               <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
               <td data-label="Monto" className="revision-cell-money">
-                <SignedAmount value={item.monto}>{formatCurrency(item.monto, item.divisa)}</SignedAmount>
+                <SignedAmount value={item.monto} showSign>{formatCurrency(item.monto, item.divisa)}</SignedAmount>
               </td>
               <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
               <td data-label="Devolución" className="revision-cell-fixed" title={item.devolucion_fecha ? `Bonificación del ${formatDate(item.devolucion_fecha)}` : undefined}>
@@ -337,12 +339,13 @@ function SegurosTable({
   onSetEstado: (item: RevisionSeguroItem, next: RevisionEstadoSeguro) => void;
 }) {
   if (rows.length === 0) {
-    return <EmptyState title="Sin seguros detectados." subtitle="No hay movimientos con conceptos de seguros en las cuentas visibles." />;
+    return <EmptyState headingLevel="h2" title="Sin seguros detectados." subtitle="No hay movimientos con conceptos de seguros en las cuentas visibles." />;
   }
 
   return (
     <div className="revision-table-wrap">
       <table className="revision-table">
+        <caption className="sr-only">Seguros detectados</caption>
         <thead>
           <tr>
             <th scope="col">Titular</th>
@@ -360,7 +363,7 @@ function SegurosTable({
               <td data-label="Cuenta">{item.cuenta}</td>
               <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
               <td data-label="Importe" className="revision-cell-money">
-                <SignedAmount value={item.importe}>{formatCurrency(item.importe, item.divisa)}</SignedAmount>
+                <SignedAmount value={item.importe} showSign>{formatCurrency(item.importe, item.divisa)}</SignedAmount>
               </td>
               <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
               <td data-label="Estado">

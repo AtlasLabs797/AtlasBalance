@@ -1,10 +1,10 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
-import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import Modal from '@/components/common/Modal';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -209,9 +209,6 @@ export default function UsuarioModal({
   const { confirm, dialogProps: discardDialogProps } = useConfirmDialog();
   const isDirty = open && baselineRef.current !== null && JSON.stringify(form) !== baselineRef.current;
   useUnsavedChanges(isDirty);
-  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    onEscape: submitting ? undefined : () => void closeModal(),
-  });
 
   const title = useMemo(
     () => (editingId ? 'Editar Usuario' : 'Nuevo Usuario'),
@@ -411,36 +408,26 @@ export default function UsuarioModal({
     }
   };
 
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div className="modal-backdrop modal-backdrop--fullscreen-mobile" onClick={() => void closeModal()}>
-      <div
-        ref={dialogRef}
-        className="users-modal"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="usuarios-modal-title"
-        tabIndex={-1}
+    <>
+      <Modal
+        open={open}
+        onClose={() => void closeModal()}
+        titleId="usuarios-modal-title"
+        title={title}
+        subtitle="Datos base, emails de notificación y permisos granulares."
+        variant="fullscreen-mobile"
+        panelClassName="users-modal"
+        headerClassName="users-modal-header"
+        bareBody
+        busy={submitting}
+        closeButtonClassName="users-modal-close"
+        closeLabel="Cerrar modal de usuario"
       >
-        <div className="users-modal-header">
-          <div>
-            <h2 id="usuarios-modal-title">{title}</h2>
-            <p>Datos base, emails de notificación y permisos granulares.</p>
-          </div>
-          <CloseIconButton
-            className="users-modal-close"
-            onClick={() => void closeModal()}
-            disabled={submitting}
-            ariaLabel="Cerrar modal de usuario"
-          />
-        </div>
-
         {loading ? (
-          <div className="users-modal-loading">Cargando usuario...</div>
+          <div className="users-modal-loading">
+            <PageSkeleton variant="inline" label="Cargando usuario..." />
+          </div>
         ) : (
           <form
             className="users-modal-body"
@@ -911,8 +898,8 @@ export default function UsuarioModal({
             </div>
           </form>
         )}
-      </div>
+      </Modal>
       <ConfirmDialog {...discardDialogProps} />
-    </div>
+    </>
   );
 }

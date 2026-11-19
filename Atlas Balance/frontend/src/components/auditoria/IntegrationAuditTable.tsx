@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppSelect } from '@/components/common/AppSelect';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import api from '@/services/api';
 import type { IntegrationAuditItem, IntegrationTokenListItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
@@ -76,7 +77,7 @@ export function IntegrationAuditTable() {
       </div>
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
       <div className="users-table-card auditoria-table-card">
-        {loading ? <p>Cargando auditoría de integraciones...</p> : null}
+        {loading ? <PageSkeleton variant="table" rows={5} columns={7} label="Cargando auditoría de integraciones..." /> : null}
         {!loading && rows.length === 0 ? (
           <EmptyState
             title="No hay llamadas de integración con estos filtros."
@@ -87,6 +88,7 @@ export function IntegrationAuditTable() {
           <>
             <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de auditoría de integraciones">
               <table>
+                <caption className="sr-only">Auditoría de integraciones</caption>
                 <thead>
                   <tr>
                     <th scope="col">Fecha</th>

@@ -6,6 +6,7 @@ import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
@@ -35,7 +36,8 @@ import type {
   ImportValidationResult,
   PaginatedResponse,
 } from '@/types';
-import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
+import { formatCurrency, parseEuropeanNumber, sinSignoPrevio } from '@/utils/formatters';
+import '@/styles/layout/routes/importacion.css';
 
 const EFFECTIVO_MARKER = '\u2022 Efectivo';
 const EMPTY_MARKER = '\u2014';
@@ -73,7 +75,7 @@ function getValidationStatusLabel(row: ImportValidationRow): string {
     return 'Aviso importable';
   }
 
-  return 'Valida';
+  return 'Válida';
 }
 
 function detectSeparator(lines: string[]): 'tab' | 'comma' | 'semicolon' {
@@ -284,7 +286,7 @@ export default function ImportacionPage() {
           return;
         }
 
-        setError(getApiErrorMessage(err, 'No se pudo cargar el contexto de importación'));
+        setError(getApiErrorMessage(err, 'No se pudo cargar el contexto de importación. Revisa la conexión con el servidor e inténtalo de nuevo.'));
       } finally {
         if (mounted) {
           setLoadingContext(false);
@@ -318,7 +320,7 @@ export default function ImportacionPage() {
       setLotes(data.data ?? []);
     } catch (err: unknown) {
       if (requestId !== lotesRequestIdRef.current) return;
-      setError(getApiErrorMessage(err, 'No se pudo cargar el historial de lotes'));
+      setError(getApiErrorMessage(err, 'No se pudo cargar el historial de lotes. Revisa la conexión con el servidor e inténtalo de nuevo.'));
       // Sin esto, si falla la carga del historico al cambiar de cuenta, los
       // lotes de la cuenta anterior siguen visibles y se pueden abrir bajo el
       // cuentaId ya actualizado.
@@ -499,7 +501,7 @@ export default function ImportacionPage() {
     }
 
     if (!rawData.trim()) {
-      setError('Pega datos para validar.');
+      setError('Pega los datos que quieres validar.');
       return;
     }
 
@@ -547,7 +549,7 @@ export default function ImportacionPage() {
       // catalogo para que la cuenta aparezca ya en el selector.
       await invalidate('importacionLoteCrear');
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo validar la importación'));
+      setError(getApiErrorMessage(err, 'No se pudo validar la importación. Revisa los datos pegados y el formato de importación de la cuenta e inténtalo de nuevo.'));
     } finally {
       setSubmitting(false);
     }
@@ -612,7 +614,7 @@ export default function ImportacionPage() {
         invalidate('conciliacion'),
       ]);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo confirmar la importación'));
+      setError(getApiErrorMessage(err, 'No se pudo confirmar la importación. Revisa las filas seleccionadas e inténtalo de nuevo.'));
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -659,7 +661,7 @@ export default function ImportacionPage() {
       // tal cual, sin inventar texto.
       addToast({
         type: 'error',
-        message: getApiErrorMessage(err, 'No se pudo revertir el lote de importación'),
+        message: getApiErrorMessage(err, 'No se pudo revertir el lote de importación. Comprueba que el lote está confirmado y que puedes eliminar líneas en la cuenta, e inténtalo de nuevo.'),
       });
     } finally {
       setRevertingLoteId(null);
@@ -702,7 +704,7 @@ export default function ImportacionPage() {
 
     const monto = plazoMontoNumber;
     if (monto === null || monto <= 0) {
-      setError('Introduce un monto mayor que cero.');
+      setError('Introduce un monto mayor que cero (por ejemplo, 100,00).');
       plazoFijoSubmittingRef.current = false;
       return;
     }
@@ -742,7 +744,7 @@ export default function ImportacionPage() {
       // en lugar del cache stale.
       await invalidate('extractoCreate');
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo registrar el movimiento del plazo fijo'));
+      setError(getApiErrorMessage(err, 'No se pudo registrar el movimiento del plazo fijo. Revisa el monto y la fecha e inténtalo de nuevo.'));
     } finally {
       setSubmitting(false);
       plazoFijoSubmittingRef.current = false;
@@ -751,19 +753,20 @@ export default function ImportacionPage() {
 
   if (loadingContext) {
     return (
-      <section className="import-page">
-        <p>Cargando configuración de importación...</p>
+      <section className="import-page page">
+        <PageSkeleton label="Cargando configuración de importación..." />
       </section>
     );
   }
 
   if (error && contexto.length === 0) {
     return (
-      <section className="import-page">
-        <header className="import-header">
-          <h1>Importación de extractos</h1>
+      <section className="import-page page">
+        <header className="import-header page-header page-header--stacked">
+          <h1 className="page-header__title">Importación de extractos</h1>
         </header>
         <EmptyState
+          headingLevel="h2"
           variant="error"
           title="No se pudo cargar la importación."
           subtitle={error}
@@ -775,10 +778,10 @@ export default function ImportacionPage() {
 
   if (contexto.length === 0) {
     return (
-      <section className="import-page">
-        <header className="import-header">
-          <h1>Importación de extractos</h1>
-          <p>No tienes cuentas habilitadas para importar.</p>
+      <section className="import-page page">
+        <header className="import-header page-header page-header--stacked">
+          <h1 className="page-header__title">Importación de extractos</h1>
+          <p className="page-header__subtitle">No tienes cuentas habilitadas para importar.</p>
         </header>
         {canManageFormatos && (
           <div className="import-actions">
@@ -817,10 +820,10 @@ export default function ImportacionPage() {
   };
 
   return (
-    <section className="import-page">
-      <header className="import-header">
-        <h1>Importación de extractos</h1>
-        <p>Las cuentas normales y de efectivo usan formato de importación. Las de plazo fijo solo permiten añadir o sacar dinero.</p>
+    <section className="import-page page">
+      <header className="import-header page-header page-header--stacked">
+        <h1 className="page-header__title">Importación de extractos</h1>
+        <p className="page-header__subtitle">Las cuentas normales y de efectivo usan formato de importación. Las de plazo fijo solo permiten añadir o sacar dinero.</p>
         {canManageFormatos && (
           <div className="import-actions">
             <Link to="/formatos-importacion">Gestionar formatos de importación</Link>
@@ -871,16 +874,21 @@ export default function ImportacionPage() {
       {activeTab === 'historial' ? (
         <div className="import-card">
           <div className="import-history-header">
-            <h3>Historial de lotes</h3>
+            <h2>Historial de lotes</h2>
             <button type="button" className="button-secondary" onClick={() => void loadLotes()}>
               {loadingLotes ? 'Actualizando...' : 'Actualizar'}
             </button>
           </div>
           {lotes.length === 0 ? (
-            <p className="import-muted">{loadingLotes ? 'Cargando lotes...' : 'No hay lotes para esta cuenta.'}</p>
+            loadingLotes ? (
+              <PageSkeleton variant="table" rows={3} columns={7} label="Cargando lotes..." />
+            ) : (
+              <p className="import-muted">No hay lotes para esta cuenta.</p>
+            )
           ) : (
             <div className="import-validation-table-wrap">
               <table className="import-validation-table">
+                <caption className="sr-only">Historial de lotes</caption>
                 <thead>
                   <tr>
                     <th scope="col">Fecha</th>
@@ -917,7 +925,7 @@ export default function ImportacionPage() {
                               // error generico.
                               const estadoLote = (data.lote?.estado ?? lote.estado ?? '').toLowerCase();
                               if (estadoLote === 'confirmado' || estadoLote === 'revertido' || estadoLote === 'error') {
-                                setError(`El lote esta ${estadoLote} y no se puede confirmar de nuevo.`);
+                                setError(`El lote está ${estadoLote} y no se puede confirmar de nuevo.`);
                                 return;
                               }
                               // F-10: la clave de idempotencia de la confirmacion es por
@@ -933,7 +941,7 @@ export default function ImportacionPage() {
                               setStep(2);
                               setActiveTab('lote');
                             } catch (err: unknown) {
-                              setError(getApiErrorMessage(err, 'No se pudo abrir el lote'));
+                              setError(getApiErrorMessage(err, 'No se pudo abrir el lote. Recarga el historial de lotes e inténtalo de nuevo.'));
                             } finally {
                               setSubmitting(false);
                             }
@@ -990,7 +998,7 @@ export default function ImportacionPage() {
                     label="Movimiento"
                     value={plazoTipoMovimiento}
                     options={[
-                      { value: 'INGRESO', label: 'Anadir dinero' },
+                      { value: 'INGRESO', label: 'Añadir dinero' },
                       { value: 'EGRESO', label: 'Sacar dinero' },
                     ]}
                     onChange={(next) => setPlazoTipoMovimiento(next as PlazoFijoMovimiento)}
@@ -1041,7 +1049,7 @@ export default function ImportacionPage() {
               <>
             <p className={selectedMapeo ? 'import-muted' : 'auth-error'} role={selectedMapeo ? 'status' : 'alert'}>
               {selectedMapeo
-                ? `Formato automatico aplicado: ${selectedMapeo.tipo_monto === 'tres_columnas' ? 'ingreso/egreso + monto de control' : selectedMapeo.tipo_monto === 'dos_columnas' ? 'ingreso/egreso separados' : 'monto firmado'} (${selectedMapeo.columnas_extra.length} columnas extra).`
+                ? `Formato automático aplicado: ${selectedMapeo.tipo_monto === 'tres_columnas' ? 'ingreso/egreso + monto de control' : selectedMapeo.tipo_monto === 'dos_columnas' ? 'ingreso/egreso separados' : 'monto firmado'} (${selectedMapeo.columnas_extra.length} columnas extra).`
                 : 'Esta cuenta no tiene formato de importación activo. Asígnalo en la ficha de cuenta antes de importar.'}
             </p>
 
@@ -1095,12 +1103,13 @@ export default function ImportacionPage() {
               }
             />
 
-            <h3>Preview (primeras 3 filas)</h3>
+            <h2>Vista previa (primeras 3 filas)</h2>
             <div className="import-preview-grid">
               {previewRows.length === 0 ? (
-                <p className="import-muted">Aun no hay datos pegados.</p>
+                <p className="import-muted">Aún no hay datos pegados.</p>
               ) : (
                 <table>
+                  <caption className="sr-only">Vista previa de los datos pegados</caption>
                   <tbody>
                     {previewRows.map((row, index) => (
                       <tr key={`preview-${index}`}>
@@ -1126,11 +1135,11 @@ export default function ImportacionPage() {
 
         {step === 2 && validacion && (
           <>
-            <h3>Validar y confirmar</h3>
+            <h2>Validar y confirmar</h2>
             <div className="import-result-box import-validation-summary" role="status">
               <div>
                 <strong>{validacion.filas_ok}</strong>
-                <span>Filas validas</span>
+                <span>Filas válidas</span>
               </div>
               <div>
                 <strong>{validacion.filas_error}</strong>
@@ -1165,6 +1174,7 @@ export default function ImportacionPage() {
 
             <div className="import-validation-table-wrap">
               <table className="import-validation-table">
+                <caption className="sr-only">Validación de movimientos</caption>
                 <thead>
                   <tr>
                     <th scope="col">Importar</th>
@@ -1216,14 +1226,14 @@ export default function ImportacionPage() {
                       {selectedMapeo?.tipo_monto === 'tres_columnas' && <td>{row.datos.monto_banco ?? ''}</td>}
                       <td>
                         {row.datos.monto !== null && row.datos.monto !== undefined && row.datos.monto !== '' ? (
-                          <SignedAmount value={row.datos.monto}>{String(row.datos.monto)}</SignedAmount>
+                          <SignedAmount value={row.datos.monto} showSign={sinSignoPrevio(row.datos.monto)}>{String(row.datos.monto)}</SignedAmount>
                         ) : (
                           ''
                         )}
                       </td>
                       <td>
                         {row.datos.saldo !== null && row.datos.saldo !== undefined && row.datos.saldo !== '' ? (
-                          <SignedAmount value={row.datos.saldo}>{String(row.datos.saldo)}</SignedAmount>
+                          <SignedAmount value={row.datos.saldo} showSign={sinSignoPrevio(row.datos.saldo)}>{String(row.datos.saldo)}</SignedAmount>
                         ) : (
                           ''
                         )}
@@ -1273,7 +1283,7 @@ export default function ImportacionPage() {
                 <p className="auth-error" style={{ margin: '0 0 var(--space-2) 0' }}>
                   Aviso de divisa: la cuenta destino opera en{' '}
                   <strong>{currentLote.divisa_cuenta}</strong> pero declaraste pegar datos en{' '}
-                  <strong>{currentLote.divisa_esperada ?? '?'}</strong>. Si confirmas, los importes quedaran registrados con tu declaracion.
+                  <strong>{currentLote.divisa_esperada ?? '?'}</strong>. Si confirmas, los importes quedarán registrados con tu declaración.
                 </p>
                 <label style={{ display: 'block', marginTop: 'var(--space-1)' }}>
                   <input
@@ -1307,7 +1317,7 @@ export default function ImportacionPage() {
             <div className="import-actions">
               {!importAlreadyConfirmed && (
                 <>
-                  <button type="button" className="button-secondary" onClick={() => setStep(1)}>Atras</button>
+                  <button type="button" className="button-secondary" onClick={() => setStep(1)}>Atrás</button>
                   <button
                     type="button"
                     className="button-primary"

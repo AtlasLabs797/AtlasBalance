@@ -1,8 +1,8 @@
 export const IMPORTACION_OPERATION_TIMEOUT_MS = 300_000;
 
-export type ImportacionSeparator = 'tab' | 'comma' | 'semicolon';
+type ImportacionSeparator = 'tab' | 'comma' | 'semicolon';
 
-export interface CreateImportacionLoteRequestInput {
+interface CreateImportacionLoteRequestInput {
   cuentaId: string;
   rawData: string;
   separator: ImportacionSeparator;
@@ -12,7 +12,7 @@ export interface CreateImportacionLoteRequestInput {
   idempotencyKey: string;
 }
 
-export interface ConfirmImportacionLoteRequestInput {
+interface ConfirmImportacionLoteRequestInput {
   loteId: string;
   filasAImportar: number[];
   aceptaAdvertencias: boolean;

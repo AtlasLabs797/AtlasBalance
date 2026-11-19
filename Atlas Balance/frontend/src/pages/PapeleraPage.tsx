@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState } from '@/components/common/EmptyState';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import type { PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate as formatDateOnly, formatDateTime } from '@/utils/formatters';
 import { crearSecuenciaPeticion, type SecuenciaPeticion } from '@/utils/peticionSecuencial';
+import '@/styles/layout/routes/papelera.css';
 
 type TabKey = 'titulares' | 'cuentas' | 'extractos' | 'usuarios';
 
@@ -219,11 +221,11 @@ export default function PapeleraPage() {
   }, [tab, page]);
 
   return (
-    <section className="trash-page">
-      <header className="trash-header">
-        <div>
-          <h1>Papelera</h1>
-          <p className="dashboard-subtitle">Entidades eliminadas con restauración y auditoría.</p>
+    <section className="trash-page page">
+      <header className="trash-header page-header page-header--static">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Papelera</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Entidades eliminadas con restauración y auditoría.</p>
         </div>
       </header>
 
@@ -247,9 +249,10 @@ export default function PapeleraPage() {
       {message ? <p className="config-feedback">{message}</p> : null}
 
       <div className="users-table-card">
-        {loading ? <p className="import-muted">Cargando {title.toLowerCase()} eliminados...</p> : null}
+        {loading ? <PageSkeleton variant="table" rows={5} columns={4} label={`Cargando ${title.toLowerCase()} eliminados...`} /> : null}
         {!loading && rows.length === 0 ? (
           <EmptyState
+            headingLevel="h2"
             title={`No hay registros eliminados en ${title.toLowerCase()}.`}
             subtitle="Cuando elimines una entidad de este tipo aparecerá aquí para restaurarla o purgarla."
           />
@@ -257,6 +260,7 @@ export default function PapeleraPage() {
         {!loading && rows.length > 0 ? (
           <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de elementos eliminados">
             <table className="table-stack-mobile">
+              <caption className="sr-only">Elementos eliminados</caption>
               <thead>
                 <tr>
                   <th scope="col">Elemento</th>
@@ -272,7 +276,7 @@ export default function PapeleraPage() {
                     <td data-label="Detalle">
                       {row.monto !== undefined ? (
                         <>
-                          {row.subtitulo} · <SignedAmount value={row.monto}>{formatCurrency(row.monto, row.divisa ?? 'EUR')}</SignedAmount>
+                          {row.subtitulo} · <SignedAmount value={row.monto} showSign>{formatCurrency(row.monto, row.divisa ?? 'EUR')}</SignedAmount>
                         </>
                       ) : (
                         row.subtitulo

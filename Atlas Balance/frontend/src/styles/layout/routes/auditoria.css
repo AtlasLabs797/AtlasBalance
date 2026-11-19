@@ -1,0 +1,68 @@
+/* L8/R-9: reglas exclusivas de la ruta "auditoria".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.auditoria-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+}
+
+.auditoria-actions-header {
+  margin-top: var(--space-3);
+}
+
+.auditoria-filtros {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.auditoria-filtros label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.auditoria-table-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.auditoria-expanded {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.auditoria-expanded pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  font-size: var(--text-13);
+}
+
+@media (max-width: 1199.98px) {
+  .auditoria-filtros {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767.98px) {
+  .auditoria-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auditoria-header > button {
+    width: 100%;
+  }
+
+  .auditoria-filtros {
+    grid-template-columns: 1fr;
+  }
+}

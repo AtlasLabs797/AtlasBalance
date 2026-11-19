@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import type { DashboardChartColors, DashboardPuntoEvolucion } from '@/types';
 import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
+import { resolveChartColor } from '@/utils/chartColors';
 import { DashboardTooltip } from './DashboardTooltip';
 
 interface EvolucionChartProps {
@@ -34,11 +35,11 @@ const EVOLUTION_AXIS_TICK_STYLE = {
   fontSize: 12,
   fontVariantNumeric: 'tabular-nums',
 } as const;
-const LEGACY_CHART_COLOR_TOKENS: Record<string, string> = {
-  '#43b430': 'var(--chart-5)',
-  '#ff4757': 'var(--chart-7)',
-  '#7b7b7b': 'var(--chart-1)',
-};
+const CHART_COLOR_TOKEN_FALLBACKS = {
+  ingresos: 'var(--chart-5)',
+  egresos: 'var(--chart-7)',
+  saldo: 'var(--chart-1)',
+} as const;
 
 export function EvolucionChart({
   points,
@@ -57,9 +58,9 @@ export function EvolucionChart({
   const axisWidth = getEvolutionAxisWidth(points, divisa, yDomain);
   const saldoAreaAxisWidth = getEvolutionAxisWidthCompact(yDomain);
   const chartColors = {
-    ingresos: resolveChartColor(colors.ingresos, 'var(--chart-5)'),
-    egresos: resolveChartColor(colors.egresos, 'var(--chart-7)'),
-    saldo: resolveChartColor(colors.saldo, 'var(--chart-1)'),
+    ingresos: resolveChartColor(colors.ingresos, CHART_COLOR_TOKEN_FALLBACKS.ingresos),
+    egresos: resolveChartColor(colors.egresos, CHART_COLOR_TOKEN_FALLBACKS.egresos),
+    saldo: resolveChartColor(colors.saldo, CHART_COLOR_TOKEN_FALLBACKS.saldo),
   };
   const monthMode = xAxisMode === 'month';
   const withYear = monthMode && spansSeveralYears(points);
@@ -253,15 +254,6 @@ function formatMonthTick(value: string, withYear = false): string {
 
   const month = date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
   return withYear ? `${month} ${String(date.getFullYear()).slice(2)}` : month;
-}
-
-function resolveChartColor(value: string | undefined, fallback: string): string {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) {
-    return fallback;
-  }
-
-  return LEGACY_CHART_COLOR_TOKENS[normalized] ?? value;
 }
 
 function getEvolutionDomain(points: DashboardPuntoEvolucion[]): [number, number] {

@@ -14,7 +14,7 @@ Cambios cerrados:
 - Escaneo CI de secretos de alta confianza.
 - Documento de respuesta a incidentes.
 
-Detalle: `Documentacion/SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md`.
+Detalle: `Documentacion/Archivo/SEGURIDAD_CHECKLIST_APP_V-01.05_2026-05-01.md`.
 
 ## Addendum 2026-05-02
 

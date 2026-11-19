@@ -1,7 +1,8 @@
 import Modal from '@/components/common/Modal';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import type { AuditCellEntry } from '@/types';
-import { formatDateTime } from '@/utils/formatters';
+import { formatDateTime, sinSignoPrevio } from '@/utils/formatters';
 
 interface AuditCellModalProps {
   open: boolean;
@@ -11,6 +12,9 @@ interface AuditCellModalProps {
   error?: string | null;
   onClose: () => void;
 }
+
+// D-11: el "+" visible solo se anade cuando el dato crudo no lo trae ya, para
+// no duplicar el signo (D-11: color nunca es el unico portador del signo).
 
 export default function AuditCellModal({ open, column, data, loading, error, onClose }: AuditCellModalProps) {
   const normalizedColumn = column?.trim().toLowerCase();
@@ -26,13 +30,14 @@ export default function AuditCellModal({ open, column, data, loading, error, onC
       size="lg"
     >
       {loading ? (
-        <p>Cargando historial de cambios de la celda...</p>
+        <PageSkeleton variant="table" rows={3} columns={4} label="Cargando historial de cambios de la celda..." />
       ) : error ? (
         <p className="auth-error" role="alert">{error}</p>
       ) : data.length === 0 ? (
         <p>Sin cambios registrados.</p>
       ) : (
         <table>
+          <caption className="sr-only">Historial de la celda</caption>
           <thead>
             <tr>
               <th scope="col">Fecha</th>
@@ -48,14 +53,14 @@ export default function AuditCellModal({ open, column, data, loading, error, onC
                 <td>{item.celda_referencia ?? '-'}</td>
                 <td>
                   {isAmountColumn && item.valor_anterior != null ? (
-                    <SignedAmount value={item.valor_anterior}>{item.valor_anterior}</SignedAmount>
+                    <SignedAmount value={item.valor_anterior} showSign={sinSignoPrevio(item.valor_anterior)}>{item.valor_anterior}</SignedAmount>
                   ) : (
                     item.valor_anterior ?? '-'
                   )}
                 </td>
                 <td>
                   {isAmountColumn && item.valor_nuevo != null ? (
-                    <SignedAmount value={item.valor_nuevo}>{item.valor_nuevo}</SignedAmount>
+                    <SignedAmount value={item.valor_nuevo} showSign={sinSignoPrevio(item.valor_nuevo)}>{item.valor_nuevo}</SignedAmount>
                   ) : (
                     item.valor_nuevo ?? '-'
                   )}

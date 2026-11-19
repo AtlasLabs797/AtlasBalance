@@ -3,10 +3,10 @@ import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-route
 import { AxiosError } from 'axios';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Flag, Trash2 } from 'lucide-react';
-import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
+import Modal from '@/components/common/Modal';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
@@ -18,7 +18,6 @@ import type { InsertExtractoDraftPayload } from '@/components/extractos/Extracto
 import AuditCellModal from '@/components/extractos/AuditCellModal';
 import DesgloseModal from '@/components/extractos/DesgloseModal';
 import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -39,6 +38,7 @@ import { computeBulkFlagToggle } from '@/utils/bulkFlagToggle';
 import { ejecutarEnLote } from '@/utils/concurrencia';
 import { hoy } from '@/utils/hoy';
 import { rangoMostrado } from '@/utils/paginacion';
+import '@/styles/layout/routes/cuenta-detail.css';
 
 const BULK_DELETE_PREVIEW_LIMIT = 6;
 
@@ -179,9 +179,6 @@ export default function CuentaDetailPage() {
   const hasIban = Boolean(summary?.iban?.trim());
   const bankLabel = hasBankName ? summary?.banco_nombre?.trim() : summary?.tipo_cuenta === 'EFECTIVO' ? 'Efectivo' : 'Sin banco';
   const closeImportModal = useCallback(() => setIsImportModalOpen(false), []);
-  const importDialogRef = useDialogFocus<HTMLDivElement>(isImportModalOpen, {
-    onEscape: closeImportModal,
-  });
 
   const canEditCell = useCallback(
     (column: string) => {
@@ -915,7 +912,7 @@ export default function CuentaDetailPage() {
   }
 
   return (
-    <section className="dashboard-page cuenta-detail-page">
+    <section className="dashboard-page cuenta-detail-page page page--wide">
       {error && (
         <p className="auth-error" role="alert">
           {error}
@@ -924,11 +921,11 @@ export default function CuentaDetailPage() {
           </button>
         </p>
       )}
-      <header className="dashboard-toolbar">
-        <div className="dashboard-toolbar-main">
+      <header className="dashboard-toolbar page-header">
+        <div className="dashboard-toolbar-main page-header__lead">
           <div className="cuenta-heading-block">
-            <h1>{summary.cuenta_nombre}</h1>
-            <p className="dashboard-subtitle">Dashboard por cuenta</p>
+            <h1 className="page-header__title">{summary.cuenta_nombre}</h1>
+            <p className="dashboard-subtitle page-header__subtitle">Dashboard por cuenta</p>
           </div>
           <dl className="account-identity-strip" aria-label="Datos de la cuenta">
             <div>
@@ -988,15 +985,18 @@ export default function CuentaDetailPage() {
 
       <div className="dashboard-kpi-grid">
         <KpiCard
+          headingLevel="h2"
           title="Saldo total"
-          value={<SignedAmount value={summary.saldo_actual}>{formatCurrency(summary.saldo_actual, summary.divisa)}</SignedAmount>}
+          value={<SignedAmount value={summary.saldo_actual} showSign>{formatCurrency(summary.saldo_actual, summary.divisa)}</SignedAmount>}
           featured
         />
         <KpiCard
+          headingLevel="h2"
           title="Ingresos período"
           value={<SignedAmount value={summary.ingresos_mes}>{formatCurrency(summary.ingresos_mes, summary.divisa)}</SignedAmount>}
         />
         <KpiCard
+          headingLevel="h2"
           title="Egresos período"
           value={
             <SignedAmount value={summary.egresos_mes} tone="negative">
@@ -1166,40 +1166,31 @@ export default function CuentaDetailPage() {
         />
       </section>
 
-      {isImportModalOpen && (
-        <div className="modal-backdrop modal-backdrop--stack-top" role="presentation" onClick={closeImportModal}>
-          <div
-            ref={importDialogRef}
-            className="import-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="import-modal-title"
-            aria-describedby="import-modal-description"
-            tabIndex={-1}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="import-modal-header">
-              <div>
-                <h2 id="import-modal-title">Importar movimientos</h2>
-                <p id="import-modal-description" className="import-muted">Cuenta: {summary.cuenta_nombre}</p>
-              </div>
-              <CloseIconButton
-                className="import-modal-close"
-                onClick={closeImportModal}
-                ariaLabel="Cerrar modal de importación"
-              />
-            </header>
-            <div className="import-modal-body">
-              <iframe
-                title={`Importación cuenta ${summary.cuenta_nombre}`}
-                src={importUrl}
-                className="import-modal-frame"
-                tabIndex={0}
-              />
-            </div>
-          </div>
+      <Modal
+        open={isImportModalOpen}
+        onClose={closeImportModal}
+        titleId="import-modal-title"
+        title="Importar movimientos"
+        subtitleId="import-modal-description"
+        subtitle={`Cuenta: ${summary.cuenta_nombre}`}
+        subtitleClassName="import-muted"
+        descriptionId="import-modal-description"
+        variant="stack-top"
+        panelClassName="import-modal"
+        headerClassName="import-modal-header"
+        bareBody
+        closeButtonClassName="import-modal-close"
+        closeLabel="Cerrar modal de importación"
+      >
+        <div className="import-modal-body">
+          <iframe
+            title={`Importación cuenta ${summary.cuenta_nombre}`}
+            src={importUrl}
+            className="import-modal-frame"
+            tabIndex={0}
+          />
         </div>
-      )}
+      </Modal>
 
       <AuditCellModal open={auditColumn !== null} column={auditColumn} data={auditData} loading={auditLoading} error={auditError} onClose={() => { auditAbortRef.current?.abort(); setAuditColumn(null); }} />
       <DesgloseModal open={Boolean(desgloseRow)} row={desgloseRow} data={desgloseData} loading={desgloseLoading} saving={desgloseSaving} error={desgloseError} canEdit={canEditCell('desglose')} onClose={() => { if (!desgloseSaving) { desgloseAbortRef.current?.abort(); setDesgloseRow(null); } }} onSave={saveDesglose} />

@@ -11,7 +11,7 @@ import type {
   DashboardSaldosDivisa,
   PeriodoDashboard,
 } from '@/types';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency, formatDate, formatPercent } from '@/utils/formatters';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { EmptyState } from '@/components/common/EmptyState';
 import { ConcentracionDonutCharts } from '@/components/dashboard/ConcentracionDonutCharts';
@@ -25,6 +25,7 @@ import { SignedAmount } from '@/components/common/SignedAmount';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { queryKeys } from '@/queries/queryKeys';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
+import '@/styles/layout/routes/dashboard.css';
 
 const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '12m', '24m'];
 const TIPO_TITULAR_LABELS = {
@@ -218,11 +219,11 @@ export default function DashboardPage() {
   const plazoProximo = diasVencimiento !== null && diasVencimiento <= 7;
 
   return (
-    <section className="dashboard-page">
-      <header className="dashboard-toolbar">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="dashboard-subtitle">Saldos consolidados, movimiento del periodo y exposición por titular.</p>
+    <section className="dashboard-page page">
+      <header className="dashboard-toolbar page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Dashboard</h1>
+          <p className="dashboard-subtitle page-header__subtitle">Saldos consolidados, movimiento del periodo y exposición por titular.</p>
         </div>
         <div className="dashboard-toolbar-actions">
           <PeriodoSelector value={periodo} onChange={setPeriodo} />
@@ -248,6 +249,7 @@ export default function DashboardPage() {
 
       {sinDatos ? (
         <EmptyState
+          headingLevel="h2"
           variant="setup"
           title="Todavía no hay datos para mostrar."
           subtitle="Carga cuentas o extractos para ver saldos y evolución."
@@ -279,7 +281,7 @@ export default function DashboardPage() {
                       {variacionPct !== null ? (
                         <>
                           <span className={variacionPct >= 0 ? 'dashboard-variacion-pill dashboard-variacion--positive' : 'dashboard-variacion-pill dashboard-variacion--negative'}>
-                            {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}%
+                            {variacionPct > 0 ? '+' : ''}{formatPercent(variacionPct)}
                           </span>
                           <span>vs. periodo anterior · {formatPeriodoLabel(periodo)}</span>
                         </>
@@ -302,7 +304,7 @@ export default function DashboardPage() {
                           </dd>
                           {variacionDispPct !== null ? (
                             <small className={variacionDispPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                              {disponiblePct !== null ? `${disponiblePct.toFixed(1)}% del saldo total` : `${variacionDispPct >= 0 ? '+' : ''}${variacionDispPct.toFixed(1)}%`}
+                              {disponiblePct !== null ? `${formatPercent(disponiblePct)} del saldo total` : `${variacionDispPct > 0 ? '+' : ''}${formatPercent(variacionDispPct)}`}
                             </small>
                           ) : null}
                         </div>
@@ -312,7 +314,7 @@ export default function DashboardPage() {
                           {variacionInmovPct !== null ? (
                             Math.abs(variacionInmovPct) >= 0.1 ? (
                               <small className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
-                                {variacionInmovPct >= 0 ? '+' : ''}{variacionInmovPct.toFixed(1)}% vs. inicio del período
+                                {variacionInmovPct > 0 ? '+' : ''}{formatPercent(variacionInmovPct)} vs. inicio del período
                               </small>
                             ) : (
                               <small className="dashboard-variacion--neutral">Sin cambios en el período</small>
@@ -377,6 +379,7 @@ export default function DashboardPage() {
               ) : evolucionError ? null : (
                 <div className="dashboard-kpi-grid dashboard-kpi-grid--secondary">
                   <KpiCard
+                    headingLevel="h2"
                     title="Ingresos período"
                     value={
                       <SignedAmount value={periodTotals.ingresos}>
@@ -385,11 +388,12 @@ export default function DashboardPage() {
                     }
                     helper={variacionIngPct !== null ? (
                       <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                        {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}% vs. anterior
+                        {variacionIngPct > 0 ? '+' : ''}{formatPercent(variacionIngPct)} vs. anterior
                       </span>
                     ) : undefined}
                   />
                   <KpiCard
+                    headingLevel="h2"
                     title="Egresos período"
                     value={
                       <SignedAmount value={periodTotals.egresos} tone="negative">
@@ -398,7 +402,7 @@ export default function DashboardPage() {
                     }
                     helper={variacionEgrPct !== null ? (
                       <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                        {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}% vs. anterior
+                        {variacionEgrPct > 0 ? '+' : ''}{formatPercent(variacionEgrPct)} vs. anterior
                       </span>
                     ) : undefined}
                   />
@@ -431,7 +435,7 @@ export default function DashboardPage() {
                               >
                                 <span>{item.titular_nombre}</span>
                                 <strong>
-                                  <SignedAmount value={item.total_convertido}>
+                                  <SignedAmount value={item.total_convertido} showSign>
                                     {formatCurrency(item.total_convertido, principal.divisa_principal)}
                                   </SignedAmount>
                                 </strong>
@@ -459,7 +463,7 @@ export default function DashboardPage() {
                     <div>
                       <span>Monto total</span>
                       <strong>
-                        <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
+                        <SignedAmount value={principal.plazos_fijos.monto_total_convertido} showSign>
                           {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
                         </SignedAmount>
                       </strong>

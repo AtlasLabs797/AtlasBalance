@@ -34,7 +34,7 @@ const iconProps = {
   'aria-hidden': true,
 } as const;
 
-export interface NavigationItem {
+interface NavigationItem {
   to: string;
   label: string;
   /** Etiqueta corta para el menú inferior móvil */

@@ -10,6 +10,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useUiStore } from '@/stores/uiStore';
 import { useUpdateStore } from '@/stores/updateStore';
 import { CreateTokenModal } from '@/components/integraciones/CreateTokenModal';
 import { TokenCreatedModal } from '@/components/integraciones/TokenCreatedModal';
@@ -36,6 +37,7 @@ import type {
   TipoCambio,
   WatchdogState,
 } from '@/types';
+import '@/styles/layout/routes/configuracion.css';
 
 type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones' | 'paises';
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -178,6 +180,128 @@ function NumberField({ fieldKey, value, min, max, step, onValue }: NumberFieldPr
   );
 }
 
+// D-8: los colores del grafico eran texto libre: se podia guardar cualquier
+// cosa y el grafico se rompia en silencio. Solo se acepta un color
+// hexadecimal (#RGB o #RRGGBB) o el valor vacio, que significa "usa el color
+// del tema".
+const COLOR_HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+// D-8: tokens de grafico del design system (--chart-1..--chart-10) y sus
+// aliases de variables.css. El color por defecto de cada campo sale del token
+// (leido del CSS del tema activo), no de un hex escrito a mano, asi que se
+// adapta al tema claro/oscuro.
+const CHART_COLOR_TOKEN_NAMES = [
+  '--chart-1',
+  '--chart-2',
+  '--chart-3',
+  '--chart-4',
+  '--chart-5',
+  '--chart-6',
+  '--chart-7',
+  '--chart-8',
+  '--chart-9',
+  '--chart-10',
+  '--chart-series-1',
+  '--chart-series-2',
+  '--chart-series-3',
+  '--chart-series-4',
+  '--chart-series-5',
+  '--chart-series-6',
+  '--chart-series-7',
+  '--chart-series-8',
+  '--chart-series-9',
+  '--chart-series-10',
+  '--chart-series-other',
+  '--chart-ingresos',
+  '--chart-egresos',
+  '--chart-saldo',
+  '--chart-color-ingresos',
+  '--chart-color-egresos',
+  '--chart-color-saldo',
+] as const;
+
+// Los tres colores del grafico y el token del tema que aporta cada uno.
+const CHART_COLOR_KEYS = ['color_ingresos', 'color_egresos', 'color_saldo'] as const;
+
+type ChartColorKey = (typeof CHART_COLOR_KEYS)[number];
+
+const CHART_COLOR_FIELDS: Record<ChartColorKey, { label: string; campo: string; token: string; alias: string }> = {
+  color_ingresos: { label: 'Color ingresos', campo: 'El color de ingresos', token: '--chart-5', alias: '--chart-ingresos' },
+  color_egresos: { label: 'Color egresos', campo: 'El color de egresos', token: '--chart-7', alias: '--chart-egresos' },
+  color_saldo: { label: 'Color saldo', campo: 'El color de saldo', token: '--chart-1', alias: '--chart-saldo' },
+};
+
+// Cache por tema: los tokens solo cambian cuando cambia [data-theme].
+let chartTokenCache: { theme: string; tokens: Record<string, string> } | null = null;
+
+// Lee el valor resuelto de cada token de grafico del tema activo.
+function readChartColorTokens(theme: string): Record<string, string> {
+  if (chartTokenCache?.theme === theme) {
+    return chartTokenCache.tokens;
+  }
+
+  const tokens: Record<string, string> = {};
+  if (typeof document !== 'undefined') {
+    const styles = getComputedStyle(document.documentElement);
+    for (const token of CHART_COLOR_TOKEN_NAMES) {
+      const value = styles.getPropertyValue(token).trim();
+      if (COLOR_HEX_PATTERN.test(value)) {
+        tokens[token] = value;
+      }
+    }
+  }
+
+  chartTokenCache = { theme, tokens };
+  return tokens;
+}
+
+interface ChartColorFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  tokenLabel: string;
+  tokenHex: string;
+  listId: string;
+  onChange: (next: string) => void;
+}
+
+// Campo de color del grafico: valida el hexadecimal, explica junto al campo
+// cual es el formato esperado y muestra el color efectivo (el valor escrito o,
+// si esta vacio, el del token del tema).
+function ChartColorField({ id, label, value, tokenLabel, tokenHex, listId, onChange }: ChartColorFieldProps) {
+  const trimmed = value.trim();
+  const invalid = trimmed.length > 0 && !COLOR_HEX_PATTERN.test(trimmed);
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
+  const previewHex = invalid || trimmed.length === 0 ? tokenHex : trimmed;
+
+  return (
+    <label className="config-field config-field--color">
+      <span>{label}</span>
+      <div className="config-color-control">
+        <input
+          id={id}
+          list={listId}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          aria-invalid={invalid}
+          aria-describedby={invalid ? `${errorId} ${hintId}` : hintId}
+          placeholder={tokenHex || '#1A2B3C'}
+        />
+        <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: previewHex || 'transparent' }} />
+      </div>
+      {invalid ? (
+        <p className="auth-error" id={errorId} role="alert">
+          El color no es válido. Escribe un hexadecimal como #1A2B3C (o #fff) y deja el campo vacío para usar el color del tema.
+        </p>
+      ) : null}
+      <small id={hintId} className="import-muted">
+        {`Vacío = color del tema (${tokenLabel}${tokenHex ? ` · ${tokenHex}` : ''}).`}
+      </small>
+    </label>
+  );
+}
+
 export default function ConfiguracionPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -188,6 +312,24 @@ export default function ConfiguracionPage() {
   const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // D-8: los tokens de grafico se releen cuando cambia el tema activo.
+  const theme = useUiStore((state) => state.theme);
+  const chartTokens = readChartColorTokens(theme);
+  // Paleta de graficos: los hex de los tokens, agrupados por color para no
+  // repetir el mismo valor en el desplegable del campo.
+  const chartPalette = useMemo(() => {
+    const porHex = new Map<string, string[]>();
+    for (const token of CHART_COLOR_TOKEN_NAMES) {
+      const hex = chartTokens[token];
+      if (!hex) {
+        continue;
+      }
+      const labels = porHex.get(hex) ?? [];
+      labels.push(token);
+      porHex.set(hex, labels);
+    }
+    return [...porHex.entries()].map(([hex, labels]) => ({ hex, labels }));
+  }, [chartTokens]);
 
   const [config, setConfig] = useState<ConfiguracionConTls>({
     smtp: { host: '', port: 587, user: '', password: '', from: '', tls_mode: 'auto' },
@@ -206,7 +348,13 @@ export default function ConfiguracionPage() {
       export_path: '',
     },
     exchange: { api_key: '', api_key_configurada: false },
-    dashboard: { color_ingresos: '#43B430', color_egresos: '#FF4757', color_saldo: '#7B7B7B' },
+    // D-8: el color por defecto sale del token del tema, no de un hex escrito
+    // a mano (--chart-5 / --chart-7 / --chart-1).
+    dashboard: {
+      color_ingresos: chartTokens[CHART_COLOR_FIELDS.color_ingresos.token] ?? '',
+      color_egresos: chartTokens[CHART_COLOR_FIELDS.color_egresos.token] ?? '',
+      color_saldo: chartTokens[CHART_COLOR_FIELDS.color_saldo.token] ?? '',
+    },
     revision: { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
     ia: {
       provider: 'OPENROUTER',
@@ -428,7 +576,7 @@ export default function ConfiguracionPage() {
       ]);
       await checkUpdate(true);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo cargar configuración.'));
+      setError(extractErrorMessage(err, 'No se pudo cargar la configuración. Revisa la conexión con el servidor e inténtalo de nuevo.'));
     } finally {
       setLoading(false);
     }
@@ -476,11 +624,28 @@ export default function ConfiguracionPage() {
     if (invalidDecimalsRef.current.size > 0) {
       throw new Error('Hay importes con formato inválido (presupuestos, costes o importe mínimo). Corrígelos antes de guardar.');
     }
+    // D-8: un color que no sea un hexadecimal no se guarda. Sin esta
+    // comprobacion el grafico se rompia en silencio y nadie sabia por que.
+    const colorInvalido = CHART_COLOR_KEYS.find((key) => {
+      const valor = config.dashboard[key].trim();
+      return valor.length > 0 && !COLOR_HEX_PATTERN.test(valor);
+    });
+    if (colorInvalido) {
+      throw new Error(`${CHART_COLOR_FIELDS[colorInvalido].campo} no es válido. Escribe un hexadecimal como #1A2B3C (o #fff) o deja el campo vacío para usar el color del tema.`);
+    }
     const aiProvider = normalizeAiProvider(config.ia.provider);
     const payload: ConfiguracionConTls = {
       ...config,
       // S-17: el modo TLS viaja siempre en el objeto smtp del guardado.
       smtp: { ...config.smtp, tls_mode: normalizarTlsMode(config.smtp.tls_mode) },
+      // D-8: se guarda el color tal cual, siempre como hexadecimal valido (o
+      // vacio, que el grafico resuelve con el color del tema).
+      dashboard: {
+        ...config.dashboard,
+        color_ingresos: config.dashboard.color_ingresos.trim(),
+        color_egresos: config.dashboard.color_egresos.trim(),
+        color_saldo: config.dashboard.color_saldo.trim(),
+      },
       ia: {
         ...config.ia,
         provider: aiProvider,
@@ -532,7 +697,7 @@ export default function ConfiguracionPage() {
     try {
       await saveConfig('Configuración guardada.');
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar.'));
+      setError(extractErrorMessage(err, 'No se pudo guardar la configuración. Revisa los campos marcados e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -547,7 +712,7 @@ export default function ConfiguracionPage() {
       await saveConfig('Ajustes de actualizaciones guardados.');
       await checkUpdate(true);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron guardar los ajustes de actualizaciones.'));
+      setError(extractErrorMessage(err, 'No se pudieron guardar los ajustes de actualización. Revisa los campos marcados e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -562,7 +727,7 @@ export default function ConfiguracionPage() {
       const confirmed = await confirm({
         title: 'Desactivar Authenticator para gerentes y empleados',
         message:
-          'Los gerentes y empleados podran iniciar sesion solo con contrasena. Los administradores seguiran obligados a usar Authenticator. El cambio se aplica al siguiente inicio de sesion y queda registrado en auditoria.',
+          'Los gerentes y empleados podrán iniciar sesión solo con contraseña. Los administradores seguirán obligados a usar Authenticator. El cambio se aplica al siguiente inicio de sesión y queda registrado en auditoría.',
         confirmLabel: 'Desactivar para no administradores',
         tone: 'reversible',
       });
@@ -584,7 +749,7 @@ export default function ConfiguracionPage() {
       await api.post('/configuracion/smtp/test', { to: smtpTo || null });
       setFeedback('Correo de prueba enviado.');
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo enviar correo de prueba.'));
+      setError(extractErrorMessage(err, 'No se pudo enviar el correo de prueba. Revisa el servidor SMTP y la dirección de destino e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -645,11 +810,11 @@ export default function ConfiguracionPage() {
         }
       }
       if (poll.active) {
-        setError('La actualización no confirmó el resultado dentro del tiempo esperado.');
+        setError('La actualización no confirmó el resultado dentro del tiempo esperado. Revisa el estado del servicio e inténtalo de nuevo.');
       }
     } catch (err) {
       if (poll.active) {
-        setError(extractErrorMessage(err, 'No se pudo actualizar.'));
+        setError(extractErrorMessage(err, 'No se pudo actualizar la aplicación. Revisa el estado del servicio e inténtalo de nuevo.'));
       }
     } finally {
       const cancelado = !poll.active;
@@ -666,12 +831,12 @@ export default function ConfiguracionPage() {
   const saveManualRate = async (event: FormEvent) => {
     event.preventDefault();
     if (!manualRate.origen || !manualRate.destino || manualRate.origen === manualRate.destino) {
-      setError('Selecciona dos divisas activas distintas.');
+      setError('Selecciona dos divisas activas distintas: una de origen y otra de destino.');
       return;
     }
     const tasa = parseStrictDecimal(manualRate.tasa);
     if (tasa === null || tasa <= 0) {
-      setError('Tasa inválida.');
+      setError('La tasa no es válida. Escribe un número mayor que 0 (por ejemplo, 1,25) e inténtalo de nuevo.');
       return;
     }
     setBusy(true);
@@ -681,7 +846,7 @@ export default function ConfiguracionPage() {
       setFeedback('Tipo de cambio actualizado.');
       await loadTiposCambio();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo actualizar tipo de cambio.'));
+      setError(extractErrorMessage(err, 'No se pudo actualizar el tipo de cambio. Revisa la tasa y las divisas seleccionadas e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -703,7 +868,7 @@ export default function ConfiguracionPage() {
       );
       await loadTiposCambio();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo sincronizar tipos de cambio.'));
+      setError(extractErrorMessage(err, 'No se pudieron sincronizar los tipos de cambio. Revisa la clave API de ExchangeRate y la conexión e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -757,7 +922,7 @@ export default function ConfiguracionPage() {
       setFeedback(`Divisa ${codigo} actualizada.`);
       await loadDivisas();
     } catch (err) {
-      setError(extractErrorMessage(err, `No se pudo actualizar la divisa ${codigo}.`));
+      setError(extractErrorMessage(err, `No se pudo actualizar la divisa ${codigo}. Revisa su nombre, su símbolo y si está activa, e inténtalo de nuevo.`));
     } finally {
       setBusy(false);
     }
@@ -766,7 +931,7 @@ export default function ConfiguracionPage() {
   const createDivisa = async (event: FormEvent) => {
     event.preventDefault();
     if (!nuevaDivisa.codigo.trim()) {
-      setError('Código obligatorio.');
+      setError('Escribe el código de la divisa (por ejemplo, USD) para poder crearla.');
       return;
     }
     setBusy(true);
@@ -783,7 +948,7 @@ export default function ConfiguracionPage() {
       setNuevaDivisa({ codigo: '', nombre: '', simbolo: '' });
       await loadDivisas();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo crear divisa.'));
+      setError(extractErrorMessage(err, 'No se pudo crear la divisa. Revisa el código (por ejemplo, USD) e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -799,7 +964,7 @@ export default function ConfiguracionPage() {
       setFeedback('Token revocado.');
       await loadTokens();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo revocar token.'));
+      setError(extractErrorMessage(err, 'No se pudo revocar el token. Recarga la lista de tokens e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -825,7 +990,7 @@ export default function ConfiguracionPage() {
       setFeedback('Token rotado. Copia el nuevo valor ahora.');
       await loadTokens();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo rotar token.'));
+      setError(extractErrorMessage(err, 'No se pudo rotar el token. Recarga la lista de tokens e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -841,7 +1006,7 @@ export default function ConfiguracionPage() {
       setFeedback('Token eliminado.');
       await loadTokens();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo eliminar token.'));
+      setError(extractErrorMessage(err, 'No se pudo eliminar el token. Recarga la lista de tokens e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -858,7 +1023,7 @@ export default function ConfiguracionPage() {
       // /configuracion no la devuelve y recargarla tiraria lo sin guardar.
       await loadDivisas();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar divisa por defecto.'));
+      setError(extractErrorMessage(err, 'No se pudo guardar la divisa por defecto. Recarga la lista de divisas e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -930,9 +1095,9 @@ export default function ConfiguracionPage() {
       : config.ia.openrouter_api_key_configurada;
 
   return (
-    <section className="config-page">
-      <header className="config-header">
-        <h1>Configuración</h1>
+    <section className="config-page page">
+      <header className="config-header page-header">
+        <h1 className="page-header__title">Configuración</h1>
       </header>
 
       <div className="config-tabs config-tabs--settings" role="tablist" aria-label="Secciones de configuración">
@@ -1089,6 +1254,11 @@ export default function ConfiguracionPage() {
 
             <article className="config-section-panel">
               <h3>Exchange y dashboard</h3>
+              <datalist id="config-colores-grafico">
+                {chartPalette.map((opcion) => (
+                  <option key={opcion.hex} value={opcion.hex} label={opcion.labels.join(' · ')} />
+                ))}
+              </datalist>
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Clave API de ExchangeRate</span>
@@ -1099,27 +1269,33 @@ export default function ConfiguracionPage() {
                     onChange={(e) => setConfig((p) => ({ ...p, exchange: { ...p.exchange, api_key: e.target.value } }))}
                   />
                 </label>
-                <label className="config-field config-field--color">
-                  <span>Color ingresos</span>
-                  <div className="config-color-control">
-                    <input value={config.dashboard.color_ingresos} onChange={(e) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_ingresos: e.target.value } }))} />
-                    <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: config.dashboard.color_ingresos }} />
-                  </div>
-                </label>
-                <label className="config-field config-field--color">
-                  <span>Color egresos</span>
-                  <div className="config-color-control">
-                    <input value={config.dashboard.color_egresos} onChange={(e) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_egresos: e.target.value } }))} />
-                    <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: config.dashboard.color_egresos }} />
-                  </div>
-                </label>
-                <label className="config-field config-field--color">
-                  <span>Color saldo</span>
-                  <div className="config-color-control">
-                    <input value={config.dashboard.color_saldo} onChange={(e) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_saldo: e.target.value } }))} />
-                    <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: config.dashboard.color_saldo }} />
-                  </div>
-                </label>
+                <ChartColorField
+                  id="config-color-ingresos"
+                  label={CHART_COLOR_FIELDS.color_ingresos.label}
+                  listId="config-colores-grafico"
+                  value={config.dashboard.color_ingresos}
+                  tokenLabel={CHART_COLOR_FIELDS.color_ingresos.alias}
+                  tokenHex={chartTokens[CHART_COLOR_FIELDS.color_ingresos.token] ?? ''}
+                  onChange={(valor) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_ingresos: valor } }))}
+                />
+                <ChartColorField
+                  id="config-color-egresos"
+                  label={CHART_COLOR_FIELDS.color_egresos.label}
+                  listId="config-colores-grafico"
+                  value={config.dashboard.color_egresos}
+                  tokenLabel={CHART_COLOR_FIELDS.color_egresos.alias}
+                  tokenHex={chartTokens[CHART_COLOR_FIELDS.color_egresos.token] ?? ''}
+                  onChange={(valor) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_egresos: valor } }))}
+                />
+                <ChartColorField
+                  id="config-color-saldo"
+                  label={CHART_COLOR_FIELDS.color_saldo.label}
+                  listId="config-colores-grafico"
+                  value={config.dashboard.color_saldo}
+                  tokenLabel={CHART_COLOR_FIELDS.color_saldo.alias}
+                  tokenHex={chartTokens[CHART_COLOR_FIELDS.color_saldo.token] ?? ''}
+                  onChange={(valor) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_saldo: valor } }))}
+                />
               </div>
             </article>
           </div>
@@ -1549,6 +1725,7 @@ export default function ConfiguracionPage() {
             {tiposOrdenados.length === 0 ? <p>No hay tipos de cambio cargados.</p> : (
               <div className="config-table-wrap">
                 <table>
+                  <caption className="sr-only">Tipos de cambio vigentes</caption>
                   <thead>
                     <tr>
                       <th scope="col">Origen</th>
