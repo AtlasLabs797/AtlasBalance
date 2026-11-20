@@ -468,7 +468,7 @@ export default function BackupsPage() {
       <header className="backups-header page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Copias de seguridad</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Programacion, copias locales y subida cifrada a Google Drive</p>
+          <p className="page-header__subtitle">Programación, copias locales y subida cifrada a Google Drive</p>
         </div>
         <button type="button" className="button-primary" onClick={createBackup} disabled={creating || loading}>
           <UploadCloud size={18} aria-hidden="true" />
@@ -481,8 +481,8 @@ export default function BackupsPage() {
       <section className="backup-admin-grid" aria-label="Configuración de copias">
         <article className="backup-config-panel">
           <div className="backup-panel-heading">
-            <h2>Programacion</h2>
-            <button type="button" className="button-primary" onClick={saveConfig} disabled={!draft || savingConfig || configLoading}>
+            <h2>Programación</h2>
+            <button type="button" className="button-secondary" onClick={saveConfig} disabled={!draft || savingConfig || configLoading}>
               <Save size={17} aria-hidden="true" />
               {savingConfig ? 'Guardando...' : 'Guardar'}
             </button>
@@ -496,7 +496,7 @@ export default function BackupsPage() {
                   checked={draft.auto_enabled}
                   onChange={(event) => setDraft((prev) => prev ? { ...prev, auto_enabled: event.target.checked } : prev)}
                 />
-                <span>Copias automaticas activas</span>
+                <span>Copias automáticas activas</span>
               </label>
 
               <AppSelect
@@ -668,7 +668,7 @@ export default function BackupsPage() {
             <strong>{formatDateTime(latestSuccessfulBackup.fecha_creacion)}</strong>
           </article>
           <article className="backup-summary-card">
-            <span>Tamano</span>
+            <span>Tamaño</span>
             <strong>{formatBytes(latestSuccessfulBackup.tamanio_bytes)}</strong>
           </article>
           <article className="backup-summary-card">
@@ -742,7 +742,7 @@ export default function BackupsPage() {
                     <th scope="col">Fecha</th>
                     <th scope="col">Estado</th>
                     <th scope="col">Tipo</th>
-                    <th scope="col">Tamano</th>
+                    <th scope="col">Tamaño</th>
                     <th scope="col">Nube</th>
                     <th scope="col">Archivo</th>
                     <th scope="col">Acciones</th>

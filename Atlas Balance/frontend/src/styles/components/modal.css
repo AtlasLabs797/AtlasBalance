@@ -30,7 +30,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
   align-items: flex-start;
-  padding: var(--space-4);
+  padding: var(--space-9);
   border-bottom: 1px solid var(--border-default);
   position: sticky;
   top: 0;
@@ -45,8 +45,7 @@
 
 .users-modal-header h2 {
   margin: 0;
-  font-size: var(--text-28);
-  line-height: 1.12;
+  font: var(--type-title-3);
   letter-spacing: 0;
 }
 
@@ -59,7 +58,7 @@
   /* Sin esto, en movil (modal a 100dvh) las filas se estiran y los botones del pie salen como pastillas altas. */
   align-content: start;
   gap: var(--space-5);
-  padding: var(--space-4);
+  padding: var(--space-9);
 }
 
 .users-modal-section {
@@ -196,7 +195,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-9);
   border-bottom: 1px solid var(--border-default);
 }
 
@@ -217,7 +216,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: var(--space-4);
+  padding: var(--space-9);
 }
 
 .modal-panel__body > :first-child { margin-top: 0; }
@@ -228,7 +227,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-9);
   border-top: 1px solid var(--border-default);
 }
 
@@ -246,6 +245,11 @@
 }
 
 @media (max-width: 767.98px) {
+  .modal-panel {
+    width: 100%;
+    max-width: 100dvw;
+  }
+
   .modal-panel__header,
   .modal-panel__footer {
     padding: var(--space-3);

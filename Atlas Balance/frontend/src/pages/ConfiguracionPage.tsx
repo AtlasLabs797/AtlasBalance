@@ -1378,7 +1378,7 @@ export default function ConfiguracionPage() {
                   label="Proveedor"
                   value={config.ia.provider}
                   options={aiProviderOptions}
-                  onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value) } }))}
+                  onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value), max_input_tokens: value === 'MINIMAX' ? 1000000 - p.ia.max_output_tokens : p.ia.max_input_tokens } }))}
                 />
                 {aiUsesOpenRouter ? (
                   <>
@@ -1455,7 +1455,7 @@ export default function ConfiguracionPage() {
                     label="Modelo"
                     value={selectedAiModel}
                     options={aiModelOptions}
-                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
+                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value, max_input_tokens: aiUsesMiniMax && value === 'MiniMax-M3.1-Flash' ? 1000000 - p.ia.max_output_tokens : p.ia.max_input_tokens } }))}
                   />
                 )}
               </div>
@@ -1551,7 +1551,7 @@ export default function ConfiguracionPage() {
                     fieldKey="max_input_tokens"
                     value={config.ia.max_input_tokens}
                     min={1000}
-                    max={50000}
+                    max={1000000}
                     onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_input_tokens: next } }))}
                   />
                 </label>
@@ -1705,7 +1705,7 @@ export default function ConfiguracionPage() {
                 onChange={(next) => setManualRate((p) => ({ ...p, destino: next }))}
               />
               <label>Tasa<input type="text" inputMode="decimal" autoComplete="off" value={manualRate.tasa} onChange={(e) => setManualRate((p) => ({ ...p, tasa: e.target.value }))} /></label>
-              <button type="submit" disabled={busy || !canEditRates}>Guardar tasa</button>
+              <button type="submit" className="button-primary" disabled={busy || !canEditRates}>Guardar tasa</button>
             </form>
             {!canEditRates ? <p className="import-muted">Necesitas al menos dos divisas activas para editar una tasa manual.</p> : null}
           </section>
@@ -1716,7 +1716,7 @@ export default function ConfiguracionPage() {
               <label>Código<input value={nuevaDivisa.codigo} onChange={(e) => setNuevaDivisa((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} /></label>
               <label>Nombre<input value={nuevaDivisa.nombre} onChange={(e) => setNuevaDivisa((p) => ({ ...p, nombre: e.target.value }))} /></label>
               <label>Símbolo<input value={nuevaDivisa.simbolo} onChange={(e) => setNuevaDivisa((p) => ({ ...p, simbolo: e.target.value }))} /></label>
-              <button type="submit" disabled={busy}>Crear divisa</button>
+              <button type="submit" className="button-primary" disabled={busy}>Crear divisa</button>
             </form>
           </section>
 

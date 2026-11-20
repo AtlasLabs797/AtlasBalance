@@ -223,16 +223,23 @@ export default function AuditoriaPage() {
       <header className="auditoria-header page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Auditoría</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Historial completo con filtros combinados y exportación CSV</p>
+          <p className="page-header__subtitle">Historial completo con filtros combinados y exportación CSV</p>
         </div>
+        {tab === 'sistema' ? (
+          <div className="page-header__actions">
+            <button type="button" className="button-primary" onClick={exportCsv} disabled={exporting || loading}>
+              {exporting ? 'Exportando...' : 'Exportar CSV'}
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <div className="config-tabs">
         <button type="button" className={tab === 'sistema' ? 'config-tab config-tab--active' : 'config-tab'} onClick={() => setTab('sistema')}>
-          Auditoría Sistema
+          Auditoría del sistema
         </button>
         <button type="button" className={tab === 'integraciones' ? 'config-tab config-tab--active' : 'config-tab'} onClick={() => setTab('integraciones')}>
-          Auditoría Integraciones
+          Auditoría de integraciones
         </button>
       </div>
 
@@ -240,12 +247,6 @@ export default function AuditoriaPage() {
 
       {tab === 'sistema' ? (
         <>
-          <div className="auditoria-header auditoria-actions-header page-header">
-            <button type="button" onClick={exportCsv} disabled={exporting || loading}>
-              {exporting ? 'Exportando...' : 'Exportar CSV'}
-            </button>
-          </div>
-
           <div className="auditoria-filtros">
             <AppSelect
               label="Usuario"
@@ -316,7 +317,7 @@ export default function AuditoriaPage() {
               />
             </div>
 
-            <button type="button" onClick={resetFiltros}>
+            <button type="button" className="button-secondary" onClick={resetFiltros}>
               Limpiar filtros
             </button>
           </div>
@@ -339,7 +340,6 @@ export default function AuditoriaPage() {
                     <caption className="sr-only">Registro de auditoría</caption>
                     <thead>
                       <tr>
-                        <th scope="col" />
                         <th scope="col">Fecha</th>
                         <th scope="col">Usuario</th>
                         <th scope="col">Acción</th>
@@ -347,17 +347,13 @@ export default function AuditoriaPage() {
                         <th scope="col">Celda</th>
                         <th scope="col">Columna</th>
                         <th scope="col">IP</th>
+                        <th scope="col">Detalle</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((row) => (
                         <Fragment key={row.id}>
                           <tr>
-                            <td>
-                              <button type="button" onClick={() => toggleExpanded(row.id)}>
-                                {expandedRows[row.id] ? 'Ocultar' : 'Ver'}
-                              </button>
-                            </td>
                             <td>{formatDateTime(row.timestamp)}</td>
                             <td>{row.usuario_nombre ?? 'Sistema'}</td>
                             <td>{row.tipo_accion}</td>
@@ -365,6 +361,11 @@ export default function AuditoriaPage() {
                             <td>{row.celda_referencia ?? 'Sin celda'}</td>
                             <td>{mapColumnaNombre(row.columna_nombre)}</td>
                             <td>{row.ip_address ?? 'Sin IP'}</td>
+                            <td className="users-row-actions">
+                              <button type="button" className="button-secondary" onClick={() => toggleExpanded(row.id)}>
+                                {expandedRows[row.id] ? 'Ocultar' : 'Ver'}
+                              </button>
+                            </td>
                           </tr>
 
                           {expandedRows[row.id] ? (

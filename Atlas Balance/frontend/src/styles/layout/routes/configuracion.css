@@ -30,7 +30,7 @@
 .config-card-headline {
   display: grid;
   gap: var(--space-1);
-  max-width: 70ch;
+  width: 100%;
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-default);
 }
@@ -47,7 +47,19 @@
 .config-general-layout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-9);
+  align-items: start;
+}
+
+/* Un solo nivel de tarjeta: las columnas son bandas con linea superior, no
+   tarjetas dentro de la tarjeta de la seccion. */
+.config-general-layout .config-section-panel,
+.config-general-layout .config-section-panel:hover {
+  border: 0;
+  border-top: 1px solid var(--border-default);
+  border-radius: 0;
+  padding: var(--space-6) 0 0;
+  background: transparent;
 }
 
 .config-section-panel h3 {

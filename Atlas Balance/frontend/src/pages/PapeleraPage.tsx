@@ -225,7 +225,7 @@ export default function PapeleraPage() {
       <header className="trash-header page-header page-header--static">
         <div className="page-header__lead">
           <h1 className="page-header__title">Papelera</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Entidades eliminadas con restauración y auditoría.</p>
+          <p className="page-header__subtitle">Entidades eliminadas con restauración y auditoría.</p>
         </div>
       </header>
 

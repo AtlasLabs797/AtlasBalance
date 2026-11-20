@@ -116,8 +116,7 @@
 
 .extractos-filter-summary {
   color: var(--text-tertiary);
-  font: var(--type-mono);
-  font-size: var(--text-12);
+  font: var(--type-caption);
   white-space: nowrap;
 }
 

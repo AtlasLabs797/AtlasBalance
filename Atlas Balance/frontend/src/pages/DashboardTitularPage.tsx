@@ -178,7 +178,7 @@ export default function DashboardTitularPage() {
       <header className="dashboard-toolbar page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">{titular?.titular_nombre ?? 'Dashboard titular'}</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Dashboard por titular</p>
+          <p className="page-header__subtitle">Dashboard por titular</p>
         </div>
         <div className="dashboard-toolbar-actions">
           <button type="button" onClick={() => navigate(`/dashboard?periodo=${periodo}&divisa=${currency}`)}>
@@ -315,7 +315,7 @@ export default function DashboardTitularPage() {
                   {titular.saldos_por_cuenta.map((cuenta) => (
                     <tr key={cuenta.cuenta_id}>
                       <td>{cuenta.cuenta_nombre}</td>
-                      <td>{cuenta.pais_nombre || 'Sin pais'}</td>
+                      <td>{cuenta.pais_nombre || 'Sin país'}</td>
                       <td>{cuenta.es_efectivo ? 'Efectivo' : 'Bancaria'}</td>
                       <td>
                         <SignedAmount value={cuenta.saldo_convertido} showSign>

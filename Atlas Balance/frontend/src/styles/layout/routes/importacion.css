@@ -25,19 +25,41 @@
   color: var(--text-secondary);
 }
 
+/* Misma gramatica que .config-tabs / .config-tab (contenedor sunken, pestana
+   de altura de control). */
 .import-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  align-items: center;
   gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-sunken) 82%, var(--surface-card) 18%);
 }
 
 .import-tabs button {
-  min-height: 2.4rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-  background: var(--surface-card);
+  flex: 0 0 auto;
+  min-height: var(--control-height);
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
   color: var(--text-secondary);
-  padding: 0 var(--space-3);
+  font-weight: var(--weight-semibold);
+  padding: 0 var(--space-6);
+}
+
+.import-tabs button:hover:not(:disabled):not(.active) {
+  border-color: var(--border-control-hover);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.import-tabs button:disabled {
+  color: var(--text-secondary);
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 .import-steps {
@@ -53,12 +75,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  min-height: 2.25rem;
+  border: 0;
+  border-bottom: 2px solid var(--border-default);
+  border-radius: 0;
   padding: var(--space-2) var(--space-3);
   text-align: center;
-  background: var(--surface-sunken);
+  background: transparent;
   color: var(--text-secondary);
   font-weight: var(--weight-semibold);
   line-height: 1.2;
@@ -212,5 +235,13 @@
 @media (max-width: 1023.98px) {
   .import-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Movil: el titulo del historial cabe en una linea junto a Actualizar. */
+@media (max-width: 767.98px) {
+  .import-history-header h2 {
+    font-size: var(--text-21);
+    white-space: nowrap;
   }
 }

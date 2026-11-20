@@ -606,11 +606,11 @@ export default function CuentasPage() {
       <header className="entity-header page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Cuentas</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Saldos, bancos y plazos fijos por titular.</p>
+          <p className="page-header__subtitle">Saldos, bancos y plazos fijos por titular.</p>
         </div>
         {isAdmin && (
           <button type="button" className="button-primary" onClick={openCreateModal} disabled={!accountCatalogsReady || saving}>
-            Nueva Cuenta
+            Nueva cuenta
           </button>
         )}
       </header>
@@ -704,7 +704,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
-                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin país'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual} showSign>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -723,7 +723,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
-                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin país'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual} showSign>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -870,7 +870,7 @@ export default function CuentasPage() {
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">País</span>
-                    <strong className="cuenta-card-meta-value">{item.pais_nombre || 'Sin pais'}</strong>
+                    <strong className="cuenta-card-meta-value">{item.pais_nombre || 'Sin país'}</strong>
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Estado</span>
@@ -1146,8 +1146,8 @@ export default function CuentasPage() {
             ) : null}
 
             <div className="users-form-actions modal-form-actions">
-              <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
-              <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
+              <button type="button" className="button-secondary" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
+              <button type="submit" className="button-primary" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </form>
         </Modal>

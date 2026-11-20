@@ -114,7 +114,7 @@ export default function DispositivosMfaPage() {
       <header className="users-header page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Dispositivos MFA de confianza</h1>
-          <p className="users-subtitle page-header__subtitle">
+          <p className="page-header__subtitle">
             Equipos desde los que ya has validado el código MFA y en los que no te lo volverán a pedir.
           </p>
         </div>

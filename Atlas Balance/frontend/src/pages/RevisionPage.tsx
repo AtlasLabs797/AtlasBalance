@@ -177,7 +177,7 @@ export default function RevisionPage() {
       <header className="dashboard-toolbar page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Revisión</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Detección automática de comisiones y seguros en todos los extractos.</p>
+          <p className="page-header__subtitle">Detección automática de comisiones y seguros en todos los extractos.</p>
         </div>
         <AppSelect
           className="revision-filter"
@@ -191,7 +191,7 @@ export default function RevisionPage() {
         />
       </header>
 
-      <div className="config-tabs">
+      <div className="config-tabs config-tabs--seg">
         <button
           type="button"
           className={tab === 'comisiones' ? 'config-tab config-tab--active' : 'config-tab'}

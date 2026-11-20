@@ -32,12 +32,6 @@
   background: var(--accent-solid-hover);
 }
 
-.users-primary-button:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
-  box-shadow: var(--ring-focus);
-}
-
 .users-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -88,26 +82,64 @@
   flex-wrap: wrap;
 }
 
+/* Una celda de tabla no puede ser flex (rompe el layout de la tabla y las
+   lineas de fila): se queda como table-cell y los botones se separan con margen. */
+td.users-row-actions {
+  display: table-cell;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+td.users-row-actions > button:not(:last-child) {
+  margin-right: var(--space-2);
+}
+
+@media (max-width: 767.98px) {
+  table.table-stack-mobile td.users-row-actions > button {
+    margin-right: 0;
+  }
+}
+
+/* Botones de fila: tamano sm (32px), etiqueta 14/600. */
 .users-row-actions button {
-  min-height: var(--control-height);
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  font: var(--type-label);
+}
+
+/* Peligro en fila: texto rojo sin relleno (quiet-danger, DESIGN 5.6). */
+.users-row-actions .button-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--status-danger-text);
+}
+
+.users-row-actions .button-danger:hover:not(:disabled) {
+  background: var(--status-danger-bg);
+  border-color: transparent;
+  color: var(--status-danger-text);
 }
 
 .users-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.55rem;
+  padding: 2px 10px;
   border-radius: var(--radius-full);
-  background: var(--surface-page);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
   color: var(--text-secondary);
-  font-size: var(--text-13);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
 }
 
 .users-badge--ok {
+  border-color: transparent;
   background: color-mix(in srgb, var(--status-success-text) 14%, transparent);
   color: var(--status-success-text);
 }
 
 .users-badge--danger {
+  border-color: transparent;
   background: color-mix(in srgb, var(--status-danger-text) 14%, transparent);
   color: var(--status-danger-text);
 }
@@ -131,8 +163,13 @@
 .users-form-grid,
 .permiso-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: var(--space-3);
+}
+
+.users-form-grid > *,
+.permiso-grid > * {
+  min-width: 0;
 }
 
 .users-form-grid label,
@@ -217,12 +254,6 @@ fieldset.users-check-grid {
 .permiso-row-header {
   align-items: flex-start;
 }
-
-@media (max-width: 1023.98px) {
-  .users-form-grid,
-  .permiso-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }}
 
 @media (max-width: 767.98px) {
   .users-header,

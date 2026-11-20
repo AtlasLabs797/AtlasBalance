@@ -37,10 +37,20 @@
   display: grid;
   gap: var(--space-1);
   overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-muted);
-  padding: var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  gap: 0;
+}
+
+/* P2-9: lista plana, una regla fina por fila (sin fila-pastilla). */
+.titulares-balance-row {
+  border-width: 0 0 1px;
+  border-style: solid;
+  border-color: var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
 }
 
 .titulares-balance-heading,
@@ -70,8 +80,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .titulares-balance-row:hover {
-    border-color: color-mix(in srgb, var(--accent-solid) 20%, var(--border-default));
-    background: var(--surface-card);
+    border-color: var(--border-subtle);
+    background: var(--surface-sunken);
     text-decoration: none;
   }
   .titulares-balance-row:hover .titulares-balance-avatar,
@@ -141,4 +151,8 @@
   .titulares-balance-open {
     grid-area: open;
   }
+}
+
+.entity-header .button-primary {
+  white-space: nowrap;
 }

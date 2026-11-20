@@ -435,8 +435,11 @@ export default function FormatosImportacionPage() {
   return (
     <section className="entity-page formatos-page page">
       <header className="entity-header page-header">
-        <h1 className="page-header__title">Formatos de Importación</h1>
-        {isAdmin && <button type="button" className="users-primary-button" onClick={resetForm}>Nuevo Formato</button>}
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Formatos de importación</h1>
+          <p className="page-header__subtitle">Define cómo se leen las columnas de cada banco al importar extractos.</p>
+        </div>
+        {isAdmin && <button type="button" className="users-primary-button" onClick={resetForm}>Nuevo formato</button>}
       </header>
 
       <div className="entity-filters">
@@ -547,7 +550,7 @@ export default function FormatosImportacionPage() {
                     </td>
                     {isAdmin && (
                       <td>
-                        <div className="entity-row-actions formatos-row-actions">
+                        <div className="users-row-actions formatos-row-actions">
                         <button type="button" onClick={() => startEdit(item.id)} disabled={saving} aria-label={`Editar formato ${item.nombre}`}>Editar</button>
                         {!item.deleted_at ? (
                           <button
@@ -586,7 +589,7 @@ export default function FormatosImportacionPage() {
               void save();
             }}
           >
-            <h2>{editingId ? 'Editar Formato' : 'Nuevo Formato'}</h2>
+            <h2>{editingId ? 'Editar formato' : 'Nuevo formato'}</h2>
 
             <label htmlFor={bancoInputId}>Banco</label>
             <input id={bancoInputId} value={form.banco_nombre} onChange={(e) => setForm((prev) => ({ ...prev, banco_nombre: e.target.value }))} />
@@ -680,8 +683,8 @@ export default function FormatosImportacionPage() {
             </label>
 
             <div className="users-form-actions">
-              <button type="button" onClick={resetForm} disabled={saving}>Limpiar</button>
-              <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
+              <button type="button" className="button-secondary" onClick={resetForm} disabled={saving}>Limpiar</button>
+              <button type="submit" className="button-primary" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </form>
         )}

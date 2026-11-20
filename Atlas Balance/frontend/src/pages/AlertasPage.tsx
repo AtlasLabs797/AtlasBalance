@@ -373,8 +373,8 @@ export default function AlertasPage() {
   return (
     <section className="alertas-page page">
       <header className="page-header page-header--static">
-        <h1 className="page-header__title page-header__title--bold">Alertas de Saldo Bajo</h1>
-        <p className="users-subtitle page-header__subtitle">
+        <h1 className="page-header__title">Alertas de saldo bajo</h1>
+        <p className="page-header__subtitle">
           {isAdmin
             ? 'Configuración y seguimiento de cuentas por debajo del mínimo.'
             : 'Estado actual de las cuentas por debajo del mínimo dentro de tu alcance.'}
@@ -387,12 +387,12 @@ export default function AlertasPage() {
       <article className="alertas-card">
         <div className="users-section-header">
           <div>
-            <h2>Alertas Activas</h2>
+            <h2>Alertas activas</h2>
             <p>
               Se evalúan al crear o editar extractos. El banner superior y este listado usan la misma fuente.
             </p>
           </div>
-          <button type="button" onClick={() => void loadScopedAlertasActivas()} disabled={activeLoading}>
+          <button type="button" className="button-secondary button-sm" onClick={() => void loadScopedAlertasActivas()} disabled={activeLoading}>
             {activeLoading ? 'Actualizando...' : 'Recargar'}
           </button>
         </div>
@@ -460,7 +460,7 @@ export default function AlertasPage() {
           <article className="alertas-card">
             <div className="users-section-header">
               <div>
-                <h2>Alerta Global</h2>
+                <h2>Alerta global</h2>
                 <p>Aplica cuando una cuenta no tiene alerta específica.</p>
               </div>
             </div>
@@ -499,7 +499,7 @@ export default function AlertasPage() {
                   </label>
                 ))}
               </div>
-              <button type="submit" disabled={saving || configLoading}>
+              <button type="submit" className="button-primary" disabled={saving || configLoading}>
                 {onlyGlobalAlert ? 'Actualizar global' : 'Crear global'}
               </button>
             </form>
@@ -547,12 +547,13 @@ export default function AlertasPage() {
                 ))}
               </div>
               <div className="users-row-actions">
-                <button type="submit" disabled={saving || configLoading}>
+                <button type="submit" className="button-primary" disabled={saving || configLoading}>
                   {editingTipoAlertId ? 'Guardar cambios' : 'Crear alerta'}
                 </button>
                 {editingTipoAlertId ? (
                   <button
                     type="button"
+                    className="button-secondary"
                     onClick={() => {
                       setEditingTipoAlertId(null);
                       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
@@ -619,12 +620,13 @@ export default function AlertasPage() {
                 ))}
               </div>
               <div className="users-row-actions">
-                <button type="submit" disabled={saving || configLoading || availableCuentas.length === 0}>
+                <button type="submit" className="button-primary" disabled={saving || configLoading || availableCuentas.length === 0}>
                   {editingCuentaAlertId ? 'Guardar cambios' : 'Crear alerta'}
                 </button>
                 {editingCuentaAlertId ? (
                   <button
                     type="button"
+                    className="button-secondary"
                     onClick={() => {
                       setEditingCuentaAlertId(null);
                       setCuentaForm(EMPTY_FORM);
@@ -639,7 +641,7 @@ export default function AlertasPage() {
           </article>
 
           <article className="alertas-card">
-            <h2>Alertas por Tipo de Titular</h2>
+            <h2>Alertas por tipo de titular</h2>
             {configLoading ? <PageSkeleton variant="table" rows={5} columns={6} label="Cargando alertas configuradas..." /> : null}
 
             {!configLoading && tipoAlerts.length === 0 ? (
@@ -687,7 +689,7 @@ export default function AlertasPage() {
           </article>
 
           <article className="alertas-card">
-            <h2>Alertas por Cuenta</h2>
+            <h2>Alertas por cuenta</h2>
             {configLoading ? <PageSkeleton variant="table" rows={5} columns={8} label="Cargando alertas configuradas..." /> : null}
 
             {!configLoading && cuentaAlerts.length === 0 ? (

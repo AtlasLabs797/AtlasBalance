@@ -35,11 +35,11 @@ npx playwright test e2e/visual --reporter=list --output pw-test-results
 
 ## Visual capture harness (`e2e/visual/capture.spec.ts`)
 
-One screenshot per route, for 2 themes (light/dark) x 2 viewports (1440x900 and 390x844), plus a
+One screenshot per route, for 2 themes (light/dark) x 3 viewports (1440x900, 1024x768 and 390x844), plus a
 session of modals/dialogs (new holder form, import history and its revert dialog, MFA device
 revocation). The API is simulated, so the harness needs no backend.
 
-Route coverage (21 routes = the 20 app screens plus the `/cambiar-password` first-login screen):
+Route coverage (23 routes = the 22 app screens plus the `/cambiar-password` first-login screen):
 
 | Group | Routes |
 | --- | --- |
@@ -48,6 +48,14 @@ Route coverage (21 routes = the 20 app screens plus the `/cambiar-password` firs
 | Portfolio | `/titulares`, `/titulares/:id`, `/cuentas`, `/extractos`, `/conciliacion`, `/revision` |
 | Operations | `/importacion`, `/formatos-importacion` |
 | Administration | `/configuracion`, `/configuracion/paises`, `/backups`, `/usuarios`, `/auditoria`, `/papelera`, `/alertas`, `/seguridad/dispositivos-mfa` |
+| Assistant and exports | `/ia`, `/exportaciones` |
+
+Extra captures at 1440 and 390 (one per control state):
+
+- `configuracion-tab-<slug>`: one per tab of the Configuracion tablist (e.g. `configuracion-tab-paises`).
+- `revision-tab-comisiones` and `revision-tab-seguros`: the Revision tabs.
+- `extractos-select-titular-abierto`: the "Titular" select open.
+- `extractos-fecha-desde-abierta`: the "Desde" date picker open (skipped with its reason when the browser uses a native date input).
 
 The ids in the route list are the ones from the fixture (`TIT[0] = 00000000-0000-4000-8000-000000000021`,
 `CTA[0] = 00000000-0000-4000-8000-000000000031`), so the detail screens have data to render.

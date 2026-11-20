@@ -1,15 +1,16 @@
 
 
 .import-tabs button.active {
-  border-color: var(--accent-solid);
-  color: var(--accent-solid);
+  border-color: color-mix(in srgb, var(--accent-solid) 24%, var(--border-default));
+  color: var(--text-link);
   background: var(--accent-soft);
 }
 
+/* Stepper sin aspecto de pestana: texto con linea inferior (el paso activo
+   lleva la linea de acento). */
 .import-steps li.active {
-  border-color: var(--accent-solid);
-  color: var(--accent-solid);
-  background: var(--accent-soft);
+  border-bottom-color: var(--accent-solid);
+  color: var(--text-primary);
 }
 
 .import-preview-grid table,
@@ -112,3 +113,40 @@
     height: var(--control-height);
     min-height: var(--control-height);
   }}
+/* Lote 2 (B), P2-2: historial de lotes sin rejilla vertical, cabecera con la
+   misma gramatica que el resto de tablas y celdas que no se parten. */
+.import-history-table th,
+.import-history-table td {
+  border-right: 0;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.import-history-table th {
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+}
+
+.import-history-table td:nth-child(3) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-family: var(--font-ui, inherit);
+}
+
+/* Estado y cuenta en sans; solo filas/SHA llevan mono. */
+.import-history-table td:nth-child(2),
+.import-history-table td:nth-child(4) {
+  font-family: inherit;
+}
+
+.import-history-table td:nth-child(1),
+.import-history-table td:nth-child(5) {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.import-history-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}

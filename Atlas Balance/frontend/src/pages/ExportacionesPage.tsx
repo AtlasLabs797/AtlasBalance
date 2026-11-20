@@ -195,7 +195,7 @@ export default function ExportacionesPage() {
       <header className="exportaciones-header page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Exportaciones</h1>
-          <p className="dashboard-subtitle page-header__subtitle">
+          <p className="page-header__subtitle">
             {canCreateManualExport
               ? 'Historial y generación manual de XLSX por cuenta'
               : 'Historial de XLSX disponibles dentro de tu alcance'}

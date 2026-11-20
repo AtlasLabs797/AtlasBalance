@@ -7372,3 +7372,33 @@ Cambios y motivos:
 Migracion `20261117120000_IndicesParcialesHuellaYConciliacion`, escrita a mano e idempotente (`CREATE INDEX IF NOT EXISTS`, `DROP INDEX IF EXISTS`, purga en un bloque `DO $$` que levanta y restaura el FORCE ROW LEVEL SECURITY). No se genero con scaffold.
 
 Pendiente de una decision del usuario: **B-17**. La aplicacion numera las filas de abajo arriba (`ImportacionService.cs:771-774`), de modo que la linea superior del bloque pegado es la ultima del lote, y el saldo actual es la fila con mayor `FilaNumero`. Eso supone que el banco exporta de mas reciente a mas antiguo. La pregunta al usuario se respondio por auto-seleccion de tiempo y la opcion elegida ("del mas antiguo al mas reciente") contradice esa convencion, asi que no se ha cambiado nada.
+
+## V-03.02 - Pulido visual del frontend con referencia Astryx (2026-11-20)
+
+Contrato visual que queda en el codigo (DESIGN.md manda):
+
+- **Controles:**
+  - Los inputs, selects, `.app-select-trigger` y `.date-picker-trigger` usan `min-height: var(--control-height)` (44 px) y padding vertical 0. No se fija la altura con padding + line-height.
+  - Radio `--radius-field` (11).
+  - Los inputs de texto llevan `width:100%; min-width:0` para no desbordar celdas de rejilla.
+  - Las exclusiones (checkbox, radio, file, celdas y filtros de Extractos) van con `:where(:not(...))` en `global.css`.
+- **Botones en tablas:**
+  - Dentro de `.users-row-actions` miden `--control-height-sm` (32 px) y el peligro es quiet-danger (texto rojo, sin fondo).
+  - `td.users-row-actions` sigue siendo `table-cell`.
+  - Formatos, historial de importacion, Paises y Auditoria reutilizan esa clase.
+- **Cabecera de pagina:**
+  - Estructura: `.page-header` > `__eyebrow` (opcional) > `__title` > `__subtitle` (body-sm, `--text-secondary`, max 72ch), con acciones en `.page-header__actions`.
+  - Las clases `dashboard-subtitle`, `users-subtitle` y `config-subtitle` ya no se usan como subtitulo de cabecera.
+  - Desaparece `page-header--plain`.
+- **Control segmentado:** una sola gramatica: pista sunken con borde `--border-default` y segmento activo `--surface-card`. En Revision, las pestanas usan el modificador `.config-tabs--seg` (`fit-content`); Configuracion, Auditoria y Papelera mantienen `.config-tabs`.
+- **Modales:**
+  - Cabecera unica con `--type-title-3` y padding 24.
+  - `useDialogFocus` mantiene una pila a nivel de modulo: solo el modal superior procesa Esc y Tab, y los eventos con `defaultPrevented` se ignoran.
+- **Estados:**
+  - Deshabilitado con `--text-disabled`, sin `opacity`.
+  - Foco con un unico `--ring-focus` (sin outline duplicado, tambien en `auth.css`).
+  - Filas marcadas con borde izquierdo de estado y punto, sin fondo.
+- **DatePicker:** el titulo del mes se formatea con `formatMonthTitle`, que solo capitaliza la primera letra. Se quita `text-transform: capitalize` de `.date-picker-header strong`.
+- **Arnes visual:**
+  - `e2e/visual/capture.spec.ts` cubre 23 rutas y capturas de estados abiertos: pestanas de Configuracion y Revision, selector de titular y calendario de Extractos.
+  - Si `test-results/` o `playwright-report/` dan EPERM, ejecutalo con `--reporter=list --output=<carpeta temporal>`.

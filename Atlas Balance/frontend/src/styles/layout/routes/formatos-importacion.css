@@ -29,7 +29,7 @@
 }
 
 .formatos-col-base {
-  width: 10.5rem;
+  width: 12rem;
 }
 
 .formatos-col-extra {
@@ -41,7 +41,7 @@
 }
 
 .formatos-col-acciones {
-  width: 6.75rem;
+  width: 10rem;
 }
 
 .formatos-extra-list {
@@ -52,6 +52,10 @@
 
 .formatos-extra-chip {
   display: inline-flex;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   align-items: center;
   min-height: 1.45rem;
   padding: 0.1rem 0.45rem;
@@ -63,9 +67,11 @@
   font-weight: var(--weight-semibold);
 }
 
+.formatos-row-actions {
+  flex-wrap: nowrap;
+}
+
 .formatos-row-actions button {
-  width: 100%;
-  min-width: 0;
   white-space: nowrap;
 }
 
@@ -89,7 +95,9 @@
 }
 
 .formatos-page .users-form-card legend {
-  padding-inline: var(--space-1);
+  padding-inline: var(--space-3);
+  max-width: 100%;
+  white-space: normal;
   color: var(--text-primary);
   font-weight: var(--weight-bold);
 }

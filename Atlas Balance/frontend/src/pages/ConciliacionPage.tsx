@@ -49,13 +49,13 @@ const ESTADOS_FILTRO = [
   { value: 'pendiente', label: 'Pendiente' },
   { value: 'sugerida', label: 'Sugerida' },
   { value: 'conciliada', label: 'Conciliada' },
-  { value: 'excepcion', label: 'Excepcion' },
+  { value: 'excepcion', label: 'Excepción' },
   { value: 'resuelta', label: 'Resuelta' },
 ];
 
 // Campos por los que el backend sabe ordenar las conciliaciones.
 const ORDENES = [
-  { value: 'fecha_creacion', label: 'Fecha de creacion' },
+  { value: 'fecha_creacion', label: 'Fecha de creación' },
   { value: 'score', label: 'Score' },
   { value: 'diferencia_dias', label: 'Dias' },
   { value: 'estado', label: 'Estado' },
@@ -324,7 +324,7 @@ export default function ConciliacionPage() {
     setSuccess(null);
     try {
       await api.post(`/conciliacion/${id}/${action}`, {});
-      setSuccess(action === 'confirmar' ? 'Match conciliado.' : action === 'resolver' ? 'Excepcion resuelta.' : 'Marcado como excepcion.');
+      setSuccess(action === 'confirmar' ? 'Match conciliado.' : action === 'resolver' ? 'Excepción resuelta.' : 'Marcado como excepcion.');
       await loadData(cuentaId);
       await invalidate('conciliacion');
     } catch (err: unknown) {
@@ -357,10 +357,10 @@ export default function ConciliacionPage() {
 
   return (
     <section className="conciliacion-page">
-      <header className="conciliacion-header page-header page-header--plain">
-        <div>
-          <h1>Conciliación</h1>
-          <p>Libro esperado interno contra extractos reales, con score y cierre auditado.</p>
+      <header className="conciliacion-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Conciliación</h1>
+          <p className="page-header__subtitle">Libro esperado interno contra extractos reales, con score y cierre auditado.</p>
         </div>
         <div className="conciliacion-actions">
           <AppSelect
@@ -441,7 +441,7 @@ export default function ConciliacionPage() {
             {puedeConciliarCuenta && (
               <>
                 <label className="conciliacion-days">
-                  Dias
+                  Días
                   <input
                     type="number"
                     min={0}
@@ -483,7 +483,7 @@ export default function ConciliacionPage() {
                         <SignedAmount value={item.movimiento_esperado.monto} showSign>
                           {formatCurrency(item.movimiento_esperado.monto, item.movimiento_esperado.divisa)}
                         </SignedAmount><br />
-                        <span>{item.movimiento_esperado.concepto ?? item.movimiento_esperado.referencia ?? ''}</span>
+                        <span className="conciliacion-concepto">{item.movimiento_esperado.concepto ?? item.movimiento_esperado.referencia ?? ''}</span>
                       </>
                     ) : null}
                   </td>
@@ -508,7 +508,7 @@ export default function ConciliacionPage() {
                       )}
                       {puedeConciliarFila(item) && item.estado !== 'resuelta' && (
                         <button type="button" onClick={() => void cambiarEstado(item.id, 'excepcion')} disabled={submitting}>
-                          Excepcion
+                          Excepción
                         </button>
                       )}
                       {puedeCerrarFila(item) && (
@@ -522,7 +522,7 @@ export default function ConciliacionPage() {
               ))}
               {conciliaciones.length === 0 && (
                 <tr>
-                  <td colSpan={6}>No hay sugerencias todavia.</td>
+                  <td colSpan={6}>No hay sugerencias todavía.</td>
                 </tr>
               )}
             </tbody>
@@ -536,7 +536,7 @@ export default function ConciliacionPage() {
             Anterior
           </button>
           <span>
-            {textoMostrando(rowsPage, rowsPageSize, totalConciliaciones, 'conciliaciones')} · Pagina {rowsPage} / {totalPages}
+            {textoMostrando(rowsPage, rowsPageSize, totalConciliaciones, 'conciliaciones')} · Página {rowsPage} / {totalPages}
           </span>
           <button type="button" onClick={() => irAPagina(rowsPage + 1)} disabled={!hayPaginaSiguiente(rowsPage, totalPages)}>
             Siguiente

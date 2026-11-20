@@ -226,9 +226,9 @@ export default function PaisesPage() {
     <section className="entity-page paises-page page">
       <header className="entity-header page-header">
         <div className="page-header__lead">
-          <p className="dashboard-subtitle page-header__subtitle"><Link to="/configuracion">Configuración</Link> {' / '} Países</p>
+          <p className="page-header__eyebrow"><Link to="/configuracion">Configuración</Link> {' / '} Países</p>
           <h1 className="page-header__title">Países</h1>
-          <p className="dashboard-subtitle page-header__subtitle">
+          <p className="page-header__subtitle">
             Catálogo de países disponibles para asignar a cuentas y permisos por país.
           </p>
         </div>
@@ -281,7 +281,7 @@ export default function PaisesPage() {
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
       <div className="entity-grid">
-        <div className="entity-cards paises-table-card">
+        <div className="users-table-card paises-table-card">
           {loading ? (
             <div className="import-muted">
               <PageSkeleton variant="table" rows={5} columns={4} label="Cargando países..." />
@@ -312,7 +312,7 @@ export default function PaisesPage() {
                       <td>{row.nombre}</td>
                       <td className="paises-iso2">{row.codigo_iso2 ?? '—'}</td>
                       <td><span className={estadoClass(row)}>{estadoLabel(row)}</span></td>
-                      <td className="paises-actions-col">
+                      <td className="users-row-actions paises-actions-col">
                         {isAdmin && !row.deleted_at ? (
                           <>
                             <button
@@ -435,10 +435,10 @@ export default function PaisesPage() {
             </section>
 
             <div className="users-form-actions modal-form-actions">
-              <button type="button" onClick={() => void closeFormModal()} disabled={saving}>
+              <button type="button" className="button-secondary" onClick={() => void closeFormModal()} disabled={saving}>
                 Cancelar
               </button>
-              <button type="submit" disabled={saving}>
+              <button type="submit" className="button-primary" disabled={saving}>
                 {saving ? 'Guardando...' : 'Guardar'}
               </button>
             </div>

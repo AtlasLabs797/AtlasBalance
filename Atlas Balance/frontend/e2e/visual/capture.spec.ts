@@ -23,9 +23,13 @@ const routes = [
   '/auditoria', '/papelera', '/alertas', '/conciliacion',
   '/formatos-importacion', '/configuracion/paises', '/revision',
   '/dashboard/titular/00000000-0000-4000-8000-000000000021', '/dashboard/cuenta/00000000-0000-4000-8000-000000000031',
-  '/cambiar-password',
+  '/cambiar-password', '/ia', '/exportaciones',
 ];
 const slug = (r: string) => r.replace(/^\//, '').replace(/\//g, '_') || 'root';
+// Slug de un texto de pestana: "General + SMTP" -> "general-smtp", "Países" -> "paises".
+const slugTexto = (texto: string) => texto
+  .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 // El paquete @playwright/test puede esperar una revision de Chromium distinta de la
 // instalada. VISUAL_CHROMIUM fuerza un ejecutable; si no, se usa el headless shell mas reciente.
@@ -128,6 +132,61 @@ for (const theme of themes) {
       await expect(page.getByRole('dialog', { name: 'Revocar dispositivo de confianza' })).toBeVisible();
       await shoot('dispositivos-mfa-revocar-dialogo');
       await page.getByRole('button', { name: 'Cancelar' }).click();
+
+      // Pestanas y estados abiertos. Solo escritorio (1440) y movil (390). Cada captura
+      // opcional va en try/catch: si un control no aparece, se registra y se sigue.
+      const capturaOpcional = async (name: string, accion: () => Promise<void>) => {
+        try {
+          await accion();
+          await shoot(name);
+        } catch (error) {
+          const motivo = error instanceof Error ? error.message.split('\n')[0] : String(error);
+          console.log(`[capture] skip ${name}: ${motivo}`);
+        }
+      };
+
+      if (vp.w === 1440 || vp.w === 390) {
+        // Configuracion: una captura por pestana del tablist.
+        await page.goto('/configuracion');
+        const tabsConfig = page.getByRole('tablist', { name: 'Secciones de configuración' }).getByRole('tab');
+        const totalTabsConfig = await tabsConfig.count();
+        for (let i = 0; i < totalTabsConfig; i += 1) {
+          const slugTab = slugTexto((await tabsConfig.nth(i).innerText()).trim());
+          await capturaOpcional(`configuracion-tab-${slugTab}`, async () => {
+            await tabsConfig.nth(i).click();
+          });
+        }
+
+        // Revision: pestanas Comisiones y Seguros (botones dentro de .config-tabs).
+        for (const nombre of ['Comisiones', 'Seguros']) {
+          await capturaOpcional(`revision-tab-${slugTexto(nombre)}`, async () => {
+            await page.goto('/revision');
+            await page.locator('.config-tabs').getByRole('button', { name: nombre, exact: true }).click();
+          });
+        }
+
+        // Extractos: desplegable abierto (AppSelect/SearchableSelect "Titular").
+        await capturaOpcional('extractos-select-titular-abierto', async () => {
+          await page.goto('/extractos');
+          await page.getByRole('combobox', { name: 'Titular', exact: true }).click();
+          await expect(page.getByRole('listbox', { name: 'Titular' })).toBeVisible();
+        });
+
+        // Extractos: selector de fecha "Desde" abierto. El trigger del DatePickerField
+        // es un boton cuyo nombre accesible es "Desde" + valor ("Desde Todas"); el
+        // popover es un dialog con aria-label "Fecha desde". Se espera a que el
+        // trigger sea visible (count() no espera). En navegadores con input nativo
+        // no hay popover propio y la captura se omite con su motivo.
+        await capturaOpcional('extractos-fecha-desde-abierta', async () => {
+          await page.goto('/extractos');
+          const desde = page.getByRole('button', { name: /^Desde\b/ }).first();
+          await desde.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {
+            throw new Error('no hay selector de fecha "Desde" con popover (input nativo)');
+          });
+          await desde.click();
+          await expect(page.getByRole('dialog', { name: 'Fecha desde' })).toBeVisible();
+        });
+      }
 
       await context.close();
     });

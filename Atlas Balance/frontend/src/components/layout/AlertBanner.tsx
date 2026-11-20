@@ -1,4 +1,5 @@
-﻿import { Link } from 'react-router';
+﻿import { X } from 'lucide-react';
+import { Link } from 'react-router';
 import { useAlertasStore } from '@/stores/alertasStore';
 
 export function AlertBanner() {
@@ -34,8 +35,9 @@ export function AlertBanner() {
         </span>
         <Link to="/alertas">Revisar alertas</Link>
       </div>
-      <button type="button" onClick={dismissBanner}>
-        Ocultar
+      <button type="button" onClick={dismissBanner} aria-label="Ocultar aviso">
+        <span className="alert-banner-dismiss-label">Ocultar</span>
+        <X className="alert-banner-dismiss-icon" size={16} strokeWidth={1.5} aria-hidden="true" />
       </button>
     </section>
   );

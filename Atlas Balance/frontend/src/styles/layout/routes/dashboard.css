@@ -8,7 +8,7 @@
   gap: 1.875rem;
   min-width: 0;
   padding: 1.55rem;
-  border: 1px solid color-mix(in srgb, var(--accent-solid) 42%, var(--border-default));
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
   background: var(--surface-card);
   box-shadow: none;

@@ -286,7 +286,7 @@ export default function UsuariosPage() {
       <header className="users-header page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Usuarios</h1>
-          <p className="users-subtitle page-header__subtitle">
+          <p className="page-header__subtitle">
             Administra accesos, emails de notificación y permisos granulares.
           </p>
         </div>
@@ -297,18 +297,18 @@ export default function UsuariosPage() {
         </div>
       </header>
 
-      <div className="users-summary-grid">
+      <div className="users-summary-grid" role="group" aria-label="Resumen de usuarios en esta vista">
         <article className="users-summary-card">
           <strong>{total}</strong>
-          <span>Usuarios en esta vista</span>
+          <span>Usuarios</span>
         </article>
         <article className="users-summary-card">
           <strong>{activeCount}</strong>
-          <span>Activos en esta vista</span>
+          <span>Activos</span>
         </article>
         <article className="users-summary-card">
           <strong>{rows.filter((row) => !!row.deleted_at).length}</strong>
-          <span>Eliminados en esta vista</span>
+          <span>Eliminados</span>
         </article>
       </div>
 
@@ -390,6 +390,7 @@ export default function UsuariosPage() {
                         {row.intentos_fallidos} {row.intentos_fallidos === 1 ? 'intento' : 'intentos'}
                       </span>
                     ) : null}
+                    {!isUsuarioBloqueado(row.bloqueado_hasta, ahora) && !(row.intentos_fallidos > 0) ? '—' : null}
                   </td>
                   <td>{row.primer_login ? 'Pendiente' : 'Completado'}</td>
                   <td>{row.puede_usar_ia ? 'Sí' : 'No'}</td>
@@ -440,9 +441,9 @@ export default function UsuariosPage() {
                         className="button-danger"
                         onClick={() => confirmMfaRevoke(row)}
                         disabled={actionLoading}
-                        aria-label={`Revocar Authenticator de ${row.email}`}
+                        aria-label={`Revocar MFA de ${row.email}`}
                       >
-                        Revocar Authenticator
+                        Revocar MFA
                       </button>
                     )}
                   </td>
@@ -526,7 +527,7 @@ export default function UsuariosPage() {
         open={Boolean(mfaCandidate)}
         onClose={() => setMfaCandidate(null)}
         titleId="mfa-user-title"
-        title="Revocar Authenticator"
+        title="Revocar MFA"
         variant="fullscreen-mobile"
         panelClassName="users-confirm-modal"
         headerClassName=""
@@ -552,7 +553,7 @@ export default function UsuariosPage() {
             Cancelar
           </button>
           <button type="button" className="button-danger" onClick={() => void revokeMfa()} disabled={actionLoading}>
-            {actionLoading ? 'Revocando...' : 'Revocar Authenticator'}
+            {actionLoading ? 'Revocando...' : 'Revocar MFA'}
           </button>
         </div>
       </Modal>

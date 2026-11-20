@@ -113,6 +113,47 @@
   flex: 1.45 1 20rem;
 }
 
+/* P2-11: identidad como dl plano de 4 columnas, sin cajas. */
+.account-identity-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.7fr);
+  gap: var(--space-6) var(--space-9);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.account-identity-strip > div,
+.account-identity-strip > div:first-child {
+  flex: initial;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.account-identity-strip > div:first-child dd {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+/* P2-11: acciones de cabecera en una sola fila (Volver ghost, Ver en extractos secondary, Importar primary). */
+.cuenta-detail-page .dashboard-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.cuenta-action {
+  min-height: var(--control-height);
+  padding: 0 var(--space-7);
+  font: var(--type-label);
+  white-space: nowrap;
+}
+
 .account-identity-iban dd {
   font-family: var(--font-mono);
   font-size: var(--text-13);
@@ -210,9 +251,16 @@
 
 @media (max-width: 1023.98px) {
 
-  .account-identity-strip > div,
+  .account-identity-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .account-identity-strip .account-identity-iban {
-    flex-basis: 100%;
+    grid-column: 1 / -1;
+  }
+
+  .cuenta-detail-page .dashboard-toolbar-actions {
+    justify-content: flex-start;
   }
 }
 

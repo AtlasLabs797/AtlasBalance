@@ -1,4 +1,26 @@
-﻿## 2026-11-18 - V-03.02 - LOTE 8 del informe de revision integral: D-1 a D-12, M-1, M-2, M-6, M-10 a M-15, M-17, R-9, T-1 y T-2 (CORREGIDO EN CODIGO)
+﻿## 2026-11-20 - V-03.02 - Pulido visual del frontend: incidencias encontradas (CORREGIDO EN CODIGO salvo donde se indica)
+
+### Esc dentro de un desplegable cerraba el modal entero
+- **Causa:** `useDialogFocus` escuchaba `keydown` en `window` y llamaba a `onEscape` sin mirar `event.defaultPrevented`. Combobox hacia `preventDefault()` pero el modal cerraba igual. Con dos modales abiertos, los dos procesaban Esc y Tab.
+- **Solucion:** se ignoran los eventos ya consumidos y hay una pila de modales en la que solo responde el de arriba.
+
+### Inputs montados unos sobre otros en rejillas
+- **Causa:** un `<input>` sin `width`/`min-width:0` dentro de `label{display:grid}` usa su ancho intrinseco (~20ch), que supera la pista de la rejilla. Afectaba al modal de titular (Tipo pisaba a Nombre) y a Conciliacion (Importe tapado).
+- **Solucion:** `width:100%; min-width:0` en los inputs de texto de `global.css`.
+
+### Captura `extractos-fecha-desde-abierta` siempre saltada
+- **Causa:** el spec comprobaba con `locator.count()`, que no espera, antes de que el DatePicker estuviera pintado.
+- **Solucion:** `.first().waitFor({ state: 'visible' })`.
+
+### EPERM en `frontend/test-results/` y `frontend/playwright-report/` (BLOQUEADO, con rodeo)
+- **Causa:** las carpetas pertenecen a otra cuenta de sandbox, el mismo patron que `.test-dist/`. Aparecio al lanzar varias ejecuciones de Playwright de subagentes en paralelo.
+- **Rodeo:** `npx playwright test ... --reporter=list --output=<carpeta temporal>`. Arreglo definitivo: que el propietario de la maquina restablezca los permisos o borre esas carpetas.
+
+### Finales de linea reescritos por los subagentes
+- **Causa:** varios ficheros pasaron entero de LF a CRLF o al reves al editarlos. Algunos ficheros ya tenian finales mezclados antes del lote.
+- **Solucion:** solo se devolvieron a LF los 8 ficheros que eran LF puro y pasaron a CRLF. Quedan cambiados y sin restaurar los que pasaron de CRLF o mezclado a LF (`CuentaDetailPage.tsx`, `DashboardTitularPage.tsx`, `entities.css`, `admin.css`, `auth.css`, `formatos-importacion.css`, `importacion.css`) y los mezclados que pasaron a CRLF. Con `core.autocrlf=true` git los normaliza y `git diff` solo muestra los cambios reales.
+
+## 2026-11-18 - V-03.02 - LOTE 8 del informe de revision integral: D-1 a D-12, M-1, M-2, M-6, M-10 a M-15, M-17, R-9, T-1 y T-2 (CORREGIDO EN CODIGO)
 
 Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 8. Solo estos IDs; ningun otro tocado. Rama `V-03.02`. Sin commit ni push.
 

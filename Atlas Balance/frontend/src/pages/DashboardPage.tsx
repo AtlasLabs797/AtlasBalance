@@ -223,7 +223,7 @@ export default function DashboardPage() {
       <header className="dashboard-toolbar page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Dashboard</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Saldos consolidados, movimiento del periodo y exposición por titular.</p>
+          <p className="page-header__subtitle">Saldos consolidados, movimiento del periodo y exposición por titular.</p>
         </div>
         <div className="dashboard-toolbar-actions">
           <PeriodoSelector value={periodo} onChange={setPeriodo} />

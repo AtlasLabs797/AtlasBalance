@@ -22,8 +22,10 @@ html[data-theme="dark"] {
   color-scheme: dark;
 }
 
+/* Un solo anillo de foco: --ring-focus. El outline transparente solo existe
+   para que Alto Contraste (forced-colors) siga pintando un borde visible. */
 :focus-visible {
-  outline: var(--focus-outline);
+  outline: 2px solid transparent;
   outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
@@ -101,6 +103,32 @@ select:hover:not(:disabled) {
   border-color: var(--border-control-hover);
 }
 
+/* Contrato de control (DESIGN 3.5): inputs de texto y select miden exactamente
+   --control-height (min-height de la regla base + sin padding vertical) y no
+   desbordan su celda de rejilla. :where() mantiene la especificidad en (0,0,1)
+   para que cualquier regla de clase (celdas y filtros de Extractos, paleta,
+   auth, etc.) siga ganando. Checkbox, radio, file, range, color y botones
+   quedan fuera; el textarea conserva su alto automatico. */
+input:where(:not(
+  [type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'],
+  [type='hidden'], [type='image'], [type='submit'], [type='button'], [type='reset'],
+  .cell input, .extracto-filter-search input, .app-palette-input
+)),
+select {
+  padding-block: 0;
+}
+
+input:where(:not(
+  [type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'],
+  [type='hidden'], [type='image'], [type='submit'], [type='button'], [type='reset'],
+  .cell input, .extracto-filter-search input, .app-palette-input
+)),
+select,
+textarea {
+  width: 100%;
+  min-width: 0;
+}
+
 select {
   appearance: none;
   padding-right: calc(var(--pad-field-x) + 20px);
@@ -139,12 +167,12 @@ input[type='date']::-webkit-datetime-edit-fields-wrapper {
 }
 
 input[type='date']::-webkit-calendar-picker-indicator {
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1.25rem;
+  height: 1.25rem;
   margin-right: -0.35rem;
-  padding: 0.42rem;
-  border-radius: var(--radius-full);
-  background-color: var(--accent-soft);
+  padding: 0;
+  border-radius: var(--radius-xs);
+  background-color: transparent;
   cursor: pointer;
   opacity: 0.78;
   transition:
@@ -155,7 +183,6 @@ input[type='date']::-webkit-calendar-picker-indicator {
 
 input[type='date']:hover::-webkit-calendar-picker-indicator,
 input[type='date']:focus::-webkit-calendar-picker-indicator {
-  background-color: color-mix(in srgb, var(--accent-solid) 14%, var(--accent-soft));
   opacity: 1;
 }
 
@@ -191,13 +218,14 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   gap: var(--space-2);
   width: 100%;
   min-height: var(--control-height);
-  padding: var(--space-2) var(--space-7);
+  padding: 0 var(--space-7);
   border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
   background: var(--surface-card);
   color: var(--text-primary);
   text-align: left;
   font-weight: var(--weight-semibold);
+  white-space: nowrap;
   box-shadow: none;
 }
 
@@ -209,20 +237,15 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-picker-trigger:focus-visible,
 .date-picker-field:has(.date-picker-popover) .date-picker-trigger {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
   border-color: var(--accent-solid);
   box-shadow: var(--ring-focus);
 }
 
 .date-picker-trigger svg {
   flex: 0 0 auto;
-  width: 2.1rem;
-  height: 2.1rem;
-  padding: 0.42rem;
-  border-radius: var(--radius-full);
-  background: var(--accent-soft);
-  color: var(--text-primary);
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
 }
 
 .date-picker-trigger--empty {
@@ -288,7 +311,6 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-picker-header strong {
   text-align: center;
-  text-transform: capitalize;
   font-size: var(--text-13);
   font-weight: var(--weight-semibold);
 }
@@ -352,8 +374,6 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 .date-picker-grid button:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
   border-color: var(--accent-solid);
   box-shadow: var(--ring-focus);
 }
@@ -402,9 +422,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 input:focus, textarea:focus, select:focus {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
-  border-color: var(--accent-500);
+  outline: 2px solid transparent;
+  border-color: var(--accent-solid);
   box-shadow: var(--ring-focus);
 }
 
@@ -461,12 +480,6 @@ input[type='checkbox']:checked::before {
   transform: rotate(40deg) scale(1);
 }
 
-input[type='checkbox']:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
-  box-shadow: var(--ring-focus);
-}
-
 input[type='checkbox']:active:not(:disabled) {
   transform: scale(var(--press-scale));
 }
@@ -499,12 +512,6 @@ button:not([class]):hover:not(:disabled) {
   border-color: var(--border-strong);
 }
 
-button:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
-  box-shadow: var(--ring-focus);
-}
-
 button:active:not(:disabled),
 .button:active:not([aria-disabled="true"]),
 a[class*="button"]:active {
@@ -512,7 +519,8 @@ a[class*="button"]:active {
 }
 
 button:disabled {
-  opacity: 0.5;
+  color: var(--text-disabled);
+  opacity: 1;
   cursor: not-allowed;
 }
 
@@ -631,7 +639,6 @@ th {
 }
 
 .confirm-action-reversible {
-  border-width: 2px;
   border-color: var(--status-warning-text);
 }
 
@@ -642,7 +649,7 @@ th {
   margin-top: var(--space-4);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--status-danger-text);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-field);
   background: var(--status-danger-bg);
   color: var(--status-danger-text);
 }
@@ -723,10 +730,11 @@ th {
   justify-content: space-between;
   gap: var(--space-3);
   border: 1px solid var(--border-control);
+  border-radius: var(--radius-field);
   background: var(--surface-card);
   color: var(--text-primary);
   font: var(--type-body);
-  padding: var(--pad-field-y) var(--pad-field-x);
+  padding: 0 var(--pad-field-x);
   text-align: left;
   box-shadow: none;
   touch-action: manipulation;
@@ -738,9 +746,7 @@ th {
 }
 
 .app-select-trigger:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
-  border-color: var(--accent-500);
+  border-color: var(--accent-solid);
   box-shadow: var(--ring-focus);
 }
 
@@ -994,10 +1000,6 @@ tbody tr {
   transition: background-color var(--transition-fast);
 }
 
-tbody tr:hover {
-  background: var(--accent-soft);
-}
-
 .pill,
 .config-badge {
   border-radius: var(--radius-full);
@@ -1005,6 +1007,23 @@ tbody tr:hover {
 
 .button-danger {
   border-color: color-mix(in srgb, var(--status-danger-text) 28%, transparent);
+}
+
+/* Deshabilitado: color de texto atenuado en vez de opacity .5; los botones con
+   relleno pasan a una superficie neutra para no dejar texto gris sobre color. */
+.button-primary:disabled,
+.button-warning:disabled,
+.button-danger:disabled,
+.users-primary-button:disabled {
+  background: var(--surface-sunken);
+  border-color: var(--border-default);
+  color: var(--text-disabled);
+}
+
+.button-secondary:disabled {
+  background: transparent;
+  border-color: var(--border-default);
+  color: var(--text-disabled);
 }
 
 /* Coherencia de cabecera de pagina. El barrido en navegador encontro titulos a

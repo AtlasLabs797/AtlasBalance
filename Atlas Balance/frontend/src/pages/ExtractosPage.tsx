@@ -730,7 +730,7 @@ export default function ExtractosPage() {
         <div className="extractos-heading">
           <span className="extractos-eyebrow">Tesorería / Movimientos</span>
           <h1 className="page-header__title">Extractos</h1>
-          <p className="page-header__subtitle--narrow">Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
+          <p className="page-header__subtitle page-header__subtitle--narrow">Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
         </div>
         <div className="extractos-header-actions">
           <div className="extractos-mode-toggle" role="group" aria-label="Modo de extractos">

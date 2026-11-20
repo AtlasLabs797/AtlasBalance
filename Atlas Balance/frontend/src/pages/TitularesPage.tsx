@@ -349,9 +349,9 @@ export default function TitularesPage() {
       <header className="entity-header page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">Titulares</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Personas y empresas que agrupan cuentas, saldos y permisos.</p>
+          <p className="page-header__subtitle">Personas y empresas que agrupan cuentas, saldos y permisos.</p>
         </div>
-        {isAdmin && <button type="button" className="button-primary" onClick={openCreateModal}>Nuevo Titular</button>}
+        {isAdmin && <button type="button" className="button-primary" onClick={openCreateModal}>Nuevo titular</button>}
       </header>
 
       {canSeeDashboard ? (
@@ -627,8 +627,8 @@ export default function TitularesPage() {
             </section>
 
             <div className="users-form-actions modal-form-actions">
-              <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
-              <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
+              <button type="button" className="button-secondary" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
+              <button type="submit" className="button-primary" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </form>
         </Modal>

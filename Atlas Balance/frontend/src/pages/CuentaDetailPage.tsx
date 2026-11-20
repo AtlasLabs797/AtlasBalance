@@ -925,7 +925,7 @@ export default function CuentaDetailPage() {
         <div className="dashboard-toolbar-main page-header__lead">
           <div className="cuenta-heading-block">
             <h1 className="page-header__title">{summary.cuenta_nombre}</h1>
-            <p className="dashboard-subtitle page-header__subtitle">Dashboard por cuenta</p>
+            <p className="page-header__subtitle">Dashboard por cuenta</p>
           </div>
           <dl className="account-identity-strip" aria-label="Datos de la cuenta">
             <div>
@@ -941,7 +941,7 @@ export default function CuentaDetailPage() {
             <div>
               <dt>País</dt>
               <dd className={summary.pais_nombre ? undefined : 'account-identity-value--muted'}>
-                {summary.pais_nombre || 'Sin pais'}
+                {summary.pais_nombre || 'Sin país'}
               </dd>
             </div>
             <div className="account-identity-iban">
@@ -960,15 +960,15 @@ export default function CuentaDetailPage() {
         </div>
         <div className="dashboard-toolbar-actions">
           <PeriodoSelector value={periodo} onChange={setPeriodo} />
-          <button type="button" onClick={() => navigate(`/dashboard/titular/${summary.titular_id}`)}>
+          <button type="button" className="button-secondary cuenta-action" onClick={() => navigate(`/dashboard/titular/${summary.titular_id}`)}>
             Volver al titular
           </button>
-          <Link to={`/extractos?cuentaId=${summary.cuenta_id}`} className="dashboard-open-link">
+          <Link to={`/extractos?cuentaId=${summary.cuenta_id}`} className="button-secondary cuenta-action">
             Ver en extractos
           </Link>
           <button
             type="button"
-            className={`dashboard-open-link ${canImport ? '' : 'dashboard-open-link--disabled'}`.trim()}
+            className={`button-primary cuenta-action ${canImport ? '' : 'dashboard-open-link--disabled'}`.trim()}
             disabled={!canImport}
             onClick={(event) => {
               if (!canImport) {

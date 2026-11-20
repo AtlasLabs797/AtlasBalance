@@ -1,5 +1,96 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-20 - V-03.02 - Pulido visual del frontend con referencia Astryx (Lotes 1 y 2)
+
+- Trabajo: revision del frontend (estilos, componentes, plantillas e interacciones de todas las pantallas) con el design system Astryx (`C:\Users\usuario\Documents\Herramentas\Astryx`) como referencia. Decisiones del usuario: portar patrones a nuestras variables CSS **sin dependencias nuevas**, mantener la marca Atlas actual, alcance completo por lotes y capturas sacadas por el orquestador con el arnes de Playwright. `Documentacion/Diseno/DESIGN.md` manda en cualquier conflicto con Astryx. Metodo: dos auditorias de solo lectura (grupo A: shell, login, dashboards, titulares, cuentas, extractos, conciliacion y revision; grupo B: importacion, formatos, configuracion, paises, backups, usuarios, auditoria, papelera, alertas, MFA y modales), escritores Sonnet/Haiku con ficheros disjuntos, revision visual independiente antes/despues y una ronda de correccion de regresiones. Sin commit.
+- **Lote 1 (sistema base y marco):**
+  - Controles a 44 px reales (`min-height` + padding vertical 0) en inputs, selects, `.app-select-trigger` y `.date-picker-trigger`, todos con `--radius-field` (11) y `width:100%; min-width:0`. Antes, los inputs se montaban unos sobre otros en rejillas (modal de titular, conciliacion).
+  - Botones de fila de tabla a 32 px y "Eliminar" como quiet-danger. `td.users-row-actions` deja de ser `display:flex`, que rompia la celda.
+  - Modales con una sola cabecera (`--type-title-3`, padding 24) y a ancho completo en movil.
+  - Esc: `useDialogFocus` ignora eventos con `defaultPrevented` y mantiene una pila de modales, asi que solo responde el de arriba. Combobox y DatePicker consumen Esc solo si estan abiertos.
+  - Estado deshabilitado con `--text-disabled` en vez de `opacity`. Un solo anillo de foco, un solo hover de fila y badge neutro visible en oscuro.
+  - Los 10 submits sin clase pasan a `button-primary`, con "Cancelar" como `button-secondary`.
+  - Marco de la app:
+    - Banner de alerta dentro del gutter del contenido y compacto en movil (de ~190 a ~70 px).
+    - Bottom nav sin cajitas.
+    - Reserva inferior para el boton flotante de IA.
+    - Buscador del topbar con borde, visible en oscuro.
+    - Sidebar con scroll propio: el grupo "Sistema" ya muestra "Usuarios".
+    - Selector de pais compacto.
+    - Pestanas de Configuracion en una fila con scroll horizontal.
+- **Lote 2 (paginas):**
+  - Cabeceras: el subtitulo de cabecera de todas las paginas usa `page-header__subtitle`. Desaparecen `page-header__title--bold` (tambien su regla en `page.css`) y `page-header--plain`. `dashboard-subtitle` y `config-subtitle` siguen solo como texto secundario dentro de tarjetas. Nace `.page-header__actions` (en `entities.css`).
+  - Control segmentado: periodo y divisa del dashboard, modo y densidad de Extractos y pestanas de Revision (`.config-tabs--seg`) comparten la misma gramatica y tienen borde en reposo, visible en oscuro.
+  - Extractos:
+    - Filtros de cabecera a 44 px y alineados.
+    - Fila marcada sin fondo coloreado: borde izquierdo de estado + punto, como pide DESIGN.md.
+    - La lupa del filtro de columna se oculta en columnas estrechas (container query).
+  - Conciliacion: cabecera con select y Actualizar en una fila, barra de sugerencias alineada, botones de fila a 32 px, paginacion compacta y tildes.
+  - Dashboard: el saldo por divisa es una lista vertical en la columna derecha del hero, sin tarjetas anidadas y con el badge "Base" junto a su divisa. Las listas de titulares y cuentas son planas.
+  - Detalle de cuenta: acciones a 44 px ("Volver" y "Ver en extractos" secundarios, "Importar" primario) e identidad como `dl` sin cajas.
+  - Administracion:
+    - Paises a ancho completo; las clases `paises-*` no tenian CSS.
+    - Importacion: pestanas con la gramatica de `.config-tab`, la pestana "Lote" deshabilitada legible y un stepper sin aspecto de pestana.
+    - Historial de importacion: sin rejilla vertical, SHA corto con `title` y estado como badge.
+    - Formatos: panel lateral `minmax(22rem, 0.9fr)`, legend dentro del borde y rejilla apilada por debajo de 1199.98 px. A 1024 px las dos columnas minimas (38 rem + 22 rem) no cabian, el panel se salia por la derecha y la columna Extra pisaba el badge de estado. El defecto ya existia antes del lote.
+    - Auditoria: filtros alineados, "Exportar CSV" en la cabecera y paginacion sin mono.
+    - Configuracion General sin tarjeta dentro de tarjeta.
+    - Alertas: casilla y texto en linea.
+    - Usuarios: KPIs compactos y `—` en celdas vacias.
+    - Backups: "Desvincular" como quiet-danger con contorno, y "Tamaño" con tilde.
+    - Badges a 12 px / 600.
+  - Revertir lote usa el tono `reversible`. El lote se puede volver a importar y el dialogo decia a la vez que se podia y que no se podia deshacer. Ya no muestra "Esta accion no se puede deshacer": decision confirmada por el usuario el 2026-11-20.
+  - Login y cambiar contrasena: en movil la marca se alinea con la tarjeta y desaparecen la banda vacia y el corte de dos tonos. En oscuro el fondo es uniforme y la tarjeta tiene borde. Un solo anillo de foco.
+  - Toast: boton de cierre de 32 px sin margen negativo.
+  - Calendario: el titulo pasa de "Noviembre De 2026" a "Noviembre de 2026" (`formatMonthTitle` en `DatePickerField.tsx`, sin `text-transform: capitalize`).
+  - Copy en sentence case y con tildes: "Nuevo titular", "Nueva cuenta", "Nuevo formato", "Alertas de saldo bajo", "Formatos de importación", "Auditoría del sistema", "Auditoría de integraciones", "Excepción", "Fecha de creación", "Días", "Página", "Programación", "automáticas" y "Sin país". "Revocar Authenticator" pasa a "Revocar MFA".
+- Archivos (todos bajo `Atlas Balance/frontend/`):
+  - Estilos: `src/styles/{global,auth}.css`, `src/styles/components/{modal,tabs}.css`, `src/styles/layout/{shell,page,users,dashboard,extractos,entities,admin,importacion}.css` y `src/styles/layout/routes/{extractos,conciliacion,revision,dashboard,cuenta-detail,cuentas,titulares,auditoria,configuracion,formatos-importacion,importacion,usuarios}.css`.
+  - TSX: `src/hooks/useDialogFocus.ts`, `src/components/common/{DatePickerField,Combobox}.tsx`, `src/components/layout/AlertBanner.tsx`, `src/pages/{Alertas,Auditoria,Backups,Conciliacion,Configuracion,CuentaDetail,Cuentas,Dashboard,DashboardTitular,DispositivosMfa,Exportaciones,Extractos,FormatosImportacion,Importacion,Papelera,Revision,TitularDetail,Titulares,Usuarios}Page.tsx` y `src/pages/configuracion/PaisesPage.tsx`. Solo cambian clases, copy y marcado; ninguna llamada a la API ni logica de datos.
+  - E2E:
+    - `e2e/visual/capture.spec.ts`: rutas `/ia` y `/exportaciones`; capturas de las 6 pestanas de Configuracion, de las pestanas de Revision y del selector de titular y el calendario de Extractos abiertos. El locator del calendario comprobaba con `count()` sin esperar y la captura se saltaba siempre.
+    - `e2e/README.md`: 23 rutas.
+  - Se respetan los cambios previos sin commitear de `ConfiguracionPage`, `CuentaDetailPage`, `DashboardPage`, `DashboardTitularPage` y `TokenList`.
+- Comandos (desde `frontend/`):
+  - `npm run lint`: exit 0.
+  - `npx tsc --noEmit -p tsconfig.json`: exit 0.
+  - Tests unitarios compilados con `--outDir .test-dist-front`, porque el canonico da EPERM en `.test-dist/`: **337/337**. El test 337 es `tests/aiModels.test.ts`, del cambio MiniMax M3.1 Flash que hizo en paralelo otra sesion (`utils/aiModels.ts`, `components/ia/AiChatPanel.tsx`); este lote no lo ha tocado.
+  - `E2E_SKIP_WEBSERVER=1 VISUAL_OUT=<scratchpad> npx playwright test e2e/visual/capture.spec.ts --reporter=list --output=<scratchpad>`: **6/6** (182 PNG, claro y oscuro a 1440/1024/390).
+  - `states.spec.ts` + `extractos-comportamiento.spec.ts`: **25 pasan, 1 omitido**, igual que la linea base.
+  - `npx vite build --outDir <scratchpad>`: correcto.
+  - Las specs e2e no visuales no se ejecutaron. Un grep no encuentra en ellas ningun literal renombrado.
+- Verificacion visual: las capturas de antes, Lote 1 y Lote 2 se revisaron a mano y con un revisor independiente, pantalla a pantalla. Se revisaron sobre todo 1440 y 390. De 1024 solo se abrieron Auditoria, Formatos, Conciliacion y Dashboard, y de oscuro Dashboard, Backups, Extractos y Login. Las regresiones que encontro el revisor se corrigieron y se recapturaron:
+  - Marca del login desplazada en movil.
+  - Franja de divisas diminuta.
+  - "Desvincular" sin forma.
+  - Pestana "Lote" apagada.
+  - "Volver al titular" sin forma.
+  - Legend de Formatos pisando el borde.
+  - Etiqueta "Fecha" descolgada.
+  - "De" capitalizado en el calendario.
+- Decisiones visuales:
+  - Campos, selects y fechas con radio 11; acciones y chips en pildora.
+  - Botones dentro de tablas a 32 px.
+  - Peligro en fila como texto rojo (quiet-danger), con contorno cuando va junto a otros botones con borde.
+  - Filas marcadas nunca coloreadas.
+  - Controles en reposo siempre con borde, para que se vean en oscuro.
+  - Sentence case con tildes.
+  - El icono del boton flotante de IA (se lee como "pausa") se deja: es la marca del sistema de diseno.
+- Bloqueado:
+  - Login real: la cuenta admin exige MFA, asi que todas las capturas son con la API simulada del arnes.
+  - `test-results/` y `playwright-report/` del proyecto dan EPERM (son propiedad de otra cuenta de sandbox). Se usan `--output` y `--reporter=list` hacia el scratchpad.
+- Pendientes de diseno:
+  - Contraste del texto deshabilitado (~2,5:1 en claro): decidir si se acepta.
+  - Detalle de cuenta: las tres acciones ocupan dos filas a 1440 px.
+  - Conciliacion a 1024 px: "Crear esperado" se parte en dos lineas y la barra de sugerencias ocupa dos filas.
+  - Tarjetas dentro de tarjeta que quedan: "Evolucion" en Cuentas, KPIs de Programacion en Backups, "Destinatarios" en Alertas y fieldset de Formatos.
+  - Graficos: etiquetas de eje en dos lineas, barras rotadas y verde brillante en oscuro. No se han tocado.
+  - Topbar que repite el titulo de la pagina.
+  - Cambiar contrasena: los campos no tienen el boton de mostrar.
+  - Conciliacion: formato de fecha `aaaa-mm-dd`.
+  - Datos de ejemplo sin tilde ("Espana", "Autonomo", "Comision mantenimiento"): vienen del mock o de la semilla.
+  - No se ha ejecutado `vite build` ni se ha validado en la app con backend real.
+
 # 2026-11-18 - V-03.02 - Lote 8 del informe de revision integral (D-1, D-2, D-3, D-4, D-5, D-6, D-7, D-8, D-9, D-10, D-11, D-12, M-1, M-2, M-6, M-10, M-11, M-12, M-13, M-14, M-15, M-17, R-9, T-1, T-2)
 
 > Entrada general del lote. Debajo de esta hay entradas de detalle de cada subagente (M-14/M-15, M-17 y D-5).

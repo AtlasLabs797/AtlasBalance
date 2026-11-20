@@ -58,14 +58,6 @@
   text-wrap: balance;
 }
 
-/* El titulo de Alertas es el unico que hoy queda a 700: su selector de
-   parche (`.alertas-page > header h1`, 0,1,2) beating por especificidad a
-   `.app-content h1` (0,1,1). La clase comun tiene mas especificidad, asi que
-   el peso se declara aqui. */
-.page-header .page-header__title--bold {
-  font-weight: var(--weight-bold);
-}
-
 .page-header__lead {
   min-width: 0;
 }
@@ -74,6 +66,25 @@
   max-width: 72ch;
   color: var(--text-secondary);
   text-wrap: pretty;
+}
+
+/* Subtitulo estandar de cabecera: 14px (--type-body-sm), secundario, 8px bajo
+   el titulo. El selector descendiente (0,2,0) gana a .dashboard-subtitle (13px)
+   y a .users-subtitle (hereda el cuerpo) cuando ambas clases van en el mismo
+   <p>. No fija max-width para no pisar .page-header__subtitle--narrow. */
+.page-header .page-header__subtitle {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+/* Sobretitulo opcional encima del titulo (overline). */
+.page-header .page-header__eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--text-tertiary);
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
 }
 
 /* Las tres clases legacy de subtitulo siguen usandose fuera de las cabeceras

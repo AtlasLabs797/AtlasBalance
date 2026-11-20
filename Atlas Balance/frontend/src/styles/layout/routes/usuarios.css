@@ -7,13 +7,14 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
   background: var(--surface-card);
-  padding: var(--space-3);
-  display: grid;
-  gap: var(--space-1);
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
 }
 
 .users-summary-card strong {
-  font-size: var(--text-40);
+  font-size: var(--text-28);
   font-family: var(--font-mono);
   font-weight: var(--weight-bold);
   line-height: 1;

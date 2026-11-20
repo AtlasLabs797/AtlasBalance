@@ -44,6 +44,10 @@
    necesita una formula propia por tema (no puede consumir variables CSS). */
 [data-theme="dark"] .auth-page {
   --auth-logo-filter: invert(69%) sepia(94%) saturate(1302%) hue-rotate(194deg) brightness(102%) contrast(103%);
+  /* Oscuro: la banda de marca y el fondo comparten --surface-page (sin
+     #252527 frente a negro); la tarjeta se separa con un borde mas marcado. */
+  --auth-brand-bg: var(--surface-page);
+  --auth-card-border: var(--border-strong);
 }
 
 .auth-theme-toggle {
@@ -97,7 +101,8 @@
 
 .auth-brand-lockup {
   display: flex;
-  align-items: center;
+  /* Arriba: el logo no se desplaza con/sin el subtitulo (Login vs Cambiar contrasena). */
+  align-items: flex-start;
   gap: 0.9rem;
 }
 
@@ -279,7 +284,9 @@
 }
 
 .auth-input:focus {
-  outline: var(--focus-outline);
+  /* Un solo anillo de foco (--ring-focus), como global.css; el outline solo
+     queda transparente para Alto Contraste. */
+  outline: 2px solid transparent;
   outline-offset: var(--focus-outline-offset);
   border-color: var(--auth-accent);
   box-shadow: var(--ring-focus);
@@ -487,8 +494,19 @@
 }
 
 @media (max-width: 767.98px) {
+  /* Movil: banda de marca compacta (sin ~110px vacios) y el mismo fondo que la
+     zona del formulario, sin corte de dos tonos. El padding derecho deja sitio
+     al boton de tema fijo. */
+  .auth-page {
+    --auth-brand-bg: var(--surface-page);
+    /* El grid de 100dvh repartia el alto sobrante entre filas: la banda de marca
+       crecia ~120px vacios. Filas al contenido. */
+    align-content: start;
+  }
+
   .auth-brand-panel {
-    padding-right: 4.5rem;
+    min-height: 0;
+    padding: var(--space-9) 4.5rem var(--space-4) var(--space-4);
   }
 
   .auth-card {

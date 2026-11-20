@@ -47,7 +47,7 @@ export default function TitularDetailPage() {
       <header className="dashboard-toolbar page-header">
         <div className="page-header__lead">
           <h1 className="page-header__title">{data.titular_nombre}</h1>
-          <p className="dashboard-subtitle page-header__subtitle">Detalle por cuenta</p>
+          <p className="page-header__subtitle">Detalle por cuenta</p>
         </div>
         <PeriodoSelector value={periodo} onChange={setPeriodo} />
       </header>

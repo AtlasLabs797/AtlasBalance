@@ -540,7 +540,7 @@ Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas v
 
 Para `Gerente`, el dashboard se habilita cuando tiene al menos un permiso de datos. Para `Empleado`, `Puede ver dashboard` solo permite dashboard si la fila tambien tiene algun permiso operativo de datos dentro de ese alcance. No abre cuentas ni extractos por si solo.
 
-La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar Authenticator`. Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
+La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar MFA` (antes se llamaba `Revocar Authenticator`). Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
 
 ## Titulares, cuentas y plazos fijos
 

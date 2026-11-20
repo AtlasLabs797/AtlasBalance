@@ -150,7 +150,13 @@
 }
 
 .pais-scope-dropdown .app-select-trigger {
-  border-radius: var(--radius-sm);
+  /* Variante compacta de 36px (selector mas especifico que el 44px base de
+     .app-select-trigger en global.css). */
+  height: var(--control-height-compact);
+  min-height: var(--control-height-compact);
+  padding-block: 0;
+  border-radius: var(--radius-field);
+  font: var(--type-body-sm);
 }
 
 .pais-scope-popover {
@@ -222,10 +228,14 @@
 
 .app-nav {
   flex: 1 1 auto;
+  /* min-height:0 deja encoger el nav dentro del sidebar flex: con poca altura
+     scrolla el nav y el bloque de usuario queda fijado abajo. */
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .app-sidebar-footer {
@@ -300,7 +310,7 @@
   position: relative;
   color: var(--text-secondary);
   padding: var(--space-2) var(--space-3);
-  min-height: 2.75rem;
+  min-height: 2.5rem;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -357,6 +367,11 @@
 
 .app-nav-link:active {
   transform: scale(var(--press-scale));
+}
+
+/* El enlace lleva overflow:hidden: el anillo de foco hacia fuera se recortaba. */
+.app-nav-link:focus-visible {
+  outline-offset: -2px;
 }
 
 .app-nav-link--active {
@@ -534,6 +549,14 @@
   overflow: auto;
 }
 
+/* El boton flotante de IA (56px, a 16px del borde, solo en escritorio) tapaba
+   el final del contenido: se reserva su hueco solo cuando existe. */
+@media (min-width: 768px) {
+  body:has(.ai-floating-widget) .app-content:not(.app-content--embedded) {
+    padding-bottom: calc(var(--space-5) + 3.5rem + var(--space-4));
+  }
+}
+
 .app-content--embedded {
   min-height: 100dvh;
 }
@@ -547,7 +570,8 @@
   --alert-banner-border: var(--status-warning-border);
   --alert-banner-solid: var(--status-warning-solid);
 
-  margin: var(--space-2) var(--space-4) 0;
+  /* Mismo margen lateral que el padding de .app-content (var(--space-5)). */
+  margin: var(--space-2) var(--space-5) 0;
   border: 1px solid var(--alert-banner-border);
   border-radius: var(--radius-card);
   background: var(--alert-banner-bg);
@@ -581,6 +605,25 @@
   --alert-banner-bg: var(--status-info-bg);
   --alert-banner-border: var(--status-info-border);
   --alert-banner-solid: var(--status-info-solid);
+}
+
+.alert-banner > button {
+  flex: 0 0 auto;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border-color: var(--alert-banner-border);
+  background: transparent;
+  color: var(--alert-banner-text);
+  font: var(--type-label);
+}
+
+.alert-banner > button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--alert-banner-solid) 12%, transparent);
+  border-color: var(--alert-banner-solid);
+}
+
+.alert-banner-dismiss-icon {
+  display: none;
 }
 
 .alert-banner-content {
@@ -850,16 +893,17 @@
 }
 
 .toast-item button {
-  flex: 0 0 2.75rem;
+  flex: 0 0 var(--control-height-sm);
   padding: 0;
-  width: 2.75rem;
-  height: 2.75rem;
-  min-height: 2.75rem;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
   line-height: 1;
   border: 0;
   background: transparent;
   color: inherit;
-  margin: calc(var(--space-2) * -1);
+  margin: 0;
+  align-self: center;
 }
 
 .toast-item--error {
@@ -982,10 +1026,6 @@
   .app-shell:not(.app-shell--collapsed) {
     grid-template-columns: var(--sidebar-width-collapsed) 1fr;
   }
-
-  .alert-banner {
-    margin: var(--space-2) var(--space-3) 0;
-  }
 }
 
 @media (max-width: 767.98px) {
@@ -1010,10 +1050,46 @@
     padding: var(--space-3);
   }
 
+  /* Una sola fila compacta: texto que envuelve a la izquierda y descarte como
+     boton de icono de 32px a la derecha. */
   .alert-banner {
     margin: var(--space-2) var(--space-3) 0;
-    flex-direction: column;
-    align-items: stretch;
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .alert-banner-content {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: var(--space-1) var(--space-2);
+    font-size: var(--text-13);
+    line-height: 1.35;
+  }
+
+  .alert-banner-pill {
+    display: none;
+  }
+
+  .alert-banner > button {
+    width: var(--control-height-sm);
+    padding: 0;
+    border-color: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .alert-banner-dismiss-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .alert-banner-dismiss-icon {
+    display: block;
   }
 
   .app-topbar {
@@ -1073,8 +1149,8 @@
     gap: var(--space-1);
     padding: var(--space-2);
     border-radius: var(--radius-sm);
-    border: 1px solid transparent;
-    background: var(--surface-muted);
+    border: 0;
+    background: transparent;
     color: var(--text-secondary);
     font-size: var(--text-13);
     text-decoration: none;
@@ -1096,17 +1172,16 @@
   .bottom-nav-link:hover,
   .bottom-nav-link:focus-visible {
     text-decoration: none;
-    border-color: var(--border-default);
   }
 
   .bottom-nav-link:active {
     transform: scale(var(--press-scale));
   }
 
+  /* El estado activo se marca en la pastilla del icono (accent-soft) y en el
+     texto, no en un recuadro con borde alrededor del item. */
   .bottom-nav-link--active {
-    background: var(--accent-soft);
-    color: var(--text-link);
-    border-color: color-mix(in srgb, var(--accent-solid) 26%, var(--border-default));
+    color: var(--accent-text);
     font-weight: var(--weight-semibold);
   }
 
@@ -1114,6 +1189,34 @@
   .bottom-nav-sheet-icon {
     display: inline-flex;
     color: currentColor;
+  }
+
+  .bottom-nav-icon {
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 1.75rem;
+    border-radius: var(--radius-full);
+    transition: background-color var(--transition-fast);
+  }
+
+  .bottom-nav-link--active .bottom-nav-icon {
+    background: var(--accent-soft);
+  }
+
+  /* Insignia sobre la esquina del icono: fuera de flujo, asi las etiquetas
+     quedan alineadas entre items. */
+  .bottom-nav-link > .sidebar-alert-badge {
+    position: absolute;
+    top: var(--space-1);
+    left: calc(50% + 0.5rem);
+    min-width: 1rem;
+    max-width: 1.6rem;
+    height: 1rem;
+    padding: 0 0.25rem;
+    font-size: var(--text-10);
+    line-height: 1;
+    pointer-events: none;
   }
 
   .bottom-nav-icon svg {
@@ -1262,11 +1365,13 @@
   gap: var(--space-3);
   width: 360px;
   max-width: 34vw;
-  min-height: 42px; /* WCAG 1.4.12: el texto no debe recortarse al ampliar */
-  margin: 0 auto;
+  min-height: var(--control-height); /* 44px, igual que tema y salir; WCAG 1.4.12 */
+  /* Pegado al grupo de acciones (no centrado con auto): no se desplaza entre
+     paginas cuando cambia el ancho del titulo. */
+  margin: 0 0 0 auto;
   padding: 0 var(--space-3);
   background: var(--surface-sunken);
-  border: 1px solid transparent;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
   color: var(--text-tertiary);
   font: var(--type-body);
@@ -1542,7 +1647,6 @@
 .sidebar-toggle,
 .theme-toggle,
 .logout-button,
-.bottom-nav-link,
 .bottom-nav-sheet-link {
   border-color: var(--border-control);
   background: var(--surface-raised);
@@ -1556,7 +1660,6 @@
 .sidebar-toggle:hover,
 .theme-toggle:hover,
 .logout-button:hover,
-.bottom-nav-link:hover,
 .bottom-nav-sheet-link:hover {
   border-color: var(--border-control-hover);
   background: var(--surface-hover);

@@ -4,7 +4,33 @@
 
 
 .revision-filter {
-  width: 12rem;
+  width: auto;
+  min-width: 12rem;
+}
+
+/* P2-15: el control Estado va en linea (etiqueta a la izquierda), alineado con el titulo. */
+.revision-page .page-header {
+  align-items: center;
+}
+
+.revision-page .revision-filter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.revision-page .revision-filter .app-select-label {
+  position: static;
+  width: auto;
+  height: auto;
+  clip: auto;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.revision-page .revision-filter .app-select-native-wrap {
+  min-width: 10rem;
 }
 
 .revision-table-wrap {

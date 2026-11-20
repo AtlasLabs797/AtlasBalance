@@ -275,6 +275,7 @@
 }
 
 .extracto-filter-search {
+  container-type: inline-size;
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -304,6 +305,13 @@
   background: transparent;
   box-shadow: none;
   font-size: var(--text-12);
+}
+
+/* P2-13: en columnas estrechas la lupa se oculta para que "Filtrar" no se corte. */
+@container (max-width: 96px) {
+  .extracto-filter-search > svg {
+    display: none;
+  }
 }
 
 .extracto-filter-search input:focus {
@@ -397,9 +405,14 @@
   background: var(--sheet-row-hover);
 }
 
-.extracto-row.flagged,
-.extracto-row.flagged:hover {
-  background: var(--status-warning-bg);
+/* P2-13: fila marcada sin fondo coloreado (DESIGN.md): punto de estado a la
+   derecha (::before de abajo) y borde izquierdo de 2px. */
+.extracto-row.flagged > .cell:first-child {
+  box-shadow: inset 2px 0 0 var(--status-warning-solid);
+}
+
+.extracto-row.flagged > .cell--fila_numero:first-child {
+  box-shadow: inset 2px 0 0 var(--status-warning-solid), 1px 0 0 var(--sheet-grid-strong);
 }
 
 .extracto-row.flagged .cell--flagged::before {
@@ -986,21 +999,22 @@
 }
 
 .extractos-mode-toggle {
-  min-height: var(--control-height);
-  gap: var(--space-2);
-  padding: var(--space-1);
+  width: fit-content;
+  gap: var(--space-1);
+  padding: 3px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-full);
   background: var(--surface-sunken);
 }
 
+/* P2-6: mismo control segmentado que periodo/divisa del dashboard (tab 34px, label 14px). */
 .extractos-mode-toggle button {
-  min-height: calc(var(--control-height) - 8px);
-  padding: 0 var(--space-6);
+  min-height: 34px;
+  padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-full);
   color: var(--text-secondary);
-  font: var(--type-caption);
+  font: var(--type-label);
 }
 
 .extractos-mode-toggle button:hover:not(:disabled) {
@@ -1009,7 +1023,7 @@
 }
 
 .extractos-mode-toggle button.active {
-  border-color: var(--border-default);
+  border-color: transparent;
   background: var(--surface-card);
   color: var(--text-primary);
 }
@@ -1044,11 +1058,15 @@
 }
 
 .extractos-filters .app-select-trigger,
-.extractos-filters .date-picker-trigger {
+.extractos-filters .date-picker-trigger,
+.extractos-filters .searchable-select-control {
+  box-sizing: border-box;
+  height: var(--control-height);
   min-height: var(--control-height);
   border-color: var(--border-control);
   background: var(--surface-card);
-  font: var(--type-body-sm);
+  font-size: var(--text-14);
+  line-height: 1.2;
 }
 
 .extractos-filters .date-picker-trigger {
@@ -1198,7 +1216,7 @@
 
 .extracto-filter-search {
   height: var(--control-height-sm);
-  padding-inline: var(--space-4);
+  padding-inline: var(--space-3);
   border-color: var(--border-strong);
   background: var(--surface-card);
 }

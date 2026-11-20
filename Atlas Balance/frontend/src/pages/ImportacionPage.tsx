@@ -629,7 +629,7 @@ export default function ImportacionPage() {
       title: 'Revertir lote de importación',
       message: textoConfirmacionRevertir(lote),
       confirmLabel: 'Revertir lote',
-      tone: 'irreversible',
+      tone: 'reversible',
     });
     if (!confirmed) {
       return;
@@ -887,7 +887,7 @@ export default function ImportacionPage() {
             )
           ) : (
             <div className="import-validation-table-wrap">
-              <table className="import-validation-table">
+              <table className="import-validation-table import-history-table">
                 <caption className="sr-only">Historial de lotes</caption>
                 <thead>
                   <tr>
@@ -906,11 +906,23 @@ export default function ImportacionPage() {
                       <td>{new Date(lote.fecha_creacion).toLocaleString()}</td>
                       <td>{lote.cuenta_nombre ?? EMPTY_MARKER}</td>
                       <td>{lote.tipo_origen}{lote.nombre_archivo ? ` / ${lote.nombre_archivo}` : ''}</td>
-                      <td>{lote.estado}</td>
-                      <td>{lote.filas_validas}/{lote.filas_total}</td>
-                      <td><code>{lote.sha256.slice(0, 12)}</code></td>
                       <td>
-                        <div className="import-actions">
+                        <span
+                          className={
+                            lote.estado.toLowerCase() === 'confirmado'
+                              ? 'users-badge users-badge--ok'
+                              : lote.estado.toLowerCase() === 'error'
+                                ? 'users-badge users-badge--danger'
+                                : 'users-badge'
+                          }
+                        >
+                          {lote.estado}
+                        </span>
+                      </td>
+                      <td>{lote.filas_validas}/{lote.filas_total}</td>
+                      <td><code title={lote.sha256}>{lote.sha256.slice(0, 8)}</code></td>
+                      <td>
+                        <div className="users-row-actions">
                         <button
                           type="button"
                           className="button-secondary"
