@@ -17,6 +17,7 @@ import {
 } from '@/utils/dispositivosMfa';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatDateTime } from '@/utils/formatters';
+import { resumenUserAgent } from '@/utils/userAgent';
 
 // V-03.02 (LOTE 6, seccion 8.1 del informe de revision integral): pantalla
 // para ver y revocar los dispositivos MFA de confianza del usuario.
@@ -182,8 +183,8 @@ export default function DispositivosMfaPage() {
               <tbody>
                 {devices.map((device) => (
                   <tr key={device.id}>
-                    <td>
-                      {etiquetaDispositivo(device)}
+                    <td title={device.user_agent_summary ?? undefined}>
+                      {resumenUserAgent(device.user_agent_summary) || etiquetaDispositivo(device)}
                       {device.current ? (
                         <>
                           {' '}

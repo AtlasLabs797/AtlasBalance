@@ -179,6 +179,24 @@ public sealed class PapeleraSoloEliminadosTests
         page.Data.Single().DeletedAt.Should().BeNull();
     }
 
+    [Fact]
+    public void Titular_Eliminado_Serializa_Deleted_At_Con_El_Nombre_Que_Lee_La_Papelera()
+    {
+        // El frontend (PapeleraPage) lee row.deleted_at: con la politica snake_case y
+        // WhenWritingNull de Program.cs el campo debe viajar con ese nombre.
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            new TitularListItemResponse { Nombre = "T", Tipo = "EMPRESA", DeletedAt = new DateTime(2026, 11, 1, 10, 0, 0, DateTimeKind.Utc) },
+            options);
+
+        json.Should().Contain("\"deleted_at\":\"2026-11-01T10:00:00Z\"");
+    }
+
     private static AppDbContext BuildDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

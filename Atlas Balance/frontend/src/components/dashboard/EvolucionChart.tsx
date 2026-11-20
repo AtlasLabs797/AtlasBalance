@@ -64,8 +64,22 @@ export function EvolucionChart({
   };
   const monthMode = xAxisMode === 'month';
   const withYear = monthMode && spansSeveralYears(points);
-  const tickFormatter = monthMode ? (value: string) => formatMonthTick(value, withYear) : formatDate;
-  const xTicks = monthMode ? getMonthTicks(points) : undefined;
+  // Modo mes: eje temporal numerico, un tick por inicio de mes y equiespaciado en el tiempo.
+  const chartData = monthMode ? points.map((point) => ({ ...point, ts: isoToTimestamp(point.fecha) })) : points;
+  const xDataKey = monthMode ? 'ts' : 'fecha';
+  // Rangos cortos (<= ~95 dias): ticks por fecha corta ("20 oct") espaciados regularmente.
+  const shortRange = monthMode && isShortRange(points);
+  const tickFormatter = monthMode
+    ? shortRange
+      ? (value: number | string) => formatShortDateTick(timestampToIso(Number(value)))
+      : (value: number | string) => formatMonthTick(timestampToIso(Number(value)), withYear)
+    : (value: string) => formatShortDateTick(value);
+  const xMinTickGap = monthMode ? (shortRange ? 16 : 28) : 56;
+  const xTicks = monthMode ? (shortRange ? getShortRangeTicks(points) : getMonthTicks(points)) : undefined;
+  const xAxisScale = monthMode
+    ? { type: 'number' as const, scale: 'time' as const, domain: ['dataMin', 'dataMax'] as [string, string] }
+    : {};
+  const tooltipLabel = monthMode ? (label: unknown) => formatDate(timestampToIso(Number(label))) : undefined;
 
   if (variant === 'saldoArea') {
     return (
@@ -80,7 +94,7 @@ export function EvolucionChart({
           <span style={{ '--series-color': chartColors.egresos } as CSSProperties}>Egresos</span>
         </div>
         <ResponsiveContainer width="100%" height={height}>
-          <ComposedChart data={points} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
+          <ComposedChart data={chartData} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
             <defs>
               <linearGradient id="dashboardSaldoArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={chartColors.saldo} stopOpacity={0.22} />
@@ -89,14 +103,16 @@ export function EvolucionChart({
             </defs>
             <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
             <XAxis
-              dataKey="fecha"
+              dataKey={xDataKey}
+              {...xAxisScale}
               ticks={xTicks}
               tickFormatter={tickFormatter}
-              padding={{ left: 8, right: 8 }}
+              padding={{ left: 8, right: 24 }}
               axisLine={false}
               tickLine={false}
               tickMargin={10}
-              minTickGap={28}
+              minTickGap={xMinTickGap}
+              interval="preserveStartEnd"
               tick={EVOLUTION_AXIS_TICK_STYLE}
             />
             <YAxis
@@ -109,7 +125,7 @@ export function EvolucionChart({
               tick={EVOLUTION_AXIS_TICK_STYLE}
             />
             <Tooltip
-            content={(props) => <DashboardTooltip {...props} divisa={divisa} />}
+            content={(props) => <DashboardTooltip {...props} divisa={divisa} formatLabel={tooltipLabel} />}
             cursor={{ stroke: 'var(--chart-grid)' }}
           />
             <Area
@@ -162,17 +178,19 @@ export function EvolucionChart({
         <span style={{ '--series-color': chartColors.egresos } as CSSProperties}>Egresos</span>
       </div>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={points} margin={{ top: 12, right: 18, bottom: 10, left: 0 }}>
+        <LineChart data={chartData} margin={{ top: 12, right: 18, bottom: 10, left: 0 }}>
           <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis
-            dataKey="fecha"
+            dataKey={xDataKey}
+            {...xAxisScale}
             ticks={xTicks}
             tickFormatter={tickFormatter}
-            padding={{ left: 8, right: 8 }}
+            padding={{ left: 8, right: 24 }}
             axisLine={false}
             tickLine={false}
             tickMargin={10}
-            minTickGap={28}
+            minTickGap={xMinTickGap}
+              interval="preserveStartEnd"
             tick={EVOLUTION_AXIS_TICK_STYLE}
           />
           <YAxis
@@ -185,7 +203,7 @@ export function EvolucionChart({
             tick={EVOLUTION_AXIS_TICK_STYLE}
           />
           <Tooltip
-            content={(props) => <DashboardTooltip {...props} divisa={divisa} />}
+            content={(props) => <DashboardTooltip {...props} divisa={divisa} formatLabel={tooltipLabel} />}
             cursor={{ stroke: 'var(--chart-grid)' }}
           />
           <Line
@@ -332,16 +350,63 @@ function getAxisCharWidth(char: string): number {
   return 6.8;
 }
 
-/** Un tick por mes (primer punto de cada mes), para que no se repitan etiquetas. */
-function getMonthTicks(points: DashboardPuntoEvolucion[]): string[] {
-  const seen = new Set<string>();
-  const ticks: string[] = [];
-  for (const point of points) {
-    const key = point.fecha.slice(0, 7);
-    if (!seen.has(key)) {
-      seen.add(key);
-      ticks.push(point.fecha);
-    }
+/** Tick corto de fecha: "20 oct" (el tooltip da la fecha completa). */
+function formatShortDateTick(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return formatDate(value);
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const month = date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+  return `${Number(match[3])} ${month}`;
+}
+
+function isoToTimestamp(fecha: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(fecha);
+  return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(fecha).getTime();
+}
+
+function timestampToIso(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+/** Un tick por inicio de mes dentro del rango de datos (equiespaciados en el eje temporal). */
+function getMonthTicks(points: DashboardPuntoEvolucion[]): number[] {
+  const stamps = points.map((point) => isoToTimestamp(point.fecha)).filter(Number.isFinite);
+  if (stamps.length === 0) return [];
+  const min = Math.min(...stamps);
+  const max = Math.max(...stamps);
+  const start = new Date(min);
+  const year = start.getUTCFullYear();
+  let month = start.getUTCMonth();
+  if (start.getUTCDate() > 1) month += 1;
+  const ticks: number[] = [];
+  for (let ts = Date.UTC(year, month, 1); ts <= max; ts = Date.UTC(year, ++month, 1)) {
+    ticks.push(ts);
+  }
+  return ticks.length > 0 ? ticks : [min];
+}
+
+const DAY_MS = 86_400_000;
+const SHORT_RANGE_MAX_DAYS = 95;
+
+function getStampRange(points: DashboardPuntoEvolucion[]): { min: number; max: number } | null {
+  const stamps = points.map((point) => isoToTimestamp(point.fecha)).filter(Number.isFinite);
+  if (stamps.length === 0) return null;
+  return { min: Math.min(...stamps), max: Math.max(...stamps) };
+}
+
+function isShortRange(points: DashboardPuntoEvolucion[]): boolean {
+  const range = getStampRange(points);
+  return range !== null && (range.max - range.min) / DAY_MS <= SHORT_RANGE_MAX_DAYS;
+}
+
+/** Ticks cada 7 dias (<= 35 dias de rango) o cada 15, anclados en el ultimo dia para que no se corte. */
+function getShortRangeTicks(points: DashboardPuntoEvolucion[]): number[] {
+  const range = getStampRange(points);
+  if (!range) return [];
+  const stepDays = (range.max - range.min) / DAY_MS <= 35 ? 7 : 15;
+  const ticks: number[] = [];
+  for (let ts = range.max; ts >= range.min; ts -= stepDays * DAY_MS) {
+    ticks.unshift(ts);
   }
   return ticks;
 }

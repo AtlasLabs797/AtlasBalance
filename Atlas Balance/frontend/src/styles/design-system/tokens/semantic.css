@@ -8,7 +8,7 @@
 --accent-soft-border:color-mix(in srgb,var(--accent-500) 22%,var(--surface-card));
 --accent-ring:color-mix(in srgb,var(--accent-500) 28%,transparent);
 /* Text */
---text-primary:var(--gray-900);--text-secondary-light:#58585C;--text-tertiary-light:#68686D;--text-secondary:var(--text-secondary-light);--text-tertiary:var(--text-tertiary-light);--text-disabled:var(--gray-400);--text-inverse:var(--white);--text-link:var(--accent-text);
+--text-primary:var(--gray-900);--text-secondary-light:#58585C;--text-tertiary-light:#68686D;--text-secondary:var(--text-secondary-light);--text-tertiary:var(--text-tertiary-light);--text-disabled:var(--gray-500);--text-inverse:var(--white);--text-link:var(--accent-text);
 /* Surfaces */
 --surface-page:var(--parchment);--surface-card:var(--white);--surface-raised:var(--white);--surface-sunken:var(--gray-100);--surface-muted:var(--pearl);--surface-hover:var(--alpha-ink-04);
 /* Borders */

@@ -52,7 +52,7 @@ const estadoCopiaLabels: Record<string, string> = {
   FAILED: 'Fallida',
 };
 const tipoCopiaLabels: Record<string, string> = {
-  AUTO: 'Automatica',
+  AUTO: 'Automática',
   MANUAL: 'Manual',
 };
 const cloudEstadoLabels: Record<string, string> = {
@@ -797,7 +797,7 @@ export default function BackupsPage() {
                 Anterior
               </button>
               <span>
-                Pagina {page} / {totalPages} - {totalRowsText}
+                Página {page} / {totalPages} - {totalRowsText}
               </span>
               <button type="button" onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))} disabled={page >= totalPages}>
                 Siguiente

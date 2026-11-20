@@ -15,6 +15,12 @@ type TabKey = 'titulares' | 'cuentas' | 'extractos' | 'usuarios';
 // el backend filtre solo lo eliminado.
 const PAGE_SIZE = 50;
 
+const TIPO_TITULAR_LABELS: Record<string, string> = {
+  EMPRESA: 'Empresa',
+  AUTONOMO: 'Autónomo',
+  PARTICULAR: 'Particular',
+};
+
 interface PapeleraResultado {
   rows: TrashRow[];
   total: number;
@@ -33,7 +39,7 @@ async function fetchPapelera(tab: TabKey, page: number): Promise<PapeleraResulta
       rows: (data.data ?? []).map((row) => ({
         id: row.id,
         titulo: row.nombre,
-        subtitulo: row.tipo,
+        subtitulo: TIPO_TITULAR_LABELS[row.tipo] ?? row.tipo,
         deleted_at: row.deleted_at ?? '',
       })),
       total: data.total ?? 0,
@@ -282,7 +288,7 @@ export default function PapeleraPage() {
                         row.subtitulo
                       )}
                     </td>
-                    <td data-label="Eliminado en">{formatDateTime(row.deleted_at)}</td>
+                    <td data-label="Eliminado en">{row.deleted_at ? formatDateTime(row.deleted_at) : '—'}</td>
                     <td className="users-row-actions" data-label="Acciones">
                       <button
                         type="button"

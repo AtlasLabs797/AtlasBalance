@@ -58,7 +58,7 @@ function normalizarTlsMode(valor: string | null | undefined): SmtpTlsMode {
 const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
   { key: 'general', label: 'General + SMTP', Icon: Mail },
   { key: 'revision-ia', label: 'Revisión + IA', Icon: Bot },
-  { key: 'divisas', label: 'Divisas y Tipos', Icon: Coins },
+  { key: 'divisas', label: 'Divisas y tipos', Icon: Coins },
   { key: 'sistema', label: 'Sistema', Icon: ServerCog },
   { key: 'integraciones', label: 'Integraciones', Icon: KeyRound },
   { key: 'paises', label: 'Países', Icon: Globe },
@@ -1097,12 +1097,15 @@ export default function ConfiguracionPage() {
   return (
     <section className="config-page page">
       <header className="config-header page-header">
-        <h1 className="page-header__title">Configuración</h1>
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Configuración</h1>
+          <p className="page-header__subtitle">Ajustes generales, IA, divisas, sistema, integraciones y países.</p>
+        </div>
       </header>
 
       <div className="config-tabs config-tabs--settings" role="tablist" aria-label="Secciones de configuración">
         {tabs.map(({ key, label, Icon }) => {
-          const isActive = key === 'paises' ? onPaisesSubroute : tab === key;
+          const isActive = key === 'paises' ? onPaisesSubroute : !onPaisesSubroute && tab === key;
           return (
             <button
               key={key}
@@ -1809,7 +1812,7 @@ export default function ConfiguracionPage() {
           </label>
           <p className="import-muted">Usa el repositorio oficial por HTTPS. Atlas Balance consulta el último GitHub Release, descarga el ZIP win-x64 y lo prepara en la carpeta segura de actualizaciones.</p>
           <div className="config-status-grid">
-            <article><h3>Versión actual</h3><p>{currentVersion ?? 'Sin dato'}</p></article>
+            <article><h3>Versión actual</h3><p title={currentVersion ?? undefined}>{currentVersion ?? 'Sin dato'}</p></article>
             <article><h3>Versión disponible</h3><p>{availableVersion ?? 'Ninguna'}</p></article>
             <article><h3>Estado</h3><p className={updateAvailable ? 'config-badge config-badge--stale' : 'config-badge config-badge--ok'}>{updateAvailable ? 'Actualización disponible' : 'Actualizado'}</p></article>
             <article><h3>Instalable</h3><p className={updateInstallable ? 'config-badge config-badge--ok' : 'config-badge config-badge--stale'}>{updateInstallable ? 'Listo' : 'Bloqueado'}</p></article>

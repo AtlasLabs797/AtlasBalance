@@ -39,10 +39,7 @@
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: start;
-  padding: var(--space-2);
-  border: 1px solid color-mix(in srgb, var(--accent-solid) 20%, var(--border-default));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent-solid) 6%, var(--surface-card));
+  justify-self: end;
 }
 
 .cuenta-card-notes {

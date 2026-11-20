@@ -1,5 +1,51 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-20 - V-03.02 - Pulido visual del frontend, Lotes 3 y 4 (revision en la app real)
+
+- Trabajo: revision de todas las pantallas en la app real, con la sesion del usuario en el panel del navegador, datos reales y pantalla completa con scroll, a 1587 px y 375 px. Se combino un script de medicion (desbordes, textos cortados, alturas de control, solapes y tildes) con capturas de cada tramo de pagina. Los defectos se repartieron entre escritores Sonnet/Haiku con ficheros disjuntos y luego se verificaron de nuevo en la app real. Sin commit.
+- **Lote 3:**
+  - Graficos: el eje Y de "Saldos por titular" ya no se corta (ancho calculado con la etiqueta mas larga; unidad una sola vez, "Importes en EUR"). El eje X no se rota con 6 barras o menos. El grafico de evolucion usa fechas cortas ("20 oct") sin cortar la ultima.
+  - Dashboard: sin raya encima de la primera divisa; los segmentados de periodo y divisa ocupan el ancho en movil; "1 cuenta" / "1 titular" en singular; los ingresos y egresos a cero en color neutro.
+  - "Base" junto a su divisa tambien en la tarjeta "Saldos por divisa" de Titulares y Cuentas.
+  - Extractos: Titular y Cuenta con radio de campo (11); selector de tamano de pagina mas ancho ("200" ya no se corta).
+  - Cuentas: botones de las tarjetas a 32 px, con "Eliminar" en quiet-danger.
+  - Alertas: los tres botones de crear a 44 px y ancho automatico; las tablas muestran "Tipo: Empresa" en vez del enum.
+  - Backups: "Desvincular" deshabilitado se ve deshabilitado; "Página" y "Automática" con tilde.
+  - Aviso de sesion: el toast se coloca encima del boton flotante de IA.
+  - Configuracion: subtitulo bajo el titulo, "Divisas y tipos", y en la subruta de Paises solo se marca la pestana Paises.
+  - Papelera: tipos legibles ("Empresa", "Autónomo") y "—" si falta la fecha.
+- **Lote 4:**
+  - Grafico de evolucion con periodo 1m/3m: fechas cada 7 o 15 dias, en vez de un unico tick de mes.
+  - Dispositivos MFA: resumen del navegador ("Chrome 157 · Windows") con el User-Agent completo en el tooltip (`utils/userAgent.ts`, con test).
+  - Usuarios: acciones de fila en una linea sin scroll horizontal.
+  - Conciliacion a 1024: botones sin partir y barra de sugerencias ordenada.
+  - Detalle de cuenta: periodo y las tres acciones en una fila a partir de 1200 px.
+  - Sin cajas dentro de cajas: saldo de las tarjetas de Cuentas, divisas registradas de Configuracion, "Última ejecución" y KPIs de Backups.
+  - Configuracion › Sistema: el hash de la version se corta con puntos suspensivos y se ve entero en el tooltip.
+  - Boton flotante de IA: no aparece en la pagina de IA.
+  - Topbar: muestra el grupo de navegacion ("Operación", "Control", "Sistema") en vez de repetir el titulo de la pagina.
+  - Contraste del texto deshabilitado (token `--text-disabled`): claro de #A1A1A6 a #86868B y oscuro de #6E6E73 a #7E7E84. Todas las combinaciones medidas quedan en 3:1 o mas; el peor caso es 3,10:1 sobre `--surface-sunken` en claro.
+  - **Bug corregido (previo a estos lotes):** editar un pais borraba su codigo ISO2. `PaisesPage.tsx` enviaba `codigoIso2`, pero la API usa snake_case y espera `codigo_iso2`, asi que lo recibia vacio.
+- Datos: los paises de la base de desarrollo pasan a "España", "México" y "República Dominicana" desde Configuración › Países, con su ISO2 intacto. España perdio su "ES" en el primer intento por el bug anterior y se restauro.
+- Archivos (bajo `Atlas Balance/frontend/`):
+  - TSX: `src/components/dashboard/{TitularSaldoBarChart,EvolucionChart}.tsx`, `src/components/layout/TopBar.tsx`, `src/pages/{Alertas,Backups,Configuracion,Dashboard,DashboardTitular,DispositivosMfa,Papelera}Page.tsx` y `src/pages/configuracion/PaisesPage.tsx`.
+  - Utilidad nueva: `src/utils/userAgent.ts`, con `tests/userAgent.test.ts` y su entrada en `package.json` (`test:unit`).
+  - CSS: `src/styles/layout/{dashboard,entities,admin,shell}.css`, `src/styles/components/pagination.css`, `src/styles/layout/routes/{extractos,alertas,cuentas,configuracion,backups,usuarios,conciliacion,cuenta-detail}.css` y `src/styles/design-system/tokens/{semantic,themes}.css`.
+  - Backend: `tests/AtlasBalance.API.Tests/PapeleraSoloEliminadosTests.cs`, con un test nuevo que fija que la fecha de borrado se serializa como `deleted_at`.
+- Comandos (desde `frontend/`):
+  - `npm run lint` y `npx tsc --noEmit`: exit 0.
+  - Tests unitarios con outDir alternativo: **345/345**.
+  - `npx vite build --outDir <scratchpad>`: correcto.
+  - Playwright `capture.spec.ts`: **6/6**. `states` + `extractos-comportamiento`: **25 pasan y 1 se omite**, igual que la linea base.
+  - Backend: `PapeleraSoloEliminadosTests`, **6/6**, ejecutado con el binario de tests porque `dotnet test --filter` no acota en xUnit v3 MTP.
+- Verificacion en la app real: cada correccion se comprobo despues en la sesion del usuario, con capturas y medidas por script.
+- Hallazgo: el backend que corre en el puerto 5002 es una build del 16-nov, anterior a `soloEliminados` (commit e0e8d88). Por eso la Papelera lista titulares y cuentas **activos**, sin fecha de borrado; en la base no hay ninguna fila eliminada. El codigo actual ya lo hace bien. **Hay que reiniciar el backend**; no lo ha hecho el agente porque es el servidor del usuario.
+- Pendiente:
+  - Reiniciar el backend y comprobar Papelera.
+  - El aviso de sesion y el selector "200" estan corregidos, pero no se han podido ver en pantalla.
+  - Las tarjetas de estado de Configuración › Sistema siguen siendo cajas.
+  - Detalle de cuenta entre 1024 y 1200 px sin revisar a mano.
+
 # 2026-11-20 - V-03.02 - Pulido visual del frontend con referencia Astryx (Lotes 1 y 2)
 
 - Trabajo: revision del frontend (estilos, componentes, plantillas e interacciones de todas las pantallas) con el design system Astryx (`C:\Users\usuario\Documents\Herramentas\Astryx`) como referencia. Decisiones del usuario: portar patrones a nuestras variables CSS **sin dependencias nuevas**, mantener la marca Atlas actual, alcance completo por lotes y capturas sacadas por el orquestador con el arnes de Playwright. `Documentacion/Diseno/DESIGN.md` manda en cualquier conflicto con Astryx. Metodo: dos auditorias de solo lectura (grupo A: shell, login, dashboards, titulares, cuentas, extractos, conciliacion y revision; grupo B: importacion, formatos, configuracion, paises, backups, usuarios, auditoria, papelera, alertas, MFA y modales), escritores Sonnet/Haiku con ficheros disjuntos, revision visual independiente antes/despues y una ronda de correccion de regresiones. Sin commit.

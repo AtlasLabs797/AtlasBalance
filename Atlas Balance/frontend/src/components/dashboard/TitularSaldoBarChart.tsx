@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { formatCompactCurrency, formatCurrency } from '@/utils/formatters';
+import { formatCurrency } from '@/utils/formatters';
 import { DashboardTooltip } from './DashboardTooltip';
 
 export interface TitularSaldoBarChartRow {
@@ -22,13 +22,44 @@ interface TitularSaldoBarChartProps {
   divisa: string;
 }
 
+const AXIS_TICK_MARGIN = 10;
+const AXIS_PADDING = 12;
+const MIN_Y_AXIS_WIDTH = 56;
+const MAX_X_LABELS_WITHOUT_ROTATION = 6;
+const compactNumberFormatter = new Intl.NumberFormat('es-ES', {
+  notation: 'compact',
+  compactDisplay: 'short',
+  maximumFractionDigits: 1,
+});
+
+/** Etiqueta de tick sin divisa (la unidad se indica una sola vez en el titulo). */
+function formatAxisTick(value: number): string {
+  return compactNumberFormatter.format(value).replace('-', '−');
+}
+
+/** Ancho del eje Y calculado con la etiqueta mas larga (aprox. 7,5 px por caracter a 12px). */
+function getYAxisWidth(rows: TitularSaldoBarChartRow[]): number {
+  const values = [0, ...rows.map((row) => row.total_convertido)];
+  const longest = values.reduce((max, value) => Math.max(max, formatAxisTick(value).length), 0);
+  return Math.max(MIN_Y_AXIS_WIDTH, Math.ceil(longest * 7.5 + AXIS_TICK_MARGIN + AXIS_PADDING));
+}
+
+function truncateLabel(label: string, max: number): string {
+  return label.length > max ? `${label.slice(0, max - 1)}…` : label;
+}
+
 export default function TitularSaldoBarChart({ rows, divisa }: TitularSaldoBarChartProps) {
   const chartLabel = rows.length > 0
     ? `Saldos por titular en ${divisa}. ${rows.map((row) => `${row.titular_nombre}: ${formatCurrency(row.total_convertido, divisa)}`).join('; ')}.`
     : `Sin saldos por titular en ${divisa}.`;
 
+  const rotateLabels = rows.length > MAX_X_LABELS_WITHOUT_ROTATION;
+
   return (
     <>
+      <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12 }} aria-hidden="true">
+        Importes en {divisa}
+      </p>
       <div role="img" aria-label={chartLabel}>
         <ResponsiveContainer width="100%" height={340}>
           <BarChart data={rows} margin={{ top: 18, right: 36, left: 16, bottom: 18 }}>
@@ -36,17 +67,16 @@ export default function TitularSaldoBarChart({ rows, divisa }: TitularSaldoBarCh
             <XAxis
               dataKey="titular_nombre"
               interval={0}
-              angle={-18}
-              textAnchor="end"
-              height={72}
+              {...(rotateLabels ? { angle: -18, textAnchor: 'end' as const, height: 72 } : { height: 36 })}
+              tickFormatter={(value) => truncateLabel(String(value), rotateLabels ? 28 : 22)}
               padding={{ left: 16, right: 16 }}
             />
             <YAxis
-              width={72}
+              width={getYAxisWidth(rows)}
               axisLine={false}
               tickLine={false}
-              tickMargin={10}
-              tickFormatter={(value) => formatCompactCurrency(Number(value), divisa)}
+              tickMargin={AXIS_TICK_MARGIN}
+              tickFormatter={(value) => formatAxisTick(Number(value))}
             />
             <Tooltip
               content={(props) => (

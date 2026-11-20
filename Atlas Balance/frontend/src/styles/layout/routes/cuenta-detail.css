@@ -154,6 +154,30 @@
   white-space: nowrap;
 }
 
+/* Lote 4 F4: periodo + 3 acciones en una sola fila a la derecha, a la altura
+   del titulo; la franja de identidad pasa a ancho completo debajo. */
+@media (min-width: 1200px) {
+  .cuenta-detail-page .dashboard-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cuenta-detail-page .dashboard-toolbar-actions {
+    grid-row: 1;
+    flex-wrap: nowrap;
+    width: auto;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .cuenta-detail-page .dashboard-toolbar-actions .cuenta-action {
+    padding: 0 var(--space-5);
+  }
+
+  .cuenta-detail-page .account-identity-strip {
+    grid-column: 1 / -1;
+  }
+}
+
 .account-identity-iban dd {
   font-family: var(--font-mono);
   font-size: var(--text-13);

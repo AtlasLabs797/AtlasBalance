@@ -162,7 +162,7 @@ export default function PaisesPage() {
     setFormError(null);
     const payload = {
       nombre,
-      codigoIso2: codigoIso2 || null,
+      codigo_iso2: codigoIso2 || null,
       activo: form.activo,
     };
 

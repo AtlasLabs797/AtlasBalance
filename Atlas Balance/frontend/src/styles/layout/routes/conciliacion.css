@@ -61,6 +61,24 @@
   align-items: flex-end;
 }
 
+/* Lote 4 F3: botones en una linea; los controles se alinean a la izquierda de
+   su bloque, "Generar sugerencias" se queda al final y la separacion entre
+   filas es la misma que entre controles. */
+.conciliacion-page button {
+  white-space: nowrap;
+}
+
+.conciliacion-section-header .conciliacion-actions {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--space-3);
+}
+
+.conciliacion-section-header .conciliacion-actions > .button-primary {
+  margin-left: auto;
+}
+
 /* P3-3: mono solo para cifras. */
 .conciliacion-page .conciliacion-concepto,
 .conciliacion-page .import-validation-table td strong {

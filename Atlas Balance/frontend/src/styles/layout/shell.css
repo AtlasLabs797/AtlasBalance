@@ -861,6 +861,12 @@
   max-width: min(420px, calc(100dvw - 2rem));
 }
 
+/* Con el boton flotante de IA (3.5rem, right/bottom space-4) los avisos se
+   apilan encima de el para no taparlo. En movil el FAB se oculta. */
+body:has(.ai-floating-widget) .toast-viewport {
+  bottom: calc(var(--space-4) + 3.5rem + var(--space-3));
+}
+
 .toast-item {
   display: flex;
   align-items: center;

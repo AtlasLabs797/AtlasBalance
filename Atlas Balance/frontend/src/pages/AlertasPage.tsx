@@ -546,7 +546,7 @@ export default function AlertasPage() {
                   </label>
                 ))}
               </div>
-              <div className="users-row-actions">
+              <div className="alertas-form-actions">
                 <button type="submit" className="button-primary" disabled={saving || configLoading}>
                   {editingTipoAlertId ? 'Guardar cambios' : 'Crear alerta'}
                 </button>
@@ -619,7 +619,7 @@ export default function AlertasPage() {
                   </label>
                 ))}
               </div>
-              <div className="users-row-actions">
+              <div className="alertas-form-actions">
                 <button type="submit" className="button-primary" disabled={saving || configLoading || availableCuentas.length === 0}>
                   {editingCuentaAlertId ? 'Guardar cambios' : 'Crear alerta'}
                 </button>
@@ -665,7 +665,7 @@ export default function AlertasPage() {
                   <tbody>
                     {tipoAlerts.map((item) => (
                       <tr key={item.id}>
-                        <td data-label="Alcance">Tipo: {item.tipo_titular}</td>
+                        <td data-label="Alcance">Tipo: {tipoTitularOptions.find((option) => option.value === item.tipo_titular)?.label ?? item.tipo_titular}</td>
                         <td data-label="Mínimo"><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
                         <td data-label="Activa">{item.activa ? 'Sí' : 'No'}</td>
                         <td data-label="Destinatarios">{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>

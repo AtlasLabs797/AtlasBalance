@@ -232,7 +232,7 @@ export default function DashboardTitularPage() {
                 headingLevel="h2"
                 title="Ingresos período"
                 value={
-                  <SignedAmount value={periodTotals.ingresos}>
+                  <SignedAmount value={periodTotals.ingresos} tone={Math.round(periodTotals.ingresos * 100) === 0 ? 'neutral' : undefined}>
                     {formatCurrency(periodTotals.ingresos, titular.divisa_principal)}
                   </SignedAmount>
                 }
@@ -246,7 +246,7 @@ export default function DashboardTitularPage() {
                 headingLevel="h2"
                 title="Egresos período"
                 value={
-                  <SignedAmount value={periodTotals.egresos} tone="negative">
+                  <SignedAmount value={periodTotals.egresos} tone={Math.round(periodTotals.egresos * 100) === 0 ? 'neutral' : 'negative'}>
                     {formatCurrency(periodTotals.egresos, titular.divisa_principal)}
                   </SignedAmount>
                 }

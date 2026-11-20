@@ -137,6 +137,17 @@
   margin-top: var(--space-1);
 }
 
+/* H2: valores largos (hash de version en mono) con ellipsis en vez de cortarse. */
+.config-status-grid article {
+  min-width: 0;
+}
+
+.config-status-grid article p:not(.config-badge) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .config-badge {
   display: inline-flex;
   align-items: center;
@@ -293,8 +304,7 @@
 }
 
 .config-section-panel,
-.config-status-grid article,
-.config-divisa-card {
+.config-status-grid article {
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
@@ -302,14 +312,9 @@
     transform var(--duration-instant) var(--ease-premium);
 }
 
-.config-divisa-card {
-  will-change: transform;
-}
-
 @media (hover: hover) and (pointer: fine) {
   .config-section-panel:hover,
-  .config-status-grid article:hover,
-  .config-divisa-card:hover {
+  .config-status-grid article:hover {
     border-color: var(--border-strong);
   }
 }

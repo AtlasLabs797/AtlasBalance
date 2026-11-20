@@ -7402,3 +7402,14 @@ Contrato visual que queda en el codigo (DESIGN.md manda):
 - **Arnes visual:**
   - `e2e/visual/capture.spec.ts` cubre 23 rutas y capturas de estados abiertos: pestanas de Configuracion y Revision, selector de titular y calendario de Extractos.
   - Si `test-results/` o `playwright-report/` dan EPERM, ejecutalo con `--reporter=list --output=<carpeta temporal>`.
+
+## V-03.02 - Pulido visual Lotes 3 y 4 (2026-11-20)
+
+- **Topbar:** `TopBar.tsx` muestra el grupo de navegacion de la ruta (`app-topbar-breadcrumb`: "Operación", "Control" o "Sistema"; "Atlas Balance" fuera de la navegacion). El nombre de la pagina lo da su `h1`. `.app-topbar-page` queda sin uso.
+- **Texto deshabilitado:** `--text-disabled` pasa a #86868B en claro y #7E7E84 en oscuro (`design-system/tokens/{semantic,themes}.css`). Da 3:1 o mas sobre card, page, muted y sunken.
+- **Graficos:**
+  - `TitularSaldoBarChart`: ancho del YAxis calculado con la etiqueta mas larga y unidad una sola vez; sin rotacion con 6 barras o menos.
+  - `EvolucionChart` en modo mes: con un rango de 95 dias o menos, ticks de fecha corta cada 7 dias (rango de 35 dias o menos) o cada 15 dias; con rangos mas largos, un tick por inicio de mes.
+- **`utils/userAgent.ts`:** `resumenUserAgent(ua)` da "Navegador version · SO" (Edge, Opera, Claude, Electron, Firefox, Chrome, Safari; Windows, macOS, Linux, Android, iOS, ChromeOS).
+- **Contrato de nombres con la API:** los cuerpos de peticion deben ir en snake_case (`codigo_iso2`), igual que las respuestas. Un nombre en camelCase se pierde en silencio.
+- **Toasts:** con el boton flotante de IA montado, `.toast-viewport` sube por encima de el (`body:has(.ai-floating-widget)`).

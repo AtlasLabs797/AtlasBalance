@@ -1,4 +1,19 @@
-﻿## 2026-11-20 - V-03.02 - Pulido visual del frontend: incidencias encontradas (CORREGIDO EN CODIGO salvo donde se indica)
+﻿## 2026-11-20 - V-03.02 - Pulido visual Lotes 3 y 4: incidencias
+
+### Editar un pais borraba su codigo ISO2 (CORREGIDO EN CODIGO)
+- **Causa:** `PaisesPage.tsx` enviaba `{ codigoIso2 }`, pero la API serializa en snake_case (`Program.cs`, `SnakeCaseLower`) y espera `codigo_iso2`. El campo llegaba nulo y se guardaba vacio. El fallo es anterior a estos lotes.
+- **Solucion:** se envia `codigo_iso2`. Comprobado en la app real: al guardar, el ISO2 se mantiene.
+- **Efecto en datos:** al renombrar "Espana", el primer guardado borro su "ES". Se restauro desde la app.
+
+### La Papelera lista elementos activos (PENDIENTE DE REINICIO)
+- **Causa:** el backend del puerto 5002 arranco el 16-nov, antes del soporte de `soloEliminados` (commit e0e8d88, 17-nov). Ignora el filtro y devuelve filas activas, sin fecha de borrado.
+- **Solucion:** reiniciar el backend. El codigo ya es correcto; queda cubierto por `PapeleraSoloEliminadosTests` (6/6).
+
+### `dotnet test --filter` no acota en este proyecto
+- **Causa:** xUnit v3 en modo MTP ignora `--filter` y arranca toda la suite.
+- **Rodeo:** ejecutar el binario de tests generado con `-class <Clase>`.
+
+## 2026-11-20 - V-03.02 - Pulido visual del frontend: incidencias encontradas (CORREGIDO EN CODIGO salvo donde se indica)
 
 ### Esc dentro de un desplegable cerraba el modal entero
 - **Causa:** `useDialogFocus` escuchaba `keydown` en `window` y llamaba a `onEscape` sin mirar `event.defaultPrevented`. Combobox hacia `preventDefault()` pero el modal cerraba igual. Con dos modales abiertos, los dos procesaban Esc y Tab.

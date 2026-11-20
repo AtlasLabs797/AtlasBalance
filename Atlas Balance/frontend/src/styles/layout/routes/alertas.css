@@ -187,3 +187,15 @@
   overflow: auto;
   scrollbar-gutter: stable;
 }
+
+/* Enviar formulario: 44px, ancho automatico, alineado a la izquierda en las tres secciones. */
+.alertas-form > button[type="submit"] {
+  justify-self: start;
+}
+
+.alertas-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

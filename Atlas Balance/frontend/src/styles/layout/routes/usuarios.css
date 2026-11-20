@@ -138,3 +138,16 @@
     min-height: var(--control-height);
   }
 }
+
+/* Lote 4 F2: las acciones de fila van siempre en una sola linea; la columna
+   Authenticator si puede partirse para liberar ancho y evitar el scroll.
+   Gana a la regla de admin.css (white-space: normal) por orden de carga. */
+.users-page .users-table-scroll td.users-row-actions {
+  white-space: nowrap;
+}
+
+@media (max-width: 767.98px) {
+  .users-page .users-table-scroll td.users-row-actions {
+    white-space: normal;
+  }
+}

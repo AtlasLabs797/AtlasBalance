@@ -382,7 +382,7 @@ export default function DashboardPage() {
                     headingLevel="h2"
                     title="Ingresos período"
                     value={
-                      <SignedAmount value={periodTotals.ingresos}>
+                      <SignedAmount value={periodTotals.ingresos} tone={Math.round(periodTotals.ingresos * 100) === 0 ? 'neutral' : undefined}>
                         {formatCurrency(periodTotals.ingresos, principal.divisa_principal)}
                       </SignedAmount>
                     }
@@ -396,7 +396,7 @@ export default function DashboardPage() {
                     headingLevel="h2"
                     title="Egresos período"
                     value={
-                      <SignedAmount value={periodTotals.egresos} tone="negative">
+                      <SignedAmount value={periodTotals.egresos} tone={Math.round(periodTotals.egresos * 100) === 0 ? 'neutral' : 'negative'}>
                         {formatCurrency(periodTotals.egresos, principal.divisa_principal)}
                       </SignedAmount>
                     }
@@ -413,7 +413,7 @@ export default function DashboardPage() {
                 <section className="dashboard-section dashboard-titulares-card dashboard-titulares-card--wide">
                   <header className="dashboard-card-header">
                     <h2>Saldos por titular</h2>
-                    <span className="dashboard-card-meta">{principal.saldos_por_titular.length} titulares · cuota sobre el total</span>
+                    <span className="dashboard-card-meta">{principal.saldos_por_titular.length} titular{principal.saldos_por_titular.length === 1 ? '' : 'es'} · cuota sobre el total</span>
                   </header>
 
                   {principal.saldos_por_titular.length === 0 ? (
@@ -457,7 +457,7 @@ export default function DashboardPage() {
                 <section className="dashboard-section dashboard-plazo-card">
                   <header className="dashboard-card-header">
                     <h2>Plazos fijos</h2>
-                    <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
+                    <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuenta{principal.plazos_fijos.total_cuentas === 1 ? '' : 's'}</span>
                   </header>
                   <div className="dashboard-plazo-metrics">
                     <div>

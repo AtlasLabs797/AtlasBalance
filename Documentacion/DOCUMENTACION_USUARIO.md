@@ -1033,3 +1033,9 @@ Pulsa Ctrl+K (⌘K en Mac) o usa el buscador superior y escribe el nombre de un 
 - **Avisos de saldo bajo:** con dos importaciones simultaneas ya no llegan dos correos de saldo bajo. El aviso se comprueba y se registra dentro de una transaccion, asi que las dos importaciones esperan su turno.
 - **Importes con coma:** "0,500" se lee como 0,5 y no como 500, tanto al importar como en la interfaz. Lo mismo con el punto: "0.500" es 0,5.
 - **Avisos de plazo fijo:** el aviso de "proximo a vencer" ya no falla por un error del servidor. Si el envio del correo falla, se vuelve a intentar en la siguiente pasada sin duplicar la notificacion.
+
+## Cambios visuales de noviembre de 2026
+
+- La barra superior muestra la seccion en la que estas ("Operación", "Control" o "Sistema"). El nombre de la pantalla aparece en el titulo grande.
+- En "Dispositivos MFA de confianza" cada dispositivo aparece como "Navegador · Sistema", por ejemplo "Chrome 157 · Windows". Pasa el raton por encima para ver el detalle tecnico completo.
+- Al editar un pais en Configuración › Países ya se conserva su codigo ISO2.

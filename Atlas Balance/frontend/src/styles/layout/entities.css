@@ -286,9 +286,23 @@
   gap: var(--space-2);
 }
 
+/* Botones de fila: mismo patron sm (32px) que .users-row-actions; Eliminar quiet-danger. */
 .cuenta-card .entity-row-actions button {
-  min-height: 2.5rem;
-  padding: 0.25rem 0.7rem;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  font: var(--type-label);
+}
+
+.cuenta-card .entity-row-actions .button-danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--status-danger-text);
+}
+
+.cuenta-card .entity-row-actions .button-danger:hover:not(:disabled) {
+  background: var(--status-danger-bg);
+  border-color: transparent;
+  color: var(--status-danger-text);
 }
 
 .cuentas-page .entity-row-actions {

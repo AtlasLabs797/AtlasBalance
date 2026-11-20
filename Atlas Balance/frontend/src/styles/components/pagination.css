@@ -5,11 +5,11 @@
 
 /* --- Origen: layout/users.css --- */
 .pagination-select {
-  width: 5.5rem;
+  width: 6.5rem;
 }
 
 .users-pagination .pagination-select {
-  flex: 0 0 5.5rem;
+  flex: 0 0 6.5rem;
 }
 
 .users-pagination {

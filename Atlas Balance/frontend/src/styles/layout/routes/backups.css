@@ -57,7 +57,6 @@
   gap: var(--space-2);
 }
 
-.backup-config-facts div,
 .backup-drive-state,
 .backup-link-box,
 .backup-drive-file {
@@ -65,6 +64,13 @@
   border-radius: var(--radius-md);
   background: var(--surface-muted);
   padding: var(--space-3);
+}
+
+/* Datos sin caja: dl con regla superior fina. */
+.backup-config-facts div {
+  min-width: 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--border-default);
 }
 
 .backup-config-facts dt,
@@ -164,15 +170,12 @@
   display: grid;
   gap: var(--space-1);
   min-width: 0;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  padding: var(--space-3);
-  background: var(--surface-card);
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--border-default);
 }
 
 .backup-summary-card--primary {
-  border-color: color-mix(in srgb, var(--status-success-text) 24%, var(--border-default));
-  background: color-mix(in srgb, var(--status-success-bg) 72%, var(--surface-card) 28%);
+  border-top-color: var(--status-success-text);
 }
 
 .backup-summary-card span {

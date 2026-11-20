@@ -186,10 +186,12 @@
 }
 
 .config-divisa-card {
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-muted);
-  padding: var(--space-3);
+  /* Sin caja dentro de la tarjeta: columna con regla superior fina. */
+  border: 0;
+  border-top: 1px solid var(--border-default);
+  border-radius: 0;
+  background: transparent;
+  padding: var(--space-4) 0 0;
   display: grid;
   gap: var(--space-2);
 }
@@ -457,8 +459,7 @@
 .alertas-card,
 .config-card,
 .config-section-panel,
-.config-status-grid article,
-.config-divisa-card {
+.config-status-grid article {
   border-color: var(--border-default);
   background: var(--surface-raised);
 }
@@ -495,6 +496,13 @@ button.button-sm,
 .backup-drive-actions .button-danger:hover:not(:disabled) {
   background: var(--status-danger-bg);
   color: var(--status-danger-text);
+}
+
+/* Deshabilitado gana al quiet-danger (mismo aspecto que Vincular/Probar). */
+.backup-drive-actions .button-danger:disabled {
+  background: var(--surface-sunken);
+  border-color: var(--border-default);
+  color: var(--text-disabled);
 }
 
 /* Lote 2 (B): tabla de usuarios sin celdas partidas. */
