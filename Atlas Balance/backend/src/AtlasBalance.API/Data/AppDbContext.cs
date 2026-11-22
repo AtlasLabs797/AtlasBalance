@@ -10,22 +10,10 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    // V-03.01: EF Core 9+ lanza excepcion en Migrate() si el modelo difiere del
-    // snapshot. La deriva es previa (migraciones SQL manuscritas con IF NOT EXISTS
-    // que no actualizan el snapshot) y un scaffold la recrearia contra el esquema
-    // real. Se ignora solo este warning, igual que se comportaba EF 8.
-    // LOTE 5 (M-9): la deriva se ha reducido (xmin de PLAZOS_FIJOS y los indices
-    // parciales de EXTRACTOS y CONCILIACIONES ya estan en el snapshot), pero no
-    // es solo de snapshot: en REVISION_EXTRACTO_ESTADOS, IMPORTACION_LOTE_FILAS
-    // y EXTRACTOS_COLUMNAS_EXTRA la base real tiene deleted_at como timestamp
-    // without time zone y el modelo pide timestamp with time zone. Cerrarla
-    // exige una migracion de esquema (ALTER COLUMN sobre columnas usadas por
-    // policies RLS), no solo tocar el snapshot. Mientras tanto, el Ignore sigue
-    // siendo necesario: si se quita, Migrate() falla.
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-    }
+    // V-03.02 (M-9): modelo, snapshot y esquema real alineados por la migracion
+    // 20261122223119_CloseM9SnapshotDrift. Ya no se ignora
+    // PendingModelChangesWarning: si vuelve a haber deriva, Migrate() falla y
+    // SnapshotModelDriftTests lo detecta antes.
 
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<UsuarioEmail> UsuarioEmails => Set<UsuarioEmail>();
@@ -307,6 +295,8 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             // V-02-05 (MED-22): ISoftDelete.
             entity.HasIndex(e => new { e.ExtractoId, e.NombreColumna }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
+            // M-9: indice simple por FK; el compuesto es parcial y no sirve para el chequeo de la FK.
+            entity.HasIndex(e => e.ExtractoId);
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
             // V-02-03 (MEDIUM): cascade a restrict por la misma razon.
@@ -454,6 +444,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CosteEstimadoEur).HasPrecision(18, 8);
             entity.HasIndex(e => new { e.UsuarioId, e.MonthKey }).IsUnique();
             entity.HasIndex(e => e.FechaModificacion);
+            // M-9: el indice ya existe en BD; se declara para alinear modelo y snapshot.
+            entity.HasIndex(e => e.DeletedAt);
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 

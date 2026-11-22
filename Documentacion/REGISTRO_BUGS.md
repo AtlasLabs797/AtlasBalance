@@ -53,7 +53,7 @@
   `DetectAnomalies_Debe_Detectar_Saldo_En_Caida` pasa (1/1): el resultado ya no
   depende del dia en que se ejecute.
 
-### 2026-09-26 - V-03.01 - Abierto - Snapshot de EF desalineado con el modelo (falta `PLAZOS_FIJOS` con `xmin`)
+### 2026-09-26 - V-03.01 - Cerrado (2026-11-22, V-03.02) - Snapshot de EF desalineado con el modelo (falta `PLAZOS_FIJOS` con `xmin`)
 
 - **Contexto:** detectado al migrar a EF Core 10 (Npgsql EF 10 elimino
   `UseXminAsConcurrencyToken()`, ver `DOCUMENTACION_CAMBIOS.md` y
@@ -87,14 +87,33 @@
   Cerrarlo exige una migracion de esquema nueva y actualizar el snapshot al
   mismo tiempo: es trabajo de un lote propio, no de este.
 - **Comprobacion (2026-11-22):** `IMPORTACION_LOTES.notas` existe en la base de desarrollo (la crea `20260701115326_V0203_Hardening`); solo falta en el snapshot, dentro de esta misma deriva. No hay fallo en runtime.
-- **Por que sigue abierto:** mientras haya esa deriva, el `Ignore` de
+- **Por que seguia abierto:** mientras hubiera esa deriva, el `Ignore` de
   `RelationalEventId.PendingModelChangesWarning` en `AppDbContext.OnConfiguring`
-  es obligatorio; quitarlo haria fallar `Migrate()` contra toda base
-  existente. Se deja el `Ignore` con el comentario actualizado explicando que
-  la parte de `PLAZOS_FIJOS` ya esta resuelta y que lo que queda es deriva de
-  esquema.
-- **Verificacion:** `SnapshotModelDriftTests` (nuevo) fija la comparacion
+  era obligatorio; quitarlo habria hecho fallar `Migrate()` contra toda base
+  existente.
+- **Verificacion (LOTE 5):** `SnapshotModelDriftTests` (nuevo) fija la comparacion
   modelo/snapshot con la receta validada y pasa 1/1.
+- **Solucion (2026-11-22, V-03.02):** migracion
+  `20261122223119_CloseM9SnapshotDrift` con SQL idempotente y snapshot
+  regenerado con `dotnet ef migrations add`. (1) `deleted_at` de las tres tablas
+  pasa a `timestamptz`, retirando y recreando identicas las policies RLS
+  dependientes (leidas de `pg_depend`) y convirtiendo con la zona de la sesion
+  (`current_setting('TimeZone')`); (2) FK `deleted_by_id -> USUARIOS` (RESTRICT) e
+  indice en las tres tablas, anulando huerfanos con FORCE RLS desactivado solo
+  durante la limpieza; (3) indices: errata `ix_extratos_columnas_extra_*`
+  renombrada a `ix_extractos_*`, unicos parciales `WHERE deleted_at IS NULL`
+  garantizados y retirados `ix_extractos_columnas_extra_nombre_columna` e
+  `ix_importacion_lotes_usuario_creador_id`; (4) FK de CONCILIACIONES renombrada
+  a `fk_conciliaciones_usuarios_deleted_by_id`; (5) `IMPORTACION_LOTES.notas` con
+  `ADD COLUMN IF NOT EXISTS`. En el modelo: `HasIndex(ExtractoId)` en
+  `ExtractoColumnaExtra`, `HasIndex(DeletedAt)` en `IaUsoUsuario` y se elimina el
+  `Ignore(PendingModelChangesWarning)`. `dotnet ef migrations add` vuelve a ser
+  utilizable sin cambios ajenos.
+- **Verificacion (2026-11-22):** copia restaurada del dump de la BD de
+  desarrollo: migracion aplicada (junto con 3 pendientes), 101 policies RLS
+  identicas antes, despues y tras Down+Up; conversion probada con sesion
+  Europe/Madrid (12:00 local almacenado pasa a 10:00Z).
+  `SnapshotModelDriftTests` exige cero diferencias. Suite de tests: suite backend 1335/1335 (API.Tests, con los tests Postgres/Testcontainers que construyen la base desde cero) y 15/15 (Caching.Tests).
 
 ### 2026-11-17 - V-03.02 - Cerrado - `ConfirmarLoteAsync` responde siempre 409 contra PostgreSQL real (`pg_try_advisory_xact_lock` leido como entero)
 

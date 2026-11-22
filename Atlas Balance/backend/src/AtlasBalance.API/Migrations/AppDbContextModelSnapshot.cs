@@ -18,7 +18,7 @@ namespace AtlasBalance.API.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.11")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "estado_plazo_fijo", new[] { "activo", "proximo_vencer", "vencido", "renovado", "cancelado" });
@@ -327,88 +327,6 @@ namespace AtlasBalance.API.Migrations
                     b.ToTable("BACKUPS", (string)null);
                 });
 
-            modelBuilder.Entity("AtlasBalance.API.Models.BackupOperation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<Guid?>("BackupId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("backup_id");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("deleted_at");
-
-                    b.Property<Guid?>("DeletedById")
-                        .HasColumnType("uuid")
-                        .HasColumnName("deleted_by_id");
-
-                    b.Property<string>("Error")
-                        .HasColumnType("text")
-                        .HasColumnName("error");
-
-                    b.Property<string>("Estado")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("estado");
-
-                    b.Property<DateTime>("FechaCreacion")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fecha_creacion");
-
-                    b.Property<DateTime?>("FechaFin")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fecha_fin");
-
-                    b.Property<DateTime?>("FechaInicio")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("fecha_inicio");
-
-                    b.Property<string>("Parametro")
-                        .HasColumnType("text")
-                        .HasColumnName("parametro");
-
-                    b.Property<string>("ResultadoJson")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("resultado_json");
-
-                    b.Property<string>("Tipo")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("tipo");
-
-                    b.Property<Guid?>("UsuarioId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("usuario_id");
-
-                    b.HasKey("Id")
-                        .HasName("pk_backup_operations");
-
-                    b.HasIndex("BackupId")
-                        .HasDatabaseName("ix_backup_operations_backup_id");
-
-                    b.HasIndex("DeletedById")
-                        .HasDatabaseName("ix_backup_operations_deleted_by_id");
-
-                    b.HasIndex("Estado")
-                        .HasDatabaseName("ix_backup_operations_estado");
-
-                    b.HasIndex("UsuarioId", "FechaCreacion")
-                        .HasDatabaseName("ix_backup_operations_usuario_id_fecha_creacion");
-
-                    b.ToTable("BACKUP_OPERATIONS", (string)null, t =>
-                        {
-                            t.HasCheckConstraint("ck_backup_operations_estado", "\"estado\" IN ('PENDING','RUNNING','SUCCESS','FAILED')");
-
-                            t.HasCheckConstraint("ck_backup_operations_tipo", "\"tipo\" IN ('MANUAL','DRIVE_IMPORT','RESTORE')");
-                        });
-                });
-
             modelBuilder.Entity("AtlasBalance.API.Models.BackupCloudConnection", b =>
                 {
                     b.Property<Guid>("Id")
@@ -555,6 +473,88 @@ namespace AtlasBalance.API.Migrations
                     b.ToTable("BACKUP_CLOUD_COPIES", (string)null);
                 });
 
+            modelBuilder.Entity("AtlasBalance.API.Models.BackupOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("BackupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("backup_id");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text")
+                        .HasColumnName("error");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("estado");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_creacion");
+
+                    b.Property<DateTime?>("FechaFin")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_fin");
+
+                    b.Property<DateTime?>("FechaInicio")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("fecha_inicio");
+
+                    b.Property<string>("Parametro")
+                        .HasColumnType("text")
+                        .HasColumnName("parametro");
+
+                    b.Property<string>("ResultadoJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("resultado_json");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("tipo");
+
+                    b.Property<Guid?>("UsuarioId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("usuario_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_backup_operations");
+
+                    b.HasIndex("BackupId")
+                        .HasDatabaseName("ix_backup_operations_backup_id");
+
+                    b.HasIndex("DeletedById")
+                        .HasDatabaseName("ix_backup_operations_deleted_by_id");
+
+                    b.HasIndex("Estado")
+                        .HasDatabaseName("ix_backup_operations_estado");
+
+                    b.HasIndex("UsuarioId", "FechaCreacion")
+                        .HasDatabaseName("ix_backup_operations_usuario_id_fecha_creacion");
+
+                    b.ToTable("BACKUP_OPERATIONS", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_backup_operations_estado", "\"estado\" IN ('PENDING','RUNNING','SUCCESS','FAILED')");
+
+                            t.HasCheckConstraint("ck_backup_operations_tipo", "\"tipo\" IN ('MANUAL','DRIVE_IMPORT','RESTORE')");
+                        });
+                });
+
             modelBuilder.Entity("AtlasBalance.API.Models.Conciliacion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -570,6 +570,14 @@ namespace AtlasBalance.API.Migrations
                     b.Property<Guid>("CuentaId")
                         .HasColumnType("uuid")
                         .HasColumnName("cuenta_id");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
 
                     b.Property<int>("DiferenciaDias")
                         .HasColumnType("integer")
@@ -647,14 +655,6 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("deleted_at");
-
-                    b.Property<Guid?>("DeletedById")
-                        .HasColumnType("uuid")
-                        .HasColumnName("deleted_by_id");
-
                     b.HasKey("Id")
                         .HasName("pk_conciliaciones");
 
@@ -689,7 +689,7 @@ namespace AtlasBalance.API.Migrations
                         .HasDatabaseName("ix_conciliaciones_movimiento_esperado_id_extracto_id")
                         .HasFilter("\"deleted_at\" IS NULL");
 
-                    b.ToTable("CONCILIACIONES", (string)null, t =>
+                    b.ToTable("CONCILIACIONES", null, t =>
                         {
                             t.HasCheckConstraint("ck_conciliaciones_estado", "\"estado\" IN ('sugerida','conciliada','excepcion','resuelta')");
                         });
@@ -1107,6 +1107,14 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
                     b.Property<Guid>("ExtractoId")
                         .HasColumnType("uuid")
                         .HasColumnName("extracto_id");
@@ -1123,11 +1131,19 @@ namespace AtlasBalance.API.Migrations
                     b.HasKey("Id")
                         .HasName("pk_extractos_columnas_extra");
 
+                    b.HasIndex("DeletedAt")
+                        .HasDatabaseName("ix_extractos_columnas_extra_deleted_at");
+
+                    b.HasIndex("DeletedById")
+                        .HasDatabaseName("ix_extractos_columnas_extra_deleted_by_id");
+
                     b.HasIndex("ExtractoId")
                         .HasDatabaseName("ix_extractos_columnas_extra_extracto_id");
 
-                    b.HasIndex("NombreColumna")
-                        .HasDatabaseName("ix_extractos_columnas_extra_nombre_columna");
+                    b.HasIndex("ExtractoId", "NombreColumna")
+                        .IsUnique()
+                        .HasDatabaseName("ix_extractos_columnas_extra_extracto_id_nombre_columna")
+                        .HasFilter("\"deleted_at\" IS NULL");
 
                     b.ToTable("EXTRACTOS_COLUMNAS_EXTRA", (string)null);
                 });
@@ -1281,7 +1297,6 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("numeric(18,8)")
                         .HasColumnName("coste_estimado_eur");
 
-                    // V-02.06 (MED-22): soft delete explicito en IaUsoUsuario.
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
@@ -1347,10 +1362,6 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("advertencias_aceptadas");
 
-                    b.Property<Guid?>("ConfirmadoPorId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("confirmado_por_id");
-
                     b.Property<string>("ConfirmacionIdempotencyKey")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
@@ -1359,6 +1370,10 @@ namespace AtlasBalance.API.Migrations
                     b.Property<string>("ConfirmacionResponseJson")
                         .HasColumnType("jsonb")
                         .HasColumnName("confirmacion_response_json");
+
+                    b.Property<Guid?>("ConfirmadoPorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("confirmado_por_id");
 
                     b.Property<string>("ContenidoOriginal")
                         .IsRequired()
@@ -1403,16 +1418,16 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("filas_validas");
 
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key");
+
                     b.Property<string>("LoteHash")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("lote_hash");
-
-                    b.Property<string>("IdempotencyKey")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("idempotency_key");
 
                     b.Property<string>("MapeoJson")
                         .IsRequired()
@@ -1423,6 +1438,10 @@ namespace AtlasBalance.API.Migrations
                         .HasMaxLength(260)
                         .HasColumnType("character varying(260)")
                         .HasColumnName("nombre_archivo");
+
+                    b.Property<string>("Notas")
+                        .HasColumnType("text")
+                        .HasColumnName("notas");
 
                     b.Property<string>("ResumenJson")
                         .IsRequired()
@@ -1483,13 +1502,10 @@ namespace AtlasBalance.API.Migrations
                     b.HasIndex("Sha256")
                         .HasDatabaseName("ix_importacion_lotes_sha256");
 
-                    b.HasIndex("UsuarioCreadorId")
-                        .HasDatabaseName("ix_importacion_lotes_usuario_creador_id");
-
                     b.HasIndex("UsuarioCreadorId", "IdempotencyKey")
                         .IsUnique()
-                        .HasFilter("\"idempotency_key\" IS NOT NULL")
-                        .HasDatabaseName("ix_importacion_lotes_usuario_creador_id_idempotency_key");
+                        .HasDatabaseName("ix_importacion_lotes_usuario_creador_id_idempotency_key")
+                        .HasFilter("\"idempotency_key\" IS NOT NULL");
 
                     b.ToTable("IMPORTACION_LOTES", (string)null);
                 });
@@ -1510,6 +1526,14 @@ namespace AtlasBalance.API.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb")
                         .HasColumnName("datos_json");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
 
                     b.Property<string>("ErroresJson")
                         .IsRequired()
@@ -1546,12 +1570,19 @@ namespace AtlasBalance.API.Migrations
                     b.HasKey("Id")
                         .HasName("pk_importacion_lote_filas");
 
+                    b.HasIndex("DeletedAt")
+                        .HasDatabaseName("ix_importacion_lote_filas_deleted_at");
+
+                    b.HasIndex("DeletedById")
+                        .HasDatabaseName("ix_importacion_lote_filas_deleted_by_id");
+
                     b.HasIndex("Fingerprint")
                         .HasDatabaseName("ix_importacion_lote_filas_fingerprint");
 
                     b.HasIndex("LoteId", "Indice")
                         .IsUnique()
-                        .HasDatabaseName("ix_importacion_lote_filas_lote_id_indice");
+                        .HasDatabaseName("ix_importacion_lote_filas_lote_id_indice")
+                        .HasFilter("\"deleted_at\" IS NULL");
 
                     b.ToTable("IMPORTACION_LOTE_FILAS", (string)null);
                 });
@@ -1895,7 +1926,7 @@ namespace AtlasBalance.API.Migrations
                     b.HasIndex("CuentaId", "FechaEsperada", "Monto")
                         .HasDatabaseName("ix_movimientos_esperados_cuenta_id_fecha_esperada_monto");
 
-                    b.ToTable("MOVIMIENTOS_ESPERADOS", (string)null, t =>
+                    b.ToTable("MOVIMIENTOS_ESPERADOS", null, t =>
                         {
                             t.HasCheckConstraint("ck_movimientos_esperados_estado", "\"estado\" IN ('pendiente','sugerida','conciliada','excepcion','resuelta')");
                         });
@@ -2199,10 +2230,6 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("columnas_visibles_admin");
 
-                    b.Property<string>("OrdenColumnas")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("orden_columnas");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -2210,6 +2237,10 @@ namespace AtlasBalance.API.Migrations
                     b.Property<Guid?>("CuentaId")
                         .HasColumnType("uuid")
                         .HasColumnName("cuenta_id");
+
+                    b.Property<string>("OrdenColumnas")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("orden_columnas");
 
                     b.Property<Guid?>("PaisId")
                         .HasColumnType("uuid")
@@ -2329,6 +2360,14 @@ namespace AtlasBalance.API.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by_id");
+
                     b.Property<string>("Estado")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -2366,6 +2405,12 @@ namespace AtlasBalance.API.Migrations
                     b.HasKey("Id")
                         .HasName("pk_revision_extracto_estados");
 
+                    b.HasIndex("DeletedAt")
+                        .HasDatabaseName("ix_revision_extracto_estados_deleted_at");
+
+                    b.HasIndex("DeletedById")
+                        .HasDatabaseName("ix_revision_extracto_estados_deleted_by_id");
+
                     b.HasIndex("Estado")
                         .HasDatabaseName("ix_revision_extracto_estados_estado");
 
@@ -2382,7 +2427,8 @@ namespace AtlasBalance.API.Migrations
 
                     b.HasIndex("ExtractoId", "Tipo")
                         .IsUnique()
-                        .HasDatabaseName("ix_revision_extracto_estados_extracto_id_tipo");
+                        .HasDatabaseName("ix_revision_extracto_estados_extracto_id_tipo")
+                        .HasFilter("\"deleted_at\" IS NULL");
 
                     b.ToTable("REVISION_EXTRACTO_ESTADOS", (string)null);
                 });
@@ -2690,27 +2736,6 @@ namespace AtlasBalance.API.Migrations
                         .HasConstraintName("fk_backups_usuarios_iniciado_por_id");
                 });
 
-            modelBuilder.Entity("AtlasBalance.API.Models.BackupOperation", b =>
-                {
-                    b.HasOne("AtlasBalance.API.Models.Backup", null)
-                        .WithMany()
-                        .HasForeignKey("BackupId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_backup_operations_backup_id");
-
-                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
-                        .WithMany()
-                        .HasForeignKey("DeletedById")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .HasConstraintName("fk_backup_operations_deleted_by_id");
-
-                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
-                        .WithMany()
-                        .HasForeignKey("UsuarioId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_backup_operations_usuario_id");
-                });
-
             modelBuilder.Entity("AtlasBalance.API.Models.BackupCloudConnection", b =>
                 {
                     b.HasOne("AtlasBalance.API.Models.Usuario", null)
@@ -2746,6 +2771,27 @@ namespace AtlasBalance.API.Migrations
                     b.Navigation("Connection");
                 });
 
+            modelBuilder.Entity("AtlasBalance.API.Models.BackupOperation", b =>
+                {
+                    b.HasOne("AtlasBalance.API.Models.Backup", null)
+                        .WithMany()
+                        .HasForeignKey("BackupId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_backup_operations_backup_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_backup_operations_deleted_by_id");
+
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_backup_operations_usuario_id");
+                });
+
             modelBuilder.Entity("AtlasBalance.API.Models.Conciliacion", b =>
                 {
                     b.HasOne("AtlasBalance.API.Models.Cuenta", null)
@@ -2759,7 +2805,7 @@ namespace AtlasBalance.API.Migrations
                         .WithMany()
                         .HasForeignKey("DeletedById")
                         .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_conciliaciones_deleted_by_id");
+                        .HasConstraintName("fk_conciliaciones_usuarios_deleted_by_id");
 
                     b.HasOne("AtlasBalance.API.Models.Extracto", null)
                         .WithMany()
@@ -2904,6 +2950,12 @@ namespace AtlasBalance.API.Migrations
 
             modelBuilder.Entity("AtlasBalance.API.Models.ExtractoColumnaExtra", b =>
                 {
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_extractos_columnas_extra_usuarios_deleted_by_id");
+
                     b.HasOne("AtlasBalance.API.Models.Extracto", null)
                         .WithMany()
                         .HasForeignKey("ExtractoId")
@@ -2998,6 +3050,12 @@ namespace AtlasBalance.API.Migrations
 
             modelBuilder.Entity("AtlasBalance.API.Models.ImportacionLoteFila", b =>
                 {
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_importacion_lote_filas_usuarios_deleted_by_id");
+
                     b.HasOne("AtlasBalance.API.Models.ImportacionLote", null)
                         .WithMany()
                         .HasForeignKey("LoteId")
@@ -3207,6 +3265,12 @@ namespace AtlasBalance.API.Migrations
 
             modelBuilder.Entity("AtlasBalance.API.Models.RevisionExtractoEstado", b =>
                 {
+                    b.HasOne("AtlasBalance.API.Models.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_revision_extracto_estados_usuarios_deleted_by_id");
+
                     b.HasOne("AtlasBalance.API.Models.Extracto", null)
                         .WithMany()
                         .HasForeignKey("ExtractoDevolucionId")

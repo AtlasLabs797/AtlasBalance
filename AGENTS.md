@@ -203,7 +203,7 @@ El equipo tiene antimalware y antivirus activos, y lo que parezca malware se blo
 
 La fuente de verdad es el codigo: `Models/Entities.cs`, `Data/AppDbContext.cs` y `Migrations/`. `Documentacion/SPEC.md` seccion 5 documenta todas las tablas (actualizada contra el snapshot en V-03.02). Si chocan, manda el codigo. Si cambias el esquema, actualiza tambien SPEC.
 
-El snapshot de EF tiene deriva conocida frente al modelo (M-9 en `Documentacion/REGISTRO_BUGS.md`, fijada por `SnapshotModelDriftTests`). Por eso `dotnet ef migrations add` genera migraciones sucias con cambios ajenos: escribe las migraciones a mano, como las de V-03.02, y no quites el `Ignore` de `PendingModelChangesWarning` en `AppDbContext` hasta cerrar M-9.
+Modelo, snapshot de EF y esquema real estan alineados desde `20261122223119_CloseM9SnapshotDrift` (cierre de M-9), y `SnapshotModelDriftTests` exige cero diferencias: si cambias el modelo, genera la migracion en el mismo cambio o `Migrate()` fallara en todas las instalaciones. Revisa siempre el SQL que genera `dotnet ef migrations add`: si el cambio toca columnas usadas por policies RLS o tablas con FORCE RLS, escribe el SQL a mano siguiendo el patron de esa migracion.
 
 Lo que SPEC no recoge o recoge mal:
 
@@ -229,8 +229,8 @@ docker compose up -d
 # Backend
 cd "Atlas Balance/backend/src/AtlasBalance.API"
 dotnet run
+dotnet ef migrations add NombreMigracion   # revisa el SQL generado (seccion 12)
 dotnet ef database update
-# Migraciones nuevas: a mano, no con "dotnet ef migrations add" (ver seccion 12)
 
 # Backend - tests
 cd "Atlas Balance/backend"

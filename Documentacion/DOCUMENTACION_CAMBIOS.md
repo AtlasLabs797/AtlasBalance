@@ -1,5 +1,16 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-22 - V-03.02 - Cierre de M-9: modelo, snapshot y esquema alineados
+
+- Trabajo: migracion `20261122223119_CloseM9SnapshotDrift`. El snapshot y el Designer se regeneraron con `dotnet ef migrations add`; el Up/Down del scaffold se sustituyo por SQL idempotente. `deleted_at` pasa a `timestamptz` en REVISION_EXTRACTO_ESTADOS, IMPORTACION_LOTE_FILAS y EXTRACTOS_COLUMNAS_EXTRA, conservando las policies RLS dependientes (leidas del catalogo, retiradas y recreadas) y convirtiendo con la zona de la sesion. Tambien se anaden la FK e indice de `deleted_by_id` en esas tres tablas, se corrige la errata `ix_extratos_*`, se garantizan los unicos parciales, se renombra la FK de CONCILIACIONES y se retiran dos indices obsoletos. En el modelo se declaran dos indices que ya existian en BD (FK `extracto_id` y `deleted_at` de IA_USO_USUARIOS) y se elimina el `Ignore(PendingModelChangesWarning)`. `SnapshotModelDriftTests` exige cero diferencias.
+- Archivos: `Migrations/20261122223119_CloseM9SnapshotDrift{,.Designer}.cs`, `Migrations/AppDbContextModelSnapshot.cs`, `Data/AppDbContext.cs`, `tests/.../SnapshotModelDriftTests.cs`, `AGENTS.md` (seccion 12 y 13: `migrations add` vuelve a ser utilizable, revisando el SQL), `SPEC.md`, `REGISTRO_BUGS.md` (M-9 cerrado), `DOCUMENTACION_TECNICA.md`, `Versiones/v-03.02.md` y esta bitacora.
+- Verificacion:
+  - Dump previo de la BD de desarrollo (en el scratchpad de la sesion, fuera del repo).
+  - Copia restaurada: migracion aplicada junto con las 3 pendientes; las 101 policies son identicas antes, despues y tras Down+Up. Conversion probada con sesion Europe/Madrid (12:00 local almacenado pasa a 10:00Z).
+  - Suite: 1335/1335 en `AtlasBalance.API.Tests` (incluidos los tests Postgres/Testcontainers sobre base nueva) y 15/15 en `AtlasBalance.Caching.Tests`. 14 tests que buscan ficheros fuente por ruta relativa fallaron al compilar en el scratchpad; repetidos compilando en `.artifacts/`, pasan.
+- Incidencias: `obj/` del API pertenece al usuario `CodexSandboxOffline` y da Access denied; se compilo con `UseArtifactsOutput` fuera de `obj/`. La password de `atlas_owner` en `appsettings.Development.json` no coincide con la BD; los scripts se aplicaron con `SET ROLE atlas_owner` desde el contenedor.
+- Pendiente: la BD de desarrollo `atlas_balance` sigue sin esta migracion ni las 3 anteriores; se aplican solas al arrancar el backend de desarrollo con el codigo actual. Revisar el `obj/` con permisos de otro usuario y la password de `atlas_owner` del appsettings de desarrollo.
+
 # 2026-11-22 - V-03.02 - Signo de importes y porcentajes
 
 - Trabajo y decision visual: se elimina el `+` de las cifras positivas en pantallas, tablas, alertas y tooltips de graficos. Los negativos mantienen su signo y los datos almacenados no cambian; en importacion y auditoria se oculta el `+` inicial de los valores numericos crudos.

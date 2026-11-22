@@ -1947,13 +1947,13 @@ nombre_columna  VARCHAR(100) NOT NULL
 
 valor           TEXT
 
-deleted_at      TIMESTAMP     -- soft delete; en BD sin zona horaria, el modelo pide TIMESTAMPTZ (deriva M-9)
+deleted_at      TIMESTAMPTZ   -- soft delete (timestamptz desde CloseM9SnapshotDrift)
 
 deleted_by_id   UUID FK → USUARIOS
 
 ```
 
-**Índices:** `extracto_id`, `nombre_columna`
+**Índices:** `UNIQUE (extracto_id, nombre_columna) WHERE deleted_at IS NULL`, `extracto_id`, `deleted_at`, `deleted_by_id`
 
 
 
@@ -2585,7 +2585,7 @@ filas_validas                 INTEGER NOT NULL
 filas_error                   INTEGER NOT NULL
 filas_advertencia             INTEGER NOT NULL
 advertencias_aceptadas        BOOLEAN NOT NULL
-notas                         TEXT                          -- nullable; la crea V0203_Hardening (falta en el snapshot, deriva M-9)
+notas                         TEXT                          -- nullable; la crea V0203_Hardening
 fecha_creacion                TIMESTAMPTZ NOT NULL
 fecha_confirmacion            TIMESTAMPTZ                   -- nullable
 confirmado_por_id             UUID FK → USUARIOS            -- nullable
@@ -2614,7 +2614,7 @@ fingerprint           VARCHAR(64)                  -- nullable; huella para dete
 datos_json            JSONB NOT NULL
 errores_json          JSONB NOT NULL
 advertencias_json     JSONB NOT NULL
-deleted_at            TIMESTAMP     -- en BD sin zona horaria; el modelo pide TIMESTAMPTZ (deriva M-9)
+deleted_at            TIMESTAMPTZ                  -- soft delete (timestamptz desde CloseM9SnapshotDrift)
 deleted_by_id         UUID FK → USUARIOS           -- nullable
 ```
 
@@ -2636,7 +2636,7 @@ estado                  VARCHAR(24) NOT NULL          -- p.ej. 'PENDIENTE', 'COR
 fecha_modificacion      TIMESTAMPTZ NOT NULL
 usuario_modificacion_id UUID FK → USUARIOS            -- nullable
 xmin                    xid                           -- token de concurrencia optimista
-deleted_at              TIMESTAMP     -- en BD sin zona horaria; el modelo pide TIMESTAMPTZ (deriva M-9)
+deleted_at              TIMESTAMPTZ                  -- soft delete (timestamptz desde CloseM9SnapshotDrift)
 deleted_by_id           UUID FK → USUARIOS            -- nullable
 ```
 

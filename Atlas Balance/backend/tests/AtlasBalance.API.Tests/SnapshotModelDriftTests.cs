@@ -10,65 +10,29 @@ using Xunit;
 namespace AtlasBalance.API.Tests;
 
 /// <summary>
-/// M-9: estado de la deriva entre el modelo de EF y el snapshot.
+/// M-9: el modelo de EF y el snapshot de migraciones deben coincidir.
 ///
-/// La comprobacion es la misma que hace EF por dentro al activar
-/// <c>RelationalEventId.PendingModelChangesWarning</c>, replicada a mano
-/// porque el warning no se puede anular desde las opciones del test:
-/// <c>DbContext.OnConfiguring</c> se aplica DESPUES de las
-/// <c>DbContextOptions</c> que recibe el contexto, asi que el
-/// <c>Ignore(...)</c> de <c>AppDbContext</c> gana siempre. La via
-/// alternativa es comparar el modelo con el snapshot mediante
-/// <see cref="IMigrationsModelDiffer"/>, que es lo que hace EF.
+/// La comprobacion es la misma que hace EF dentro de <c>Migrate()</c> al
+/// emitir <c>RelationalEventId.PendingModelChangesWarning</c>: comparar el
+/// modelo del snapshot con el modelo actual mediante
+/// <see cref="IMigrationsModelDiffer"/>. El modelo del snapshot se devuelve
+/// finalizado pero sin el inicializador de runtime aplicado (por eso no tiene
+/// modelo relacional): se inicializa aqui igual que hace EF.
 ///
-/// El modelo del snapshot se devuelve finalizado pero sin el inicializador
-/// de runtime aplicado (por eso no tiene modelo relacional): se inicializa
-/// aqui igual que hace EF.
-///
-/// DERIVA RESTANTE (a fecha de 2026-11-17, 27 operaciones). No es solo de
-/// snapshot: la base real difiere del modelo, asi que arreglarlo exige una
-/// migracion de esquema, no solo tocar el snapshot:
-///   * REVISION_EXTRACTO_ESTADOS, IMPORTACION_LOTE_FILAS y
-///     EXTRACTOS_COLUMNAS_EXTRA: el snapshot no tiene deleted_at /
-///     deleted_by_id ni sus indices, y la base real tiene deleted_at como
-///     <c>timestamp without time zone</c> mientras el modelo pide
-///     <c>timestamp with time zone</c> (cambiar el tipo de una columna usada
-///     por una policy RLS exige tirar y recrear la policy).
-///   * IMPORTACION_LOTES: falta la columna notas en el snapshot; el modelo
-///     ya no declara el indice simple ix_importacion_lotes_usuario_creador_id
-///     (lo cubre ix_importacion_lotes_usuario_creador_id_idempotency_key).
-///   * IA_USO_USUARIOS: el snapshot conserva el indice
-///     ix_ia_uso_usuarios_deleted_at, que el modelo ya no declara.
-///   * CONCILIACIONES: el nombre de la FK de deleted_by_id en el snapshot
-///     (fk_conciliaciones_deleted_by_id) no es el que genera el modelo
-///     (fk_conciliaciones_usuarios_deleted_by_id), por eso el differ la
-///     ve como FK distinta.
-///   * EXTRACTOS_COLUMNAS_EXTRA: el snapshot conserva los indices simples
-///     ix_extractos_columnas_extra_extracto_id y
-///     ix_extractos_columnas_extra_nombre_columna, que el modelo ya no
-///     declara.
-/// Mientres exista esa deriva, el Ignore de PendingModelChangesWarning en
-/// AppDbContext.OnConfiguring es necesario: si se quita, Migrate() falla.
+/// La deriva historica se cerro en V-03.02 con la migracion
+/// 20261122223119_CloseM9SnapshotDrift, y <c>AppDbContext</c> ya no ignora el
+/// warning. Si este test falla, el modelo cambio sin migracion (o el snapshot
+/// se edito a mano mal): Migrate() fallaria en todas las instalaciones.
 /// </summary>
 public sealed class SnapshotModelDriftTests
 {
     [Fact]
-    public void Deriva_Restante_No_Debe_Afectar_A_PLAZOS_FIJOS_Ni_A_Los_Indices_Parciales()
+    public void Modelo_Y_Snapshot_No_Deben_Tener_Diferencias()
     {
-        var diferencias = CalcularDiferencias();
+        var detalladas = CalcularDiferencias().Select(Describir).ToList();
 
-        var detalladas = diferencias.Select(Describir).ToList();
-
-        var afectadas = detalladas
-            .Where(d =>
-                d.Contains("PLAZOS_FIJOS", StringComparison.OrdinalIgnoreCase)
-                || d.Contains("ix_extractos_cuenta_id_importacion_fingerprint", StringComparison.OrdinalIgnoreCase)
-                || d.Contains("ix_conciliaciones_extracto_id", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        afectadas.Should().BeEmpty(
-            "no debe haber deriva en PLAZOS_FIJOS (xmin) ni en los indices parciales de EXTRACTOS/CONCILIACIONES. " +
-            "Deriva total restante ({0} operaciones): {1}",
+        detalladas.Should().BeEmpty(
+            "el snapshot debe reflejar el modelo; diferencias ({0}): {1}",
             detalladas.Count,
             string.Join(Environment.NewLine, detalladas));
     }
