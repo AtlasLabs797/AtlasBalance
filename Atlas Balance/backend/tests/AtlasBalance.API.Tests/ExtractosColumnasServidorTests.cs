@@ -301,6 +301,207 @@ public sealed class ExtractosColumnasServidorTests
         page.ColumnasDisponibles.Should().BeEmpty();
     }
 
+    private static async Task AddPreferenciaAdminAsync(AppDbContext db, Guid userId, Guid? paisId, Guid? titularId, Guid? cuentaId, string admin)
+    {
+        db.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
+        {
+            Id = Guid.NewGuid(),
+            UsuarioId = userId,
+            PaisId = paisId,
+            TitularId = titularId,
+            CuentaId = cuentaId,
+            ColumnasVisiblesAdmin = admin
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Listar_Should_Apply_Admin_Whitelist_Stored_With_Cuenta_And_Titular_Without_Pais()
+    {
+        // S-2: el modal de permisos permite (null, titular, cuenta) y guarda la
+        // whitelist con ese alcance literal.
+        await using var db = BuildDbContext();
+        var (userId, cuentaId, _) = await SeedAsync(db, RolUsuario.GERENTE, null, null);
+        var titularId = await db.Cuentas.Select(c => c.TitularId).FirstAsync();
+        await AddPreferenciaAdminAsync(db, userId, null, titularId, cuentaId, """["fecha","monto"]""");
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+        var result = await controller.Listar(cuentaId: cuentaId, ct: CancellationToken.None);
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
+        page.Data.Single().Concepto.Should().BeNull();
+        page.Data.Single().ColumnasExtra.Should().BeEmpty();
+        page.ColumnasDisponibles.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Listar_Should_Apply_Admin_Whitelist_Stored_With_Cuenta_And_Pais_Without_Titular()
+    {
+        // S-2: (pais, null, cuenta) tambien es un alcance valido del permiso.
+        await using var db = BuildDbContext();
+        var (userId, cuentaId, _) = await SeedAsync(db, RolUsuario.GERENTE, null, null);
+        var paisId = await db.Cuentas.Select(c => c.PaisId).FirstAsync();
+        await AddPreferenciaAdminAsync(db, userId, paisId, null, cuentaId, """["fecha","monto"]""");
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+        var result = await controller.Listar(cuentaId: cuentaId, ct: CancellationToken.None);
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
+        page.Data.Single().Concepto.Should().BeNull();
+        page.Data.Single().ColumnasExtra.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetColumnasVisibles_Should_Report_Restriction_From_Cuenta_Without_Pais_Row()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId, _) = await SeedAsync(db, RolUsuario.GERENTE, null, null);
+        var titularId = await db.Cuentas.Select(c => c.TitularId).FirstAsync();
+        await AddPreferenciaAdminAsync(db, userId, null, titularId, cuentaId, """["fecha","monto"]""");
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+        var result = await controller.GetColumnasVisibles(cuentaId: cuentaId, ct: CancellationToken.None);
+        var payload = result.Should().BeOfType<OkObjectResult>().Subject.Value;
+        payload!.GetType().GetProperty("columnas_restringidas")!.GetValue(payload)
+            .Should().BeEquivalentTo(new[] { "fecha", "monto" });
+    }
+
+    [Fact]
+    public async Task Listar_Search_Should_Not_Match_Hidden_Columns()
+    {
+        // S-2: buscar por un texto que solo esta en una columna oculta no debe
+        // permitir inferir su valor.
+        await using var db = BuildDbContext();
+        var (userId, cuentaId, _) = await SeedAsync(db, RolUsuario.GERENTE, """["fecha","monto","comentarios"]""", null);
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var oculta = await controller.Listar(cuentaId: cuentaId, search: "tarjeta", ct: CancellationToken.None);
+        oculta.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject
+            .Total.Should().Be(0);
+
+        var visible = await controller.Listar(cuentaId: cuentaId, search: "interno", ct: CancellationToken.None);
+        visible.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject
+            .Total.Should().Be(1);
+
+        // Misma busqueda con "comentarios" oculto y "concepto" visible.
+        var pref = await db.PreferenciasUsuarioCuenta.SingleAsync();
+        pref.ColumnasVisiblesAdmin = """["fecha","monto","concepto"]""";
+        await db.SaveChangesAsync();
+        var oculta2 = await controller.Listar(cuentaId: cuentaId, search: "interno", ct: CancellationToken.None);
+        oculta2.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject
+            .Total.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Listar_Search_Should_Match_All_Columns_For_Admin()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId, _) = await SeedAsync(db, RolUsuario.ADMIN, null, null);
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+
+        var result = await controller.Listar(cuentaId: cuentaId, search: "interno", ct: CancellationToken.None);
+        result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject
+            .Total.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Listar_SortBy_Hidden_Column_Should_Fall_Back_To_Default_Order()
+    {
+        await using var db = BuildDbContext();
+        var (userId, cuentaId, _) = await SeedAsync(db, RolUsuario.GERENTE, """["fecha","monto"]""", null);
+        var primero = await db.Extractos.SingleAsync();
+        primero.Concepto = "Zeta";
+        db.Extractos.Add(new Extracto
+        {
+            Id = Guid.NewGuid(),
+            CuentaId = cuentaId,
+            Fecha = primero.Fecha,
+            Concepto = "Alfa",
+            Monto = 5m,
+            Saldo = 15m,
+            FilaNumero = 2
+        });
+        await db.SaveChangesAsync();
+
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+        // Orden por defecto: fecha desc, fila desc -> fila 2 primero. Ordenar
+        // por concepto desc daria fila 1 (Zeta) primero.
+        var result = await controller.Listar(cuentaId: cuentaId, sortBy: "concepto", sortDir: "desc", ct: CancellationToken.None);
+        var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
+        page.Data.Select(x => x.FilaNumero).Should().Equal(2, 1);
+
+        // Con la columna visible se respeta el orden pedido.
+        var pref = await db.PreferenciasUsuarioCuenta.SingleAsync();
+        pref.ColumnasVisiblesAdmin = """["fecha","monto","concepto"]""";
+        await db.SaveChangesAsync();
+        var visible = await controller.Listar(cuentaId: cuentaId, sortBy: "concepto", sortDir: "desc", ct: CancellationToken.None);
+        visible.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject
+            .Data.Select(x => x.FilaNumero).Should().Equal(1, 2);
+    }
+
+    private static async Task SeedAuditAsync(AppDbContext db, Guid extractoId)
+    {
+        foreach (var col in new[] { "concepto", "monto" })
+        {
+            db.Auditorias.Add(new Auditoria
+            {
+                Id = Guid.NewGuid(),
+                TipoAccion = "extracto_editado",
+                EntidadTipo = "EXTRACTOS",
+                EntidadId = extractoId,
+                ColumnaNombre = col,
+                CeldaReferencia = col == "concepto" ? "C1" : "M1",
+                ValorAnterior = "viejo-" + col,
+                ValorNuevo = "nuevo-" + col,
+                Timestamp = DateTime.UtcNow
+            });
+        }
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task GetAuditCelda_Should_Forbid_Hidden_Column_And_Filter_It_From_Full_History()
+    {
+        await using var db = BuildDbContext();
+        var (userId, _, extractoId) = await SeedAsync(db, RolUsuario.GERENTE, """["fecha","monto"]""", null);
+        await SeedAuditAsync(db, extractoId);
+        var controller = BuildController(db, userId, RolUsuario.GERENTE);
+
+        var oculta = await controller.GetAuditCelda(extractoId, "concepto", 50, CancellationToken.None);
+        oculta.Should().BeOfType<ForbidResult>();
+
+        var visible = await controller.GetAuditCelda(extractoId, "monto", 50, CancellationToken.None);
+        visible.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeAssignableTo<IEnumerable<AuditCellEntryResponse>>().Subject
+            .Should().ContainSingle(a => a.ColumnaNombre == "monto");
+
+        var todo = await controller.GetAuditCelda(extractoId, null, 50, CancellationToken.None);
+        var filas = todo.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeAssignableTo<IEnumerable<AuditCellEntryResponse>>().Subject.ToList();
+        filas.Should().OnlyContain(a => a.ColumnaNombre != "concepto");
+        filas.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task GetAuditCelda_Should_Return_Hidden_Column_For_Admin()
+    {
+        await using var db = BuildDbContext();
+        var (userId, _, extractoId) = await SeedAsync(db, RolUsuario.ADMIN, null, null);
+        await SeedAuditAsync(db, extractoId);
+        var controller = BuildController(db, userId, RolUsuario.ADMIN);
+
+        var result = await controller.GetAuditCelda(extractoId, "concepto", 50, CancellationToken.None);
+        result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeAssignableTo<IEnumerable<AuditCellEntryResponse>>().Subject
+            .Should().ContainSingle();
+    }
+
     [Fact]
     public async Task Actualizar_Should_Return_Forbidden_When_Extracto_Account_Is_Deleted()
     {

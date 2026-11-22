@@ -110,6 +110,11 @@ public sealed class PlazoFijoService : IPlazoFijoService
                 {
                     se.Plazo.FechaUltimaNotificacion = hoy;
                 }
+
+                // J-1: persistir ya la marca de "avisado hoy". Si un fallo posterior
+                // (auditoria, BD) hace reintentar el job, el digest ya enviado no se
+                // vuelve a mandar.
+                await _dbContext.SaveChangesAsync(cancellationToken);
             }
         }
 

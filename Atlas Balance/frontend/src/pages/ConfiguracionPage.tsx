@@ -44,7 +44,8 @@ const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 const MFA_REMEMBER_DEVICE_DAYS = 90;
 
 // S-17: modo de cifrado del SMTP. "required" = STARTTLS obligatorio,
-// "auto" = se cifra si el servidor lo admite, "none" = sin cifrar.
+// "auto" = STARTTLS obligatorio con usuario; sin usuario, si el servidor lo
+// admite. "none" = sin cifrar.
 // El tipo compartido ConfiguracionSistema todavia no declara tls_mode, asi que
 // se amplia aqui sin tocar types/index.ts.
 type SmtpTlsMode = 'required' | 'auto' | 'none';
@@ -52,7 +53,7 @@ type SmtpConfig = ConfiguracionSistema['smtp'] & { tls_mode?: SmtpTlsMode };
 type ConfiguracionConTls = Omit<ConfiguracionSistema, 'smtp'> & { smtp: SmtpConfig };
 
 function normalizarTlsMode(valor: string | null | undefined): SmtpTlsMode {
-  return valor === 'required' || valor === 'auto' || valor === 'none' ? valor : 'auto';
+  return valor === 'required' || valor === 'auto' || valor === 'none' ? valor : 'required';
 }
 
 const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
@@ -1233,7 +1234,7 @@ export default function ConfiguracionPage() {
                   value={normalizarTlsMode(config.smtp.tls_mode)}
                   options={[
                     { value: 'required', label: 'Obligatorio (STARTTLS)' },
-                    { value: 'auto', label: 'Automático (si el servidor lo admite)' },
+                    { value: 'auto', label: 'Automático (STARTTLS con usuario; sin usuario, si el servidor lo admite)' },
                     { value: 'none', label: 'Sin cifrar (servidor sin TLS)' },
                   ]}
                   onChange={(next) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, tls_mode: normalizarTlsMode(next) } }))}

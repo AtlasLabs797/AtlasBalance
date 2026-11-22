@@ -1502,9 +1502,9 @@ public class AtlasAiServiceTests
     public async Task AskAsync_Should_Use_MiniMax_M3_Provider_With_Server_Api_Key()
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, provider: "MINIMAX", model: AiConfiguration.DefaultMiniMaxModel);
+        var userId = await SeedAiUserAndConfigAsync(db, provider: "MINIMAX", model: AiConfiguration.MiniMaxM3Model);
         var httpFactory = new CapturingHttpClientFactory(
-            responseBody: $"{{\"model\":\"{AiConfiguration.DefaultMiniMaxModel}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
+            responseBody: $"{{\"model\":\"{AiConfiguration.MiniMaxM3Model}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
         var sut = new AtlasAiService(
             db,
             httpFactory,
@@ -1516,10 +1516,10 @@ public class AtlasAiServiceTests
         var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
 
         result.Provider.Should().Be("MINIMAX");
-        result.Model.Should().Be(AiConfiguration.DefaultMiniMaxModel);
+        result.Model.Should().Be(AiConfiguration.MiniMaxM3Model);
         httpFactory.RequestCount.Should().Be(1);
         httpFactory.LastClientName.Should().Be("minimax");
-        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.DefaultMiniMaxModel}\"");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.MiniMaxM3Model}\"");
         httpFactory.LastPayload.Should().Contain("\"max_completion_tokens\":100");
         httpFactory.LastPayload.Should().Contain("\"reasoning_split\":true");
         httpFactory.LastPayload.Should().Contain("\"thinking\":{\"type\":\"disabled\"}");
@@ -1527,16 +1527,23 @@ public class AtlasAiServiceTests
         httpFactory.LastPayload.Should().NotContain("\"zdr\"");
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.IaConsulta);
         audit.DetallesJson.Should().Contain("\"provider\":\"MINIMAX\"");
-        audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.DefaultMiniMaxModel}\"");
+        audit.DetallesJson.Should().Contain($"\"runtime_model\":\"{AiConfiguration.MiniMaxM3Model}\"");
     }
 
-    [Fact]
-    public async Task AskAsync_Should_Use_MiniMax_M27_Without_DisableThinking_Payload()
+    [Theory]
+    [InlineData(AiConfiguration.MiniMaxM27Model, "off", null)]
+    [InlineData(AiConfiguration.MiniMaxM31FlashModel, "off", "max")]
+    [InlineData(AiConfiguration.MiniMaxM31FlashModel, "low", "low")]
+    [InlineData(AiConfiguration.MiniMaxM31FlashModel, "medium", "medium")]
+    [InlineData(AiConfiguration.MiniMaxM31FlashModel, "high", "high")]
+    [InlineData(AiConfiguration.MiniMaxM31FlashModel, "xhigh", "xhigh")]
+    [InlineData(AiConfiguration.MiniMaxM31FlashModel, "max", "max")]
+    public async Task AskAsync_Should_Use_MiniMax_Model_Without_DisableThinking_Payload(string model, string mode, string? effort)
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, provider: "MINIMAX", model: AiConfiguration.MiniMaxM27Model);
+        var userId = await SeedAiUserAndConfigAsync(db, provider: "MINIMAX", model: model);
         var httpFactory = new CapturingHttpClientFactory(
-            responseBody: $"{{\"model\":\"{AiConfiguration.MiniMaxM27Model}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
+            responseBody: $"{{\"model\":\"{model}\",\"choices\":[{{\"message\":{{\"content\":\"Seguros detectados: 100,00 EUR.\"}}}}],\"usage\":{{\"prompt_tokens\":120,\"completion_tokens\":20}}}}");
         var sut = new AtlasAiService(
             db,
             httpFactory,
@@ -1545,14 +1552,19 @@ public class AtlasAiServiceTests
             TestAuditService.Create(db),
             NullLogger<AtlasAiService>.Instance);
 
-        var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None);
+        var result = await sut.AskAsync(AdminScope(userId), "Resumen de gastos", "127.0.0.1", CancellationToken.None, requestedThinkingMode: mode);
 
         result.Provider.Should().Be("MINIMAX");
-        result.Model.Should().Be(AiConfiguration.MiniMaxM27Model);
+        result.Model.Should().Be(model);
         httpFactory.LastClientName.Should().Be("minimax");
-        httpFactory.LastPayload.Should().Contain($"\"model\":\"{AiConfiguration.MiniMaxM27Model}\"");
+        httpFactory.LastPayload.Should().Contain($"\"model\":\"{model}\"");
         httpFactory.LastPayload.Should().Contain("\"reasoning_split\":true");
         httpFactory.LastPayload.Should().NotContain("\"thinking\"");
+        if (effort is not null)
+        {
+            httpFactory.LastPayload.Should().Contain($"\"reasoning_effort\":\"{effort}\"");
+            result.ThinkingModeAplicado.Should().Be(mode == "off" ? "auto" : mode);
+        }
     }
 
     [Fact]

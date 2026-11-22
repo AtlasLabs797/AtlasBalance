@@ -385,11 +385,6 @@ public class ManualProcessResponseTests
             return Task.FromResult(true);
         }
 
-        public Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_canWriteCuenta);
-        }
-
         public Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
         {
             return Task.FromResult(_canWriteCuenta);

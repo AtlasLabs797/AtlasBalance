@@ -12,9 +12,9 @@ namespace AtlasBalance.API.Tests;
 // base de datos reiniciandose) se queda sin reintentar. Un backup largo mas
 // una exportacion retrasaban las alertas de seguridad.
 //
-// Aqui solo se comprueban los jobs de este lote (exportacion mensual,
-// limpiezas y alertas). Los de backup, limpieza de exportaciones y refresh
-// tokens tienen su propio fichero de test.
+// Se recorren por reflexion TODAS las clases de AtlasBalance.API.Jobs: un job
+// nuevo sin ambos atributos hace fallar este test. Ademas se fijan los
+// timeouts y reintentos de los jobs del lote 3.
 // -----------------------------------------------------------------------
 public sealed class JobConcurrencyAttributesTests
 {
@@ -54,5 +54,55 @@ public sealed class JobConcurrencyAttributesTests
         atributo.Should().NotBeNull();
         atributo!.Attempts.Should().Be(3);
         atributo.DelaysInSeconds.Should().Equal(60, 300, 900);
+    }
+
+    private static IEnumerable<Type> TodosLosJobs() => typeof(ExportMensualJob).Assembly
+        .GetTypes()
+        .Where(t => t.IsClass && !t.IsNested && t.Namespace == "AtlasBalance.API.Jobs"
+            && !t.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), inherit: false));
+
+    [Fact]
+    public void Todos_Los_Jobs_Deben_Tener_DisableConcurrentExecution_Y_AutomaticRetry()
+    {
+        var jobs = TodosLosJobs().ToList();
+        jobs.Count.Should().BeGreaterOrEqualTo(15);
+
+        var sinConcurrencia = jobs
+            .Where(t => !t.IsDefined(typeof(DisableConcurrentExecutionAttribute), inherit: false))
+            .Select(t => t.Name)
+            .ToList();
+        var sinReintento = jobs
+            .Where(t => !t.IsDefined(typeof(AutomaticRetryAttribute), inherit: false))
+            .Select(t => t.Name)
+            .ToList();
+
+        sinConcurrencia.Should().BeEmpty("todo job necesita DisableConcurrentExecution");
+        sinReintento.Should().BeEmpty("todo job necesita AutomaticRetry (aunque sea Attempts = 0)");
+    }
+
+    [Fact]
+    public void AutoUpdateJob_No_Debe_Reintentar_Automaticamente()
+    {
+        // Aplicar una actualizacion reinicia la app: un reintento podria relanzarla.
+        var retry = typeof(AutoUpdateJob)
+            .GetCustomAttributes(typeof(AutomaticRetryAttribute), inherit: false)
+            .Cast<AutomaticRetryAttribute>()
+            .Single();
+        retry.Attempts.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(typeof(SyncTiposCambioJob), 600)]
+    [InlineData(typeof(PlazoFijoVencimientoJob), 900)]
+    [InlineData(typeof(VerificacionIntegridadAuditoriaJob), 1800)]
+    [InlineData(typeof(HealthAlertJob), 240)]
+    [InlineData(typeof(AutoUpdateJob), 600)]
+    public void Jobs_Del_Lote_Complementario_Tienen_Timeout_Coherente_Con_Su_Cron(Type tipoJob, int timeoutEsperado)
+    {
+        var atributo = tipoJob
+            .GetCustomAttributes(typeof(DisableConcurrentExecutionAttribute), inherit: false)
+            .Cast<DisableConcurrentExecutionAttribute>()
+            .Single();
+        atributo.TimeoutSec.Should().Be(timeoutEsperado);
     }
 }

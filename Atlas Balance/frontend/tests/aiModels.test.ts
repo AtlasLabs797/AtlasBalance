@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveSelectedModelAfterConfigRefresh } from '../src/utils/aiModels.js';
+import { getAiModelOptions, getDefaultAiModel, getThinkingModeOptions, normalizeAiModel, resolveSelectedModelAfterConfigRefresh } from '../src/utils/aiModels.js';
+
+void test('MiniMax M3.1 Flash aparece en el catalogo y conserva su identificador', () => {
+  const model = 'MiniMax-M3.1-Flash';
+  assert.ok(getAiModelOptions('MINIMAX').some((option) => option.value === model));
+  assert.equal(normalizeAiModel('MINIMAX', model), model);
+  assert.equal(getDefaultAiModel('MINIMAX'), model);
+  assert.deepEqual(getThinkingModeOptions('MINIMAX', model).map((option) => option.value), ['auto', 'low', 'medium', 'high', 'xhigh', 'max']);
+});
 
 // P5 V-03.01: aiChatStore.ensureConfig debe resetear selectedModel a null si
 // deja de estar en la lista de modelos permitidos que devuelve el backend

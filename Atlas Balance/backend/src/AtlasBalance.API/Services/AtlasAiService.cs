@@ -273,7 +273,7 @@ public sealed class AtlasAiService : IAtlasAiService
         // recibido no esta admitido por el provider (p.ej. "low" para MiniMax,
         // que solo entiende on/off) o es invalido, degradamos a "auto" y lo
         // dejamos registrado en auditoria como rejected_thinking_mode.
-        var normalizedThinkingMode = AiConfiguration.NormalizeThinkingMode(state.Provider, requestedThinkingMode);
+        var normalizedThinkingMode = AiConfiguration.NormalizeThinkingMode(state.Provider, requestedThinkingMode, state.Model);
         if (!string.IsNullOrWhiteSpace(requestedThinkingMode) && normalizedThinkingMode is null)
         {
             await LogBlockedAsync(scope.UserId, "rejected_thinking_mode", state, ipAddress, cancellationToken, new
@@ -335,7 +335,10 @@ public sealed class AtlasAiService : IAtlasAiService
 
         await EnsureRequestLimitsAsync(scope.UserId, state, now, ipAddress, cancellationToken);
 
-        var context = await BuildFinancialContextAsync(scope, prompt, state.MaxContextRows, paisId, cancellationToken);
+        var maxContextCharacters = state.Provider == "MINIMAX" && state.Model == AiConfiguration.MiniMaxM31FlashModel
+            ? Math.Max(AiConfigurationDefaults.MaxContextCharacters, state.MaxInputTokens * 4)
+            : AiConfigurationDefaults.MaxContextCharacters;
+        var context = await BuildFinancialContextAsync(scope, prompt, state.MaxContextRows, maxContextCharacters, paisId, cancellationToken);
         // V-02-07: seudonimizacion reversible antes de salir hacia el proveedor de IA
         // externo. BuildFinancialContextAsync ya se ejecuto con el prompt real (busca en
         // BD por terminos de la pregunta); a partir de aqui solo se envia texto seudonimizado.
@@ -368,14 +371,17 @@ public sealed class AtlasAiService : IAtlasAiService
         var contextMessage = $"CONTEXTO_FINANCIERO_NO_CONFIABLE\n{safeContext}";
         var estimatedInputTokens = EstimateTokens(systemMessage + userMessage + contextMessage);
 
-        if (estimatedInputTokens > state.MaxInputTokens)
+        var inputLimit = state.Provider == "MINIMAX" && state.Model == AiConfiguration.MiniMaxM31FlashModel
+            ? Math.Min(state.MaxInputTokens, AiConfiguration.MiniMaxM31ContextWindow - state.MaxOutputTokens)
+            : state.MaxInputTokens;
+        if (estimatedInputTokens > inputLimit)
         {
             await LogBlockedAsync(scope.UserId, "input_tokens_exceeded", state, ipAddress, cancellationToken, new
             {
                 tokens_entrada_estimados = estimatedInputTokens,
                 state.MaxInputTokens
             });
-            throw new IaLimitExceededException($"La consulta supera el limite de contexto de IA ({state.MaxInputTokens} tokens aproximados).");
+            throw new IaLimitExceededException($"La consulta supera el limite de contexto de IA ({inputLimit} tokens aproximados).");
         }
 
         var preflightCost = EstimateCost(estimatedInputTokens, state.MaxOutputTokens, state);
@@ -767,7 +773,21 @@ public sealed class AtlasAiService : IAtlasAiService
             // MiniMax-M3 acepta thinking.type; MiniMax-M2.7 no acepta el campo
             // (lo ignora o devuelve 400), asi que solo lo emitimos en M3 y
             // cuando el usuario lo pide de forma explicita.
-            var supportsThinking = string.Equals(state.Model, AiConfiguration.DefaultMiniMaxModel, StringComparison.Ordinal);
+            var supportsThinking = string.Equals(state.Model, AiConfiguration.MiniMaxM3Model, StringComparison.Ordinal);
+            if (state.Model == AiConfiguration.MiniMaxM31FlashModel)
+            {
+                request.Content = JsonContent.Create(new
+                {
+                    model = state.Model,
+                    reasoning_effort = normalizedThinkingMode == AiConfiguration.ThinkingModeAuto ? "max" : normalizedThinkingMode,
+                    reasoning_split = true,
+                    temperature = 0.1,
+                    max_completion_tokens = state.MaxOutputTokens,
+                    stream = false,
+                    messages
+                });
+                return request;
+            }
             object? thinkingPayload = null;
             if (supportsThinking)
             {
@@ -1814,6 +1834,7 @@ public sealed class AtlasAiService : IAtlasAiService
         UserAccessScope scope,
         string question,
         int maxContextRows,
+        int maxContextCharacters,
         Guid? paisId,
         CancellationToken cancellationToken)
     {
@@ -2017,7 +2038,7 @@ public sealed class AtlasAiService : IAtlasAiService
         }
 
         // V-02-05 (MED-3): redactar IBANs en el contexto enviado al proveedor IA.
-        var texto = RedactIbanLike(TrimContextText(builder.ToString()));
+        var texto = RedactIbanLike(TrimContextText(builder.ToString(), maxContextCharacters));
         return (texto, relevant.Count);
     }
 
@@ -2156,14 +2177,14 @@ public sealed class AtlasAiService : IAtlasAiService
         return terms;
     }
 
-    private static string TrimContextText(string text)
+    private static string TrimContextText(string text, int maxContextCharacters)
     {
-        if (text.Length <= AiConfigurationDefaults.MaxContextCharacters)
+        if (text.Length <= maxContextCharacters)
         {
             return text;
         }
 
-        return text[..AiConfigurationDefaults.MaxContextCharacters] +
+        return text[..maxContextCharacters] +
                "\n[Contexto truncado por limite defensivo de privacidad y coste.]";
     }
 
@@ -2448,7 +2469,7 @@ public sealed class AtlasAiService : IAtlasAiService
             MaxInputTokens = state.MaxInputTokens,
             MaxOutputTokens = state.MaxOutputTokens,
             MaxContextRows = state.MaxContextRows,
-            ThinkingModes = AiConfiguration.GetThinkingModesForProvider(state.Provider)
+            ThinkingModes = AiConfiguration.GetThinkingModesForProvider(state.Provider, state.Model)
                 .Select(value => new IaThinkingModeOption { Value = value, Label = HumanizeThinkingMode(value) })
                 .ToArray()
         };
@@ -2508,6 +2529,8 @@ public sealed class AtlasAiService : IAtlasAiService
             "low" => "Esfuerzo bajo",
             "medium" => "Esfuerzo medio",
             "high" => "Esfuerzo alto",
+            "xhigh" => "Esfuerzo muy alto",
+            "max" => "Esfuerzo máximo",
             "on" => "Pensamiento activado",
             "off" => "Pensamiento desactivado",
             _ => "Esfuerzo automatico"
@@ -2595,7 +2618,7 @@ public sealed class AtlasAiService : IAtlasAiService
             BudgetWarningPercent: Math.Clamp(ParseInt(GetValue(config, "ai_budget_warning_percent"), AiConfigurationDefaults.BudgetWarningPercent), 1, 100),
             InputCostPerMillionTokensEur: Math.Max(0, ParseDecimal(GetValue(config, "ai_input_cost_per_1m_tokens_eur"), 0m)),
             OutputCostPerMillionTokensEur: Math.Max(0, ParseDecimal(GetValue(config, "ai_output_cost_per_1m_tokens_eur"), 0m)),
-            MaxInputTokens: Math.Clamp(ParseInt(GetValue(config, "ai_max_input_tokens"), AiConfigurationDefaults.MaxInputTokens), 1000, 50000),
+            MaxInputTokens: Math.Clamp(ParseInt(GetValue(config, "ai_max_input_tokens"), AiConfigurationDefaults.MaxInputTokens), 1000, 1000000),
             MaxOutputTokens: Math.Clamp(ParseInt(GetValue(config, "ai_max_output_tokens"), AiConfigurationDefaults.MaxOutputTokens), 64, 4000),
             MaxContextRows: Math.Clamp(ParseInt(GetValue(config, "ai_max_context_rows"), AiConfigurationDefaults.MaxContextRows), 0, 500),
             UsageMonthCostEur: storedMonthKey == monthKey ? Math.Max(0, ParseDecimal(GetValue(config, "ai_usage_month_cost_eur"), 0m)) : 0m,

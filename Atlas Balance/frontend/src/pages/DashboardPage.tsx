@@ -11,7 +11,7 @@ import type {
   DashboardSaldosDivisa,
   PeriodoDashboard,
 } from '@/types';
-import { formatCurrency, formatDate, formatPercent } from '@/utils/formatters';
+import { formatCurrency, formatDate, formatPercent, signoPorcentaje } from '@/utils/formatters';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { EmptyState } from '@/components/common/EmptyState';
 import { ConcentracionDonutCharts } from '@/components/dashboard/ConcentracionDonutCharts';
@@ -280,8 +280,8 @@ export default function DashboardPage() {
                     <span className="dashboard-hero-delta">
                       {variacionPct !== null ? (
                         <>
-                          <span className={variacionPct >= 0 ? 'dashboard-variacion-pill dashboard-variacion--positive' : 'dashboard-variacion-pill dashboard-variacion--negative'}>
-                            {variacionPct > 0 ? '+' : ''}{formatPercent(variacionPct)}
+                          <span className={signoPorcentaje(variacionPct) >= 0 ? 'dashboard-variacion-pill dashboard-variacion--positive' : 'dashboard-variacion-pill dashboard-variacion--negative'}>
+                            {formatPercent(variacionPct, 1, { showSign: true })}
                           </span>
                           <span>vs. periodo anterior · {formatPeriodoLabel(periodo)}</span>
                         </>
@@ -303,8 +303,8 @@ export default function DashboardPage() {
                             </SignedAmount>
                           </dd>
                           {variacionDispPct !== null ? (
-                            <small className={variacionDispPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                              {disponiblePct !== null ? `${formatPercent(disponiblePct)} del saldo total` : `${variacionDispPct > 0 ? '+' : ''}${formatPercent(variacionDispPct)}`}
+                            <small className={signoPorcentaje(variacionDispPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                              {disponiblePct !== null ? `${formatPercent(disponiblePct)} del saldo total` : formatPercent(variacionDispPct, 1, { showSign: true })}
                             </small>
                           ) : null}
                         </div>
@@ -313,8 +313,8 @@ export default function DashboardPage() {
                           <dd>{formatCurrency(liquidezConsolidada.inmovilizado, principal.divisa_principal)}</dd>
                           {variacionInmovPct !== null ? (
                             Math.abs(variacionInmovPct) >= 0.1 ? (
-                              <small className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
-                                {variacionInmovPct > 0 ? '+' : ''}{formatPercent(variacionInmovPct)} vs. inicio del período
+                              <small className={signoPorcentaje(variacionInmovPct) > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
+                                {formatPercent(variacionInmovPct, 1, { showSign: true })} vs. inicio del período
                               </small>
                             ) : (
                               <small className="dashboard-variacion--neutral">Sin cambios en el período</small>
@@ -387,8 +387,8 @@ export default function DashboardPage() {
                       </SignedAmount>
                     }
                     helper={variacionIngPct !== null ? (
-                      <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                        {variacionIngPct > 0 ? '+' : ''}{formatPercent(variacionIngPct)} vs. anterior
+                      <span className={signoPorcentaje(variacionIngPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                        {formatPercent(variacionIngPct, 1, { showSign: true })} vs. anterior
                       </span>
                     ) : undefined}
                   />
@@ -401,8 +401,8 @@ export default function DashboardPage() {
                       </SignedAmount>
                     }
                     helper={variacionEgrPct !== null ? (
-                      <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                        {variacionEgrPct > 0 ? '+' : ''}{formatPercent(variacionEgrPct)} vs. anterior
+                      <span className={signoPorcentaje(variacionEgrPct) <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                        {formatPercent(variacionEgrPct, 1, { showSign: true })} vs. anterior
                       </span>
                     ) : undefined}
                   />

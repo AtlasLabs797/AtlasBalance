@@ -63,8 +63,8 @@ public sealed class ConfiguracionController : ControllerBase
                 Port = ParseInt(GetValue(config, "smtp_port"), 587),
                 User = GetValue(config, "smtp_user"),
                 From = GetValue(config, "smtp_from"),
-                // S-17: modo TLS explicito. "auto" si no esta configurado.
-                TlsMode = GetValue(config, "smtp_tls_mode", "auto")
+                // S-17: modo TLS explicito. "required" si no esta configurado.
+                TlsMode = GetValue(config, "smtp_tls_mode", "required")
             },
             General = new GeneralConfigResponse
             {
@@ -503,16 +503,16 @@ public sealed class ConfiguracionController : ControllerBase
             PorcentajeAvisoPresupuesto = Math.Clamp(ParseInt(GetValue(config, "ai_budget_warning_percent"), AiConfigurationDefaults.BudgetWarningPercent), 1, 100),
             InputCostPerMillionTokensEur = Math.Max(0, ParseDecimal(GetValue(config, "ai_input_cost_per_1m_tokens_eur"), 0m)),
             OutputCostPerMillionTokensEur = Math.Max(0, ParseDecimal(GetValue(config, "ai_output_cost_per_1m_tokens_eur"), 0m)),
-            MaxInputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_input_tokens"), AiConfigurationDefaults.MaxInputTokens), 1000, 50000),
+            MaxInputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_input_tokens"), AiConfigurationDefaults.MaxInputTokens), 1000, 1000000),
             MaxOutputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_output_tokens"), AiConfigurationDefaults.MaxOutputTokens), 64, 4000),
             MaxContextRows = Math.Clamp(ParseInt(GetValue(config, "ai_max_context_rows"), AiConfigurationDefaults.MaxContextRows), 0, 500),
-            ThinkingModes = BuildThinkingModeOptions(provider)
+            ThinkingModes = BuildThinkingModeOptions(provider, model)
         };
     }
 
-    private static IReadOnlyList<IaThinkingModeOption> BuildThinkingModeOptions(string provider)
+    private static IReadOnlyList<IaThinkingModeOption> BuildThinkingModeOptions(string provider, string model)
     {
-        return AiConfiguration.GetThinkingModesForProvider(provider)
+        return AiConfiguration.GetThinkingModesForProvider(provider, model)
             .Select(value => new IaThinkingModeOption
             {
                 Value = value,
@@ -528,6 +528,8 @@ public sealed class ConfiguracionController : ControllerBase
             "low" => "Esfuerzo bajo",
             "medium" => "Esfuerzo medio",
             "high" => "Esfuerzo alto",
+            "xhigh" => "Esfuerzo muy alto",
+            "max" => "Esfuerzo máximo",
             "on" => "Pensamiento activado",
             "off" => "Pensamiento desactivado",
             _ => "Esfuerzo automatico"
@@ -612,9 +614,9 @@ public sealed class ConfiguracionController : ControllerBase
             return "Los costes estimados por token no pueden ser negativos.";
         }
 
-        if (request.MaxInputTokens is < 1000 or > 50000)
+        if (request.MaxInputTokens is < 1000 or > 1000000)
         {
-            return "El limite de tokens de entrada debe estar entre 1000 y 50000.";
+            return "El limite de tokens de entrada debe estar entre 1000 y 1000000.";
         }
 
         if (request.MaxOutputTokens is < 64 or > 4000)

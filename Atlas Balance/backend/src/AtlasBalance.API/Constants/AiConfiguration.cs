@@ -14,7 +14,10 @@ public static class AiConfiguration
     public const string OpenRouterNemotronModel = "nvidia/nemotron-3-super-120b-a12b:free";
     public const string OpenRouterGptOss120BModel = "openai/gpt-oss-120b:free";
     public const string DefaultOpenAiModel = "gpt-4o-mini";
-    public const string DefaultMiniMaxModel = "MiniMax-M3";
+    public const string MiniMaxM31FlashModel = "MiniMax-M3.1-Flash";
+    public const int MiniMaxM31ContextWindow = 1_000_000;
+    public const string DefaultMiniMaxModel = MiniMaxM31FlashModel;
+    public const string MiniMaxM3Model = "MiniMax-M3";
     public const string MiniMaxM27Model = "MiniMax-M2.7";
 
     // V-02.09 (Fase UI): modos de pensamiento admitidos por provider.
@@ -26,6 +29,8 @@ public static class AiConfiguration
     public const string ThinkingModeLow = "low";
     public const string ThinkingModeMedium = "medium";
     public const string ThinkingModeHigh = "high";
+    public const string ThinkingModeXHigh = "xhigh";
+    public const string ThinkingModeMax = "max";
     public const string ThinkingModeOn = "on";
     public const string ThinkingModeOff = "off";
 
@@ -43,6 +48,9 @@ public static class AiConfiguration
         ThinkingModeOn,
         ThinkingModeOff
     ];
+
+    private static readonly string[] ThinkingModesMiniMaxFlash =
+    [ThinkingModeAuto, ThinkingModeLow, ThinkingModeMedium, ThinkingModeHigh, ThinkingModeXHigh, ThinkingModeMax];
 
     private static readonly string[] ThinkingModesOpenRouter =
     [
@@ -88,6 +96,7 @@ public static class AiConfiguration
     private static readonly string[] AllowedMiniMaxModels =
     [
         DefaultMiniMaxModel,
+        MiniMaxM3Model,
         MiniMaxM27Model
     ];
 
@@ -95,9 +104,10 @@ public static class AiConfiguration
     public static IReadOnlyList<string> OpenAiModels => AllowedOpenAiModels;
     public static IReadOnlyList<string> MiniMaxModels => AllowedMiniMaxModels;
 
-    public static IReadOnlyList<string> GetThinkingModesForProvider(string? provider)
+    public static IReadOnlyList<string> GetThinkingModesForProvider(string? provider, string? model = null)
     {
         var normalized = NormalizeProvider(provider);
+        if (normalized == "MINIMAX" && model == MiniMaxM31FlashModel) return ThinkingModesMiniMaxFlash;
         return normalized switch
         {
             "OPENAI" => ThinkingModesOpenAi,
@@ -106,7 +116,7 @@ public static class AiConfiguration
         };
     }
 
-    public static bool IsAllowedThinkingMode(string? provider, string? mode)
+    public static bool IsAllowedThinkingMode(string? provider, string? mode, string? model = null)
     {
         var normalized = NormalizeProvider(provider);
         var trimmed = mode?.Trim()?.ToLowerInvariant();
@@ -118,12 +128,12 @@ public static class AiConfiguration
         return normalized switch
         {
             "OPENAI" => ThinkingModesOpenAi.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
-            "MINIMAX" => ThinkingModesMiniMax.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
+            "MINIMAX" => GetThinkingModesForProvider(normalized, model).Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
             _ => AllowedThinkingModesOpenRouter.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal))
         };
     }
 
-    public static string? NormalizeThinkingMode(string? provider, string? mode)
+    public static string? NormalizeThinkingMode(string? provider, string? mode, string? model = null)
     {
         var trimmed = mode?.Trim()?.ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, ThinkingModeAuto, StringComparison.Ordinal))
@@ -131,7 +141,7 @@ public static class AiConfiguration
             return ThinkingModeAuto;
         }
 
-        return IsAllowedThinkingMode(provider, trimmed) ? trimmed : null;
+        return IsAllowedThinkingMode(provider, trimmed, model) ? trimmed : null;
     }
 
     public static bool IsAllowedOpenRouterModel(string? model)

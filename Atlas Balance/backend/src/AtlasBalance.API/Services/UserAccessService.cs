@@ -26,7 +26,6 @@ public interface IUserAccessService
     Task<bool> CanWriteCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanEditCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanReviewCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
-    Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
 
@@ -404,11 +403,6 @@ public sealed class UserAccessService : IUserAccessService
             scope,
             PermissionPredicates[UserAccessAction.Revisar],
             cancellationToken);
-    }
-
-    public Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
-    {
-        return CanCuentaAsync(UserAccessAction.AprobarImportacion, cuentaId, scope, cancellationToken);
     }
 
     public Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)

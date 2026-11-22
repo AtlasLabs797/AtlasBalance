@@ -137,6 +137,44 @@ Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (h
   - Datos de ejemplo sin tilde ("Espana", "Autonomo", "Comision mantenimiento"): vienen del mock o de la semilla.
   - No se ha ejecutado `vite build` ni se ha validado en la app con backend real.
 
+# 2026-11-19 - V-03.02 - Correccion de las regresiones e incompletos de la verificacion (B-10, S-17, S-25, B-2, J-1, S-2, F-7, D-1, M-3, A-6)
+
+- Trabajo: se corrigen los diez puntos de la seccion 4.1 de `VERIFICACION_CORRECCIONES_REVISION_INTEGRAL_2026-11-19.md`. El orquestador repartio el trabajo en 6 subagentes, con un maximo de 3 a la vez: 4 Sonnet (IA; SMTP, tipos de cambio y jobs; S-2; F-7) y 2 Haiku (S-25 y D-1; M-3). Despues reviso cada diff. Ajuste propio: con una sola divisa activa no se avisa al admin (era ruido diario en instalaciones con una divisa). Detalle en la seccion 21 del informe y en `DOCUMENTACION_TECNICA.md`. Sin commit.
+- Archivos backend:
+  - `Services/{IaPlanner/FinancialToolsService,EmailService,TiposCambioService,PlazoFijoService,UserAccessService}.cs`
+  - `Controllers/{ExtractosController,TelemetriaController,ConfiguracionController}.cs`
+  - `DTOs/{ExtractosDtos,TelemetriaDtos}.cs`
+  - `Data/SeedData.cs`
+  - `Jobs/{SyncTiposCambio,PlazoFijoVencimiento,AutoUpdate,VerificacionIntegridadAuditoria,HealthAlert}Job.cs`
+  - Tests: `ExtractosLoteTests` (nuevo), `FinancialToolsDivisaTests`, `FinancialToolsFiltrosTests`, `SmtpTlsModeTests`, `TiposCambioManualTests`, `JobConcurrencyAttributesTests`, `ExtractosColumnasServidorTests`, `TelemetriaControllerTests`, `PermisosLote6Tests` y los fakes de `RevisionControllerTests`, `ManualProcessResponseTests` y `ContratoApiPaginacionTests`.
+- Archivos frontend:
+  - `utils/{formatters,reportClientError}.ts`
+  - `pages/{DashboardPage,DashboardTitularPage,CuentaDetailPage,ConfiguracionPage}.tsx`
+  - `components/integraciones/TokenList.tsx`
+  - Borrados `utils/concurrencia.ts` y `tests/loteConcurrencia.test.ts`
+  - Tests nuevos `tests/{reportClientError,loteExtractosAtomico}.test.ts`; `formatPercent.test.ts` ampliado
+  - `package.json` y `tsconfig.test.v2.json`
+- Documentacion: `INFORME_REVISION_INTEGRAL_2026-11-16.md` (estado de los 10 IDs y seccion 21), `VERIFICACION_CORRECCIONES_REVISION_INTEGRAL_2026-11-19.md` (seccion 6), `DOCUMENTACION_TECNICA.md`, `DOCUMENTACION_USUARIO.md` (modo TLS), `LOG_ERRORES_INCIDENCIAS.md` y esta entrada.
+- Comandos:
+  - `dotnet test AtlasBalance.sln --artifacts-path <scratchpad>`, con una junction `src` para `TestSourceLocator`: API.Tests **1328/1328**, incluido PostgreSQL real; Caching.Tests **15/15**.
+  - Frontend: `npx tsc --noEmit` exit 0; `npm run lint` exit 0; los 50 ficheros de `test:unit` compilados en el scratchpad y ejecutados desde `frontend/`: **336/336**.
+- Decisiones visuales: el signo y el color de los porcentajes del dashboard se deciden sobre el valor redondeado, asi que un 0,04 % se pinta como cero (sin «+» y sin rojo). `TokenList` muestra el exito con 2 decimales, como antes.
+- Pendientes:
+  - Atomicidad de los lotes contra PostgreSQL real.
+  - Reproducir S-2 y B-2 en ejecucion.
+  - Los sitios hermanos de la seccion 4.2 de la verificacion.
+  - Revisar otros fixtures HTTP afectados por `AllowedHosts`.
+  - Sin `vite build`, sin Playwright y sin validacion visual.
+
+# 2026-11-19 - V-03.02 - Verificacion de las correcciones del informe de revision integral (LOTES 1 a 8)
+
+- Trabajo: revision en solo lectura, ID por ID, de las correcciones aplicadas sobre `INFORME_REVISION_INTEGRAL_2026-11-16.md` (113 IDs, mas las secciones 8.1 y 9), en el commit `b00a3de`. Nueve subagentes de solo lectura (7 Sonnet, 2 Haiku); el orquestador releyo en el codigo todas las regresiones y todos los PARCIAL que contradicen el informe. No se ha tocado codigo ni el informe original.
+- Resultado: 78 resueltos, 18 parciales, 3 regresiones (B-10, S-17, S-25), 13 abiertos y 1 no verificable. Correcciones que se quedan cortas: J-1, B-2, S-2, D-1, F-7, M-3 y A-6. Detalle, nuevos hallazgos y correcciones al texto del informe en `Documentacion/VERIFICACION_CORRECCIONES_REVISION_INTEGRAL_2026-11-19.md`.
+- Archivos tocados: `Documentacion/VERIFICACION_CORRECCIONES_REVISION_INTEGRAL_2026-11-19.md` (nuevo) y esta entrada.
+- Comandos: `dotnet test AtlasBalance.sln --artifacts-path <scratchpad>` (API.Tests 1268/1282; los 14 restantes fallaban por `TestSourceLocator` fuera del arbol y pasan 27/27 al repetirlos con la ruta resuelta; Caching.Tests 15/15); `npx tsc --noEmit` y `npm run lint` limpios; tests unitarios de frontend compilados en el scratchpad, 332/332; `select '{"clave":"x"}'::jsonb::text` contra el PostgreSQL de desarrollo (B-2).
+- Bloqueos: `npm run test:unit` y `dotnet test` en sus rutas canonicas siguen dando EPERM o acceso denegado en `frontend/.test-dist/` y `backend/**/obj` (el mismo bloqueo que el LOTE 8).
+- Pendientes: corregir las tres regresiones y los siete parciales; no se han ejecutado `vite build`, Playwright, los `*.Tests.ps1`, `Check-VersionAlignment.ps1` ni `EXPLAIN`; no hubo validacion visual.
+
 # 2026-11-18 - V-03.02 - Lote 8 del informe de revision integral (D-1, D-2, D-3, D-4, D-5, D-6, D-7, D-8, D-9, D-10, D-11, D-12, M-1, M-2, M-6, M-10, M-11, M-12, M-13, M-14, M-15, M-17, R-9, T-1, T-2)
 
 > Entrada general del lote. Debajo de esta hay entradas de detalle de cada subagente (M-14/M-15, M-17 y D-5).
@@ -994,3 +1032,17 @@ Frontend (`Atlas Balance/frontend`): `index.html`, `public/theme-init.js` (nuevo
 - Supuestos: (1) el reparto del resto de la capa se hizo por destino natural (hoja de la pagina propietaria) en vez de a `global.css` cuando la regla ganaba por orden de fuente a la hoja de su pagina; (2) `.app-content th` pasa a `.app-content table th` para conservar la especificidad al bajar a `global.css`; (3) el titulo compartido declara 600 porque ese era el peso efectivo (ganaba `.app-content h1` al 700 del parche).
 - Pendientes: la bitacora de este lote la mantiene el orquestador; el comparador de capturas pixel a pixel tiene ruido de marcas de tiempo, por lo que la lectura se ha hecho por zona de panel.
 - Bloqueos: ninguno. Nada commiteado.
+## 2026-11-20 - V-03.02 - MiniMax M3.1 Flash
+
+- Trabajo: anadido el modelo al catalogo de MiniMax, manteniendo el default existente. Su razonamiento obligatorio se presenta como automatico y no se envia `thinking`.
+- Archivos: `AiConfiguration.cs`, `AtlasAiService.cs`, `aiModels.ts`, `AiChatPanel.tsx`, `AtlasAiServiceTests.cs`, `aiModels.test.ts`, documentacion tecnica, de usuario, version y log de incidencias.
+- Comandos: `npm run lint`, `npx tsc --noEmit`, `npx tsc -p tsconfig.test.v2.json --outDir .test-dist-minimax-m31` y `node --test .../aiModels.test.js`; ejecutable de tests backend con `-method '*AskAsync_Should_Use_MiniMax_Model_Without_DisableThinking_Payload*'`; `git diff --check`.
+- Verificacion: lint y tipos correctos; 6 pruebas de frontend y 2 de backend correctas. La suite normal frontend no pudo escribir `.test-dist` (EPERM); se uso un directorio nuevo para la prueba dirigida. El filtro VSTest fue ignorado y se interrumpio el runner; se ejecuto el filtro nativo de xUnit.
+- Diseno: se conserva el selector actual; para M3.1 Flash se limita a automatico. Pendientes: prueba visual autenticada y llamada real al proveedor con cuenta habilitada; no se ha ejecutado la suite completa.
+## 2026-11-20 - V-03.02 - Razonamiento y contexto de MiniMax M3.1 Flash
+
+- Trabajo: Flash predeterminado al seleccionar MiniMax, cinco niveles de razonamiento y limite configurable de 1.000.000 de tokens de contexto, reservando los tokens de salida configurados; se aumenta el limite de caracteres del contexto para Flash sin alterar los limites de movimientos ni permisos.
+- Archivos: `AiConfiguration.cs`, `AtlasAiService.cs`, `ConfiguracionController.cs`, `aiModels.ts`, `aiChatStore.ts`, `AiChatPanel.tsx`, `ConfiguracionPage.tsx`, pruebas de IA y configuracion, documentacion tecnica, usuario y version.
+- Comandos: `dotnet build` del proyecto de tests con analizadores desactivados; ejecutable xUnit con filtros `-method` y `-class`; `npm run lint`, `npx tsc --noEmit`, compilacion de tests frontend a `.test-dist-minimax-reasoning` y `node --test` de `aiModels.test.js`.
+- Verificacion: build, lint y tipos correctos; 7 casos de envio MiniMax, 12 pruebas de modos existentes, 1 prueba de guardado de 1.000.000 y 6 pruebas frontend correctas. Visual: selector existente con etiquetas de niveles, sin rediseno.
+- Pendiente: prueba visual autenticada y llamada real a MiniMax; la configuracion existente requiere seleccionar el proveedor o modelo y guardar. El limite de tokens es aproximado y siguen vigentes los limites de movimientos y periodo.

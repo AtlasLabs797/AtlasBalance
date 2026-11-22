@@ -11,7 +11,7 @@ const OPENROUTER_FREE_MODEL = 'openrouter/free';
 export const OPENROUTER_DEFAULT_RUNTIME_MODEL = OPENROUTER_AUTO_MODEL;
 const OPENROUTER_NEMOTRON_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 const DEFAULT_OPENAI_MODEL = 'gpt-4o-mini';
-const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3';
+const DEFAULT_MINIMAX_MODEL = 'MiniMax-M3.1-Flash';
 
 export const aiProviderOptions: AiModelOption[] = [
   { value: 'OPENROUTER', label: 'OpenRouter' },
@@ -37,7 +37,8 @@ const openAiModelOptions: AiModelOption[] = [
 ];
 
 const miniMaxModelOptions: AiModelOption[] = [
-  { value: DEFAULT_MINIMAX_MODEL, label: 'MiniMax M3' },
+  { value: DEFAULT_MINIMAX_MODEL, label: 'MiniMax M3.1 Flash' },
+  { value: 'MiniMax-M3', label: 'MiniMax M3' },
   { value: 'MiniMax-M2.7', label: 'MiniMax M2.7' },
 ];
 
@@ -96,7 +97,7 @@ export function isOpenRouterFreeModel(model: string | null | undefined) {
 // acepta via reasoning.effort en modelos concretos. El frontend publica
 // solo las opciones que el backend declara por provider; aqui las
 // definimos como fallback cuando el backend no las envia.
-export type ThinkingMode = 'auto' | 'low' | 'medium' | 'high' | 'on' | 'off';
+export type ThinkingMode = 'auto' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'on' | 'off';
 
 interface ThinkingModeOption {
   value: ThinkingMode;
@@ -120,8 +121,11 @@ const THINKING_MODES_OPENROUTER: ThinkingModeOption[] = [
   { value: 'auto', label: 'Esfuerzo automático' },
 ];
 
-export function getThinkingModeOptions(provider: string | null | undefined): ThinkingModeOption[] {
+export function getThinkingModeOptions(provider: string | null | undefined, model?: string | null): ThinkingModeOption[] {
   const normalizedProvider = normalizeAiProvider(provider);
+  if (normalizedProvider === 'MINIMAX' && model === DEFAULT_MINIMAX_MODEL) {
+    return [...THINKING_MODES_OPENAI, { value: 'xhigh', label: 'Esfuerzo muy alto' }, { value: 'max', label: 'Esfuerzo máximo' }];
+  }
   if (normalizedProvider === 'OPENAI') {
     return THINKING_MODES_OPENAI;
   }
@@ -144,8 +148,8 @@ export function resolveSelectedModelAfterConfigRefresh(
   return (allowedModels ?? []).includes(currentSelectedModel) ? currentSelectedModel : null;
 }
 
-export function normalizeThinkingMode(provider: string | null | undefined, value: string | null | undefined): ThinkingMode {
-  const allowed = getThinkingModeOptions(provider).map((option) => option.value);
+export function normalizeThinkingMode(provider: string | null | undefined, value: string | null | undefined, model?: string | null): ThinkingMode {
+  const allowed = getThinkingModeOptions(provider, model).map((option) => option.value);
   const trimmed = (value ?? '').trim();
   return (allowed as string[]).includes(trimmed) ? (trimmed as ThinkingMode) : 'auto';
 }

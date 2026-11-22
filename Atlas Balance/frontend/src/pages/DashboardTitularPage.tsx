@@ -11,7 +11,7 @@ import type {
   DashboardTitular,
   PeriodoDashboard,
 } from '@/types';
-import { formatCurrency, formatPercent } from '@/utils/formatters';
+import { formatCurrency, formatPercent, signoPorcentaje } from '@/utils/formatters';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { EmptyState } from '@/components/common/EmptyState';
 import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
@@ -212,8 +212,8 @@ export default function DashboardTitularPage() {
               </SignedAmount>
             }
             helper={variacionPct !== null ? (
-              <span className={variacionPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                {variacionPct > 0 ? '+' : ''}{formatPercent(variacionPct)} vs. inicio del período
+              <span className={signoPorcentaje(variacionPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                {formatPercent(variacionPct, 1, { showSign: true })} vs. inicio del período
               </span>
             ) : undefined}
           />
@@ -237,8 +237,8 @@ export default function DashboardTitularPage() {
                   </SignedAmount>
                 }
                 helper={variacionIngPct !== null ? (
-                  <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                    {variacionIngPct > 0 ? '+' : ''}{formatPercent(variacionIngPct)} vs. anterior
+                  <span className={signoPorcentaje(variacionIngPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                    {formatPercent(variacionIngPct, 1, { showSign: true })} vs. anterior
                   </span>
                 ) : undefined}
               />
@@ -251,8 +251,8 @@ export default function DashboardTitularPage() {
                   </SignedAmount>
                 }
                 helper={variacionEgrPct !== null ? (
-                  <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                    {variacionEgrPct > 0 ? '+' : ''}{formatPercent(variacionEgrPct)} vs. anterior
+                  <span className={signoPorcentaje(variacionEgrPct) <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                    {formatPercent(variacionEgrPct, 1, { showSign: true })} vs. anterior
                   </span>
                 ) : undefined}
               />

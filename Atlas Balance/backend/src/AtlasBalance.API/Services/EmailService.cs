@@ -296,7 +296,7 @@ public sealed class EmailService : IEmailService
         }
 
         // S-17: el modo TLS es explicito y configurable (required | auto | none).
-        // Si no esta configurado, "auto" (comportamiento anterior).
+        // Si no esta configurado, "required" (ver ResolverSecureSocketOptions).
         var smtpTlsMode = await GetConfigValueAsync("smtp_tls_mode", cancellationToken);
 
         var smtpPort = int.TryParse(smtpPortRaw, out var parsedPort) ? parsedPort : 587;
@@ -304,17 +304,19 @@ public sealed class EmailService : IEmailService
     }
 
     /// <summary>
-    /// S-17: decide como se cifra el canal SMTP segun el puerto y el modo
-    /// configurado (clave smtp_tls_mode).
+    /// S-17: decide como se cifra el canal SMTP segun el puerto, el modo
+    /// configurado (clave smtp_tls_mode) y si hay credenciales.
     /// - 465: SMTPS, TLS implicito, siempre (el modo no aplica).
     /// - required: STARTTLS obligatorio; si el servidor no lo ofrece, el envio falla.
-    /// - auto: STARTTLS si el servidor lo ofrece; si no, se envia sin cifrar.
+    /// - auto (valor que tienen las instalaciones antiguas): con credenciales,
+    ///   STARTTLS obligatorio (nunca se autentica en claro); sin credenciales,
+    ///   STARTTLS si el servidor lo ofrece y, si no, sin cifrar (se avisa en el log).
     /// - none: sin cifrar, pedido explicito del operador (hay relays que no
     ///   admiten TLS).
-    /// Un modo desconocido o ausente cae en "auto": un valor mal escrito no
-    /// puede abrir el canal en claro por accidente.
+    /// Un modo desconocido o ausente cae en "required": un valor mal escrito
+    /// no puede abrir el canal en claro por accidente.
     /// </summary>
-    internal static SecureSocketOptions ResolverSecureSocketOptions(int smtpPort, string? tlsMode)
+    internal static SecureSocketOptions ResolverSecureSocketOptions(int smtpPort, string? tlsMode, bool hasCredentials)
     {
         if (smtpPort == 465)
         {
@@ -323,16 +325,16 @@ public sealed class EmailService : IEmailService
 
         return ModoTlsEfectivo(tlsMode) switch
         {
-            "required" => SecureSocketOptions.StartTls,
             "none" => SecureSocketOptions.None,
-            _ => SecureSocketOptions.StartTlsWhenAvailable
+            "auto" when !hasCredentials => SecureSocketOptions.StartTlsWhenAvailable,
+            _ => SecureSocketOptions.StartTls
         };
     }
 
     private static string ModoTlsEfectivo(string? tlsMode)
     {
         var modo = tlsMode?.Trim().ToLowerInvariant();
-        return modo is "required" or "auto" or "none" ? modo : "auto";
+        return modo is "required" or "auto" or "none" ? modo : "required";
     }
 
     private async Task SendMessageAsync(
@@ -350,10 +352,9 @@ public sealed class EmailService : IEmailService
         client.Timeout = 15_000;
         var userName = smtpUser?.Trim();
         var hasCredentials = !string.IsNullOrWhiteSpace(userName);
-        // S-17: el modo TLS configurado manda. Antes se deducía de si habia
-        // credenciales, y sin ellas el mensaje podia salir en claro sin que
-        // nadie lo hubiera pedido.
-        var secureSocketOptions = ResolverSecureSocketOptions(smtpPort, tlsMode);
+        // S-17: el modo TLS configurado manda; "auto" con credenciales exige
+        // STARTTLS para no autenticar ni enviar en claro.
+        var secureSocketOptions = ResolverSecureSocketOptions(smtpPort, tlsMode, hasCredentials);
 
         await client.ConnectAsync(smtpHost, smtpPort, secureSocketOptions, cancellationToken);
         if (hasCredentials)

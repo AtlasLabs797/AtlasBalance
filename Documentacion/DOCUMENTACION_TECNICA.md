@@ -2,6 +2,30 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-19 - Correccion tras la verificacion independiente (B-10, S-17, S-25, B-2, J-1, S-2, F-7, D-1, M-3, A-6)
+
+- **IA (B-10, A-6):** `FinancialToolsService.SonProximos` compara parejas consecutivas de elementos ordenados (sin `Distinct`). `DetectAnomaliesAsync` filtra por `Concepto` (`ToLower().Contains`) y por `ImporteMinimo`/`ImporteMaximo` sobre `Math.Abs(Monto)`.
+- **SMTP (S-17):** la firma pasa a `EmailService.ResolverSecureSocketOptions(port, tlsMode, hasCredentials)`.
+  - 465: `SslOnConnect`.
+  - `none`: `None`.
+  - `auto` sin credenciales: `StartTlsWhenAvailable`.
+  - Todo lo demas (`required`, `auto` con credenciales, desconocido): `StartTls`.
+  - Seed y fallback de `ConfiguracionController`: `required`.
+- **Telemetria (S-25):** sin `[MaxLength]` en `TelemetriaDtos`. `TelemetriaController.RegistrarError` lleva `[RequestSizeLimit(32 * 1024)]` y recorta con `Recortar`. `FE/utils/reportClientError.ts` exporta `LIMITES_TELEMETRIA`, `recortarTexto` y `recortarPayloadTelemetria`.
+- **Tipos de cambio (B-2):** `NotificarAdminAsync` filtra en SQL por `Tipo` y `Fecha >= ahora - 24 h`, y compara la `clave` con `JsonDocument`. Claves nuevas: `sin_clave_api` y `sin_tasa_aplicable`. El `catch` hace `ChangeTracker.Clear()` y envuelve el aviso en `try/catch`.
+- **Jobs (J-1):** atributos en `SyncTiposCambioJob` (600 s), `PlazoFijoVencimientoJob` (900 s), `VerificacionIntegridadAuditoriaJob` (1800 s) y `HealthAlertJob` (240 s), todos con reintentos 60/300/900. `AutoUpdateJob` (600 s) con `AutomaticRetry(Attempts = 0)`. `PlazoFijoService` hace `SaveChangesAsync` justo despues de marcar `FechaUltimaNotificacion` de cada grupo.
+- **Columnas (S-2):** `ExtractosController`.
+  - `ScopesChain(scope, incluirAlcancesParciales)`: solo `ResolveColumnasAdmin` usa la cadena ampliada.
+  - `Listar`: restringe `search` por cuenta segun la visibilidad de `concepto` y `comentarios`, y descarta `sortBy` sobre una columna oculta.
+  - `GetAuditCelda`: devuelve 403 para una columna oculta y filtra el historial. Las columnas no ocultables estan en `ColumnasSiempreVisibles`.
+- **Lotes (F-7):** `ExtractosController`.
+  - Endpoints `EliminarLote` y `FlagLote`, con `MaxIdsLote = 500`.
+  - Nucleo `EjecutarLoteAsync`: valida todo y despues aplica en una transaccion con un unico `SaveChanges`.
+  - Helpers compartidos con los endpoints por fila: `FlagDenegadoMotivo`, `ApplyFlag`, `ApplyDelete` y `AddAudit`.
+  - DTOs `LoteEliminarExtractosRequest`, `LoteFlagExtractosRequest` y `LoteExtractosResponse`.
+- **Porcentajes (D-1):** `formatPercent(value, decimals, { showSign })` y `signoPorcentaje(value, decimals)` en `FE/utils/formatters.ts`.
+- **M-3:** `IUserAccessService.CanApproveImportacionAsync` eliminado.
+
 ### 2026-11-18 - Lote 8 del informe de revision integral (D-1, D-2, D-3, D-4, D-7, D-8, D-9, D-10, D-11, D-12, M-1, M-2, M-6, M-10, M-11, M-12, M-13, M-14, M-15, M-17, T-1, T-2)
 
 Alcance: los IDs del lote 8 de `INFORME_REVISION_INTEGRAL_2026-11-16.md`. Solo esos; ningun otro ID tocado. Sin commit ni push y sin cambio de version.
@@ -139,6 +163,7 @@ Informe origen: `Diseno/INFORME_IMPECCABLE_CRITIQUE_AUDIT_V-03.02.md`. Aplicado 
 - **F9 riesgo:** `ConfirmOptions.tone` ('normal' | 'reversible' | 'irreversible'). Irreversible = `.button-danger` + icono + nota "Esta accion no se puede deshacer". `ConfirmDialog` sin `tone` es `normal` (no afirma nada). Los usos directos declaran su nivel: enviar a papelera (titulares, cuentas, paises, formatos, movimientos, alertas) = reversible; revocar/eliminar token y rotar token = irreversible; restaurar base de datos (paso 2) = irreversible; Actualizar ahora = reversible con la frase original "Esta accion no se puede deshacer" en el mensaje.
 - **F10:** reloj del sidebar eliminado. Barrido de `text-transform: uppercase`: 6 de 34 declaraciones quitadas (titulo de donut, proveedor y separador de dia del chat IA, titulo de sugerencias, pastilla del aviso de alertas, titulo de la hoja movil); se mantienen las 28 de metadata corta (cabeceras de columna, overlines y etiquetas), incluidos los eyebrows que DESIGN.md define como rol overline. No se hizo barrido de `@keyframes` (28 definidos, sin evidencia de problema).
 - **F11 no aplicado, con motivo:** `revision-ai.css` pesa ~48 KB sin comprimir (~8 KB gzip); cargarlo por ruta lo deja despues de `system-coherence.css` (que debe ir ultima) y `IconAiFace` del TopBar necesita sus keyframes globales. Ganancia menor que el riesgo.
+- **Tokens de espaciado:** los valores efectivos de `--space-N` vienen de `src/styles/variables.css` (por ejemplo `--space-4`=1rem, `--space-5`=1.5rem, `--space-8`=3rem), que se carga despues de `design-system/tokens/spacing.css` y lo sobrescribe. Calibra contra `variables.css`.
 - **Arnes visual:** `frontend/e2e/visual/` (`mockApi.ts`, `capture.spec.ts`): capturas con API mockeada, `VISUAL_OUT` y `VISUAL_FAIL=<endpoint>`. Playwright del proyecto espera chromium 1234; el spec fija el `executablePath` del headless shell instalado.
 
 ### 2026-11-16 - Accesibilidad y tema (hallazgos Modern Web Guidance)
@@ -2219,6 +2244,10 @@ El scheduler no llama directamente a cron dinamico por cada cambio de configurac
 - No se probo subida real a Google Drive porque faltan credenciales OAuth y cuenta vinculada en este entorno.
 - Para validar en servidor: configurar OAuth Client ID/Secret, guardar configuracion, vincular cuenta desde `Backups`, crear copia manual y confirmar que aparece un archivo `.enc` en Drive.
 - La clave `backup_cloud_encryption_key` debe conservarse junto con la instalacion. Si se pierde, las copias cifradas ya subidas a Drive no se podran descifrar. Esto no es opcional ni romantico: sin clave no hay restauracion.
+
+## 2026-11-20 - V-03.02 - MiniMax M3.1 Flash
+
+El catalogo incluye `MiniMax-M3.1-Flash` como predeterminado de MiniMax. El chat permite `low`, `medium`, `high`, `xhigh` y `max`; el backend envia `reasoning_effort` y automatico equivale a `max`. La seleccion de MiniMax o del modelo propone 1.000.000 de tokens de contexto, reservando los tokens de salida configurados al guardar; el valor existente no se modifica automaticamente. La validacion y lectura admiten hasta 1.000.000 de tokens de contexto, reservando los tokens de salida configurados. Para Flash el limite de caracteres del contexto financiero aumenta hasta cuatro veces el limite configurado, conservando la estimacion de tokens, seleccion de movimientos, periodo, permisos y seudonimizacion. Referencia: https://platform.minimax.io/docs/guides/text-generation.
 
 ## 2026-06-21 - V-02-02 - Proveedor IA MiniMax M3/M2.7
 

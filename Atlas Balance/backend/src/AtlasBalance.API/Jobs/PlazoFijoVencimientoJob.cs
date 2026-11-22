@@ -1,7 +1,13 @@
 using AtlasBalance.API.Services;
+using Hangfire;
 
 namespace AtlasBalance.API.Jobs;
 
+// V-03.02 (J-1): cron diario. El reintento no duplica emails: el servicio solo
+// avisa si FechaUltimaNotificacion != hoy y la guarda (SaveChanges) justo despues
+// de enviar el digest; las notificaciones de admin se deduplican por plazo.
+[DisableConcurrentExecution(timeoutInSeconds: 900)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class PlazoFijoVencimientoJob
 {
     private readonly IPlazoFijoService _plazoFijoService;

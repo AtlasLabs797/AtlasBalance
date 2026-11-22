@@ -280,6 +280,27 @@ public class FinancialToolsDivisaTests
     }
 
     [Fact]
+    public async Task DetectAnomalies_Debe_Marcar_Dos_Movimientos_Identicos_El_Mismo_Dia()
+    {
+        await using var db = BuildDbContext();
+        // B-10 (regresion): la comprobacion de proximidad deduplicaba las
+        // fechas y dos cobros identicos el MISMO dia no se marcaban.
+        var (userId, _) = await SeedAsync(db, "C1", "EUR",
+            new Mov("Pago duplicado", -100m, 1),
+            new Mov("Pago duplicado", -100m, 1));
+        var plan = new FinancialQueryPlan
+        {
+            Operacion = FinancialOperation.Anomalies,
+            Metrica = FinancialMetric.Gastos
+        };
+        var sut = BuildSut(db);
+
+        var result = await sut.DetectAnomaliesAsync(AdminScope(userId), plan, CancellationToken.None);
+
+        result.Data.Should().Contain(a => a.Tipo == "DUPLICADO_PROBABLE");
+    }
+
+    [Fact]
     public void Constante_AnomalyDuplicateMaxDays_Es_Tres_Dias()
     {
         // La ventana de proximidad la fijan los tests: sin ella, un pago

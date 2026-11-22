@@ -35,12 +35,18 @@ import { columnasExcluidasPorAdmin, columnasPermitidas } from '@/utils/columnasP
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate, formatDateTime, parseEuropeanNumber } from '@/utils/formatters';
 import { computeBulkFlagToggle } from '@/utils/bulkFlagToggle';
-import { ejecutarEnLote } from '@/utils/concurrencia';
 import { hoy } from '@/utils/hoy';
 import { rangoMostrado } from '@/utils/paginacion';
 import '@/styles/layout/routes/cuenta-detail.css';
 
 const BULK_DELETE_PREVIEW_LIMIT = 6;
+
+// F-7: respuesta de los endpoints de lote (/extractos/lote/eliminar y /flag).
+interface LoteExtractosResponse {
+  procesados: number;
+  ids: string[];
+  message: string;
+}
 
 interface UpdateExtractoPayload {
   fecha?: string;
@@ -488,39 +494,27 @@ export default function CuentaDetailPage() {
     setError(null);
 
     try {
-      // F-7: pool de cuatro peticiones en vez de una peticion por fila y en
-      // serie. Todas se intentan y cada fallo se reporta.
-      const resultados = await ejecutarEnLote(
-        selectedRows.map((row) => () => api.delete(`/extractos/${row.id}`))
-      );
-      const borrados = resultados.filter((resultado) => resultado.exito);
-      const fallidos = resultados.filter((resultado) => !resultado.exito);
-
-      if (borrados.length > 0) {
-        const deletedIds = new Set(borrados.map((resultado) => selectedRows[resultado.indice].id));
-        setRows((current) => current.filter((row) => !deletedIds.has(row.id)));
-        setRowsTotal((current) => Math.max(0, current - deletedIds.size));
-        setSelectedRowIds((current) => {
-          const next = new Set(current);
-          deletedIds.forEach((rowId) => next.delete(rowId));
-          return next;
-        });
-        setBulkDeleteOpen(false);
-        // El borrado soft toca el saldo derivado (no recalcula), pero
-        // cambia la lista y debe liberar el cache para que Dashboard,
-        // Alertas y Revision que estuvieran abiertas re-consulten al
-        // recuperar el foco.
-        await invalidate('extractoDelete');
-      }
-
-      if (fallidos.length > 0) {
-        setError(
-          extractErrorMessage(
-            fallidos[0].error,
-            `Se eliminaron ${borrados.length} de ${selectedRowsCount} movimientos. Fallaron ${fallidos.length}. Revisa permisos o vuelve a intentarlo.`
-          )
-        );
-      }
+      // F-7: una sola peticion atomica. Si alguna fila falla (no existe, sin
+      // permiso) el backend no aplica ninguna y el error dice cuales.
+      const { data } = await api.post<LoteExtractosResponse>('/extractos/lote/eliminar', {
+        ids: selectedRows.map((row) => row.id),
+      });
+      const deletedIds = new Set(data.ids);
+      setRows((current) => current.filter((row) => !deletedIds.has(row.id)));
+      setRowsTotal((current) => Math.max(0, current - deletedIds.size));
+      setSelectedRowIds((current) => {
+        const next = new Set(current);
+        deletedIds.forEach((rowId) => next.delete(rowId));
+        return next;
+      });
+      setBulkDeleteOpen(false);
+      // El borrado soft toca el saldo derivado (no recalcula), pero
+      // cambia la lista y debe liberar el cache para que Dashboard,
+      // Alertas y Revision que estuvieran abiertas re-consulten al
+      // recuperar el foco.
+      await invalidate('extractoDelete');
+    } catch (err) {
+      setError(extractErrorMessage(err, 'No se pudo eliminar el lote de movimientos. No se aplicó ningún cambio.'));
     } finally {
       setActionLoading(false);
     }
@@ -632,61 +626,48 @@ export default function CuentaDetailPage() {
     const objetivos = selectedRows.filter((row) => targetIds.includes(row.id));
 
     try {
-      // F-7: pool de cuatro peticiones en vez de una peticion por fila y en
-      // serie. Todas se intentan y cada fallo se reporta.
-      const resultados = await ejecutarEnLote(
-        objetivos.map((row) => () =>
-          api.patch(`/extractos/${row.id}/flag`, {
-            flagged: !isUnflag,
-            nota: isUnflag ? undefined : row.flagged_nota ?? undefined,
-          })
-        )
+      // F-7: una sola peticion atomica. Si alguna fila falla el backend no
+      // aplica ninguna y el error dice cuales.
+      const { data } = await api.post<LoteExtractosResponse>('/extractos/lote/flag', {
+        flagged: !isUnflag,
+        items: objetivos.map((row) => ({
+          id: row.id,
+          nota: isUnflag ? undefined : row.flagged_nota ?? undefined,
+        })),
+      });
+      const marcadosIds = new Set(data.ids);
+      setRows((current) =>
+        current.map((item) => {
+          if (!marcadosIds.has(item.id)) {
+            return item;
+          }
+
+          return isUnflag
+            ? {
+                ...item,
+                flagged: false,
+                flagged_nota: null,
+                flagged_at: null,
+                flagged_by_id: null,
+                fecha_modificacion: changedAt,
+              }
+            : {
+                ...item,
+                flagged: true,
+                flagged_at: changedAt,
+                flagged_by_id: usuario?.id ?? item.flagged_by_id,
+                fecha_modificacion: changedAt,
+              };
+        })
       );
-      const marcados = resultados.filter((resultado) => resultado.exito);
-      const fallidos = resultados.filter((resultado) => !resultado.exito);
-
-      if (marcados.length > 0) {
-        const marcadosIds = new Set(marcados.map((resultado) => objetivos[resultado.indice].id));
-        setRows((current) =>
-          current.map((item) => {
-            if (!marcadosIds.has(item.id)) {
-              return item;
-            }
-
-            return isUnflag
-              ? {
-                  ...item,
-                  flagged: false,
-                  flagged_nota: null,
-                  flagged_at: null,
-                  flagged_by_id: null,
-                  fecha_modificacion: changedAt,
-                }
-              : {
-                  ...item,
-                  flagged: true,
-                  flagged_at: changedAt,
-                  flagged_by_id: usuario?.id ?? item.flagged_by_id,
-                  fecha_modificacion: changedAt,
-                };
-          })
-        );
-        setBulkActionStatus(
-          isUnflag
-            ? `Quitada la alerta de ${marcados.length} ${marcados.length === 1 ? 'movimiento' : 'movimientos'}.`
-            : `${marcados.length} ${marcados.length === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
-        );
-        await invalidate('extractoFlag');
-      }
-
-      if (fallidos.length > 0) {
-        setError(
-          extractErrorMessage(
-            fallidos[0].error,
-            `Se ${isUnflag ? 'quitó la alerta de' : 'marcaron'} ${marcados.length} de ${objetivos.length} movimientos seleccionados. Fallaron ${fallidos.length}.`
-          )
-        );
-      }
+      setBulkActionStatus(
+        isUnflag
+          ? `Quitada la alerta de ${data.procesados} ${data.procesados === 1 ? 'movimiento' : 'movimientos'}.`
+          : `${data.procesados} ${data.procesados === 1 ? 'movimiento marcado' : 'movimientos marcados'} con alerta.`
+      );
+      await invalidate('extractoFlag');
+    } catch (err) {
+      setError(extractErrorMessage(err, 'No se pudo actualizar el lote de movimientos. No se aplicó ningún cambio.'));
     } finally {
       setActionLoading(false);
     }

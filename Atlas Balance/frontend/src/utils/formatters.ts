@@ -183,8 +183,8 @@ export function formatNumber(value: number, decimals: number = 2): string {
 // El valor entra YA en unidades de porcentaje (12.34 -> "12,3 %"), por eso no
 // se usa style: 'percent' de Intl: ese multiplica por 100.
 //
-// El cero se escribe "0,0 %", nunca "+0,0 %": el "+" de las variaciones lo
-// decide quien pinta la cifra, no el formateador.
+// El cero se escribe "0,0 %", nunca "+0,0 %": el "+" de las variaciones solo
+// lo pone formatPercent con { showSign: true }, y nunca a una cifra que redondea a cero.
 //
 // Valor ausente o no numerico -> "—", el marcador de valor ausente que ya usa
 // la app. Mismo criterio que formatBytes con "Sin tamaño": si no hay dato, se
@@ -219,16 +219,38 @@ function parsePercentValue(value: number | string | null | undefined): number | 
   return parseEuropeanNumber(value);
 }
 
+// Redondea al numero de decimales que pinta formatPercent. Un valor que queda
+// en cero se devuelve como 0 (sin "-0").
+function redondearPorcentaje(numeric: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  const redondeado = Math.round(numeric * factor) / factor;
+  return redondeado === 0 ? 0 : redondeado;
+}
+
+// Signo de un porcentaje tal y como se pinta: -1, 0 o 1, decidido sobre el valor
+// ya redondeado. Un 0,04 con un decimal es 0 (no positivo): asi el "+" y la clase
+// de color no contradicen la cifra mostrada. Valor ausente -> 0.
+export function signoPorcentaje(value: number | string | null | undefined, decimals: number = 1): number {
+  const numeric = parsePercentValue(value);
+  if (numeric === null) return 0;
+  return Math.sign(redondearPorcentaje(numeric, decimals));
+}
+
 // Porcentaje en formato es-ES: "12,3 %", "−5,2 %", "0,0 %".
 // decimals admite 0, 1 (por defecto) o 2.
-export function formatPercent(value: number | string | null | undefined, decimals: number = 1): string {
+// showSign: antepone "+" solo si la cifra ya redondeada es positiva.
+export function formatPercent(
+  value: number | string | null | undefined,
+  decimals: number = 1,
+  opciones?: { showSign?: boolean },
+): string {
   const numeric = parsePercentValue(value);
   if (numeric === null) return PERCENT_ABSENT;
 
   // Una cifra que redondea a cero se muestra sin signo: "−0,0 %" no significa
   // nada y el menos real delataria una variacion negativa inexistente.
-  const factor = 10 ** decimals;
-  const safeNumeric = Math.round(numeric * factor) / factor === 0 ? 0 : numeric;
+  const redondeado = redondearPorcentaje(numeric, decimals);
+  const safeNumeric = redondeado === 0 ? 0 : numeric;
 
   if (!percentFormatters[decimals]) {
     percentFormatters[decimals] = new Intl.NumberFormat('es-ES', {
@@ -238,7 +260,8 @@ export function formatPercent(value: number | string | null | undefined, decimal
     });
   }
 
-  return `${withRealMinusSign(percentFormatters[decimals].format(safeNumeric))}${getPercentSeparator()}%`;
+  const prefijo = opciones?.showSign && redondeado > 0 ? '+' : '';
+  return `${prefijo}${withRealMinusSign(percentFormatters[decimals].format(safeNumeric))}${getPercentSeparator()}%`;
 }
 
 export function formatBytes(value: number | null | undefined): string {

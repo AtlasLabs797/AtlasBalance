@@ -201,10 +201,10 @@ public class PermisosLote6Tests
     }
 
     [Fact]
-    public async Task CanApproveImportacionAsync_Con_Usuario_Que_Solo_Puede_Importar_Debe_Ser_True()
+    public async Task CanCuentaAsync_AprobarImportacion_Con_Usuario_Que_Solo_Puede_Importar_Debe_Ser_True()
     {
         // Aprobar una importacion sigue siendo `puede_aprobar_importaciones ||
-        // puede_importar`.
+        // puede_importar`, consultado por el mapa unico `UserAccessAction`.
         await using var db = BuildDbContext();
         var userId = Guid.NewGuid();
         var cuentaId = await SeedCuentaAsync(db, userId, puedeImportar: true);
@@ -212,7 +212,7 @@ public class PermisosLote6Tests
         var service = BuildUserAccessService(db);
         var scope = await service.GetScopeAsync(PrincipalFor(userId), CancellationToken.None);
 
-        (await service.CanApproveImportacionAsync(cuentaId, scope, CancellationToken.None)).Should().BeTrue();
+        (await service.CanCuentaAsync(UserAccessAction.AprobarImportacion, cuentaId, scope, CancellationToken.None)).Should().BeTrue();
     }
 
     // -----------------------------------------------------------------------
@@ -547,12 +547,6 @@ public class PermisosLote6Tests
 
         public Task<bool> CanReviewCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
             => _inner.CanReviewCuentaAsync(cuentaId, scope, cancellationToken);
-
-        public Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
-        {
-            MetodosConsultados.Add(nameof(CanApproveImportacionAsync));
-            return _inner.CanApproveImportacionAsync(cuentaId, scope, cancellationToken);
-        }
 
         public Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
         {

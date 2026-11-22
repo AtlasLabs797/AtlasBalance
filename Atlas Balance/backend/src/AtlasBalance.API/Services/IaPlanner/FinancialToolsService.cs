@@ -1067,6 +1067,9 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var cuentaIds = plan.Filtros.CuentaIds;
         var titularIds = plan.Filtros.TitularIds;
         var divisas = plan.Filtros.Divisas;
+        var concepto = plan.Filtros.Concepto?.Trim();
+        var importeMin = plan.Filtros.ImporteMinimo;
+        var importeMax = plan.Filtros.ImporteMaximo;
 
         var extractosQuery =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -1088,6 +1091,16 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (cuentaIds is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => cuentaIds.Contains(x.CuentaId));
         if (titularIds is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => titularIds.Contains(x.TitularId));
         if (divisas is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => divisas.Contains(x.CuentaDivisa));
+        // A-6: concepto e importes acotan los movimientos analizados igual
+        // que en el resto de herramientas ("contains" insensible a
+        // mayusculas; importes contra el valor absoluto).
+        if (concepto is { Length: > 0 })
+        {
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            extractosQuery = extractosQuery.Where(x => (x.Concepto ?? string.Empty).ToLower().Contains(terminoNormalizado));
+        }
+        if (importeMin.HasValue) extractosQuery = extractosQuery.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) extractosQuery = extractosQuery.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         var extractos = await extractosQuery.ToListAsync(cancellationToken);
 
@@ -1353,11 +1366,13 @@ public sealed class FinancialToolsService : IFinancialToolsService
         return string.Join(", ", partes);
     }
 
-    // B-10: dos fechas estan proximas si la separacion es de maxDias
-    // dias o menos.
+    // B-10: hay dos elementos proximos si la separacion entre alguna pareja
+    // consecutiva es de maxDias dias o menos. Se cuentan elementos, no
+    // fechas distintas: dos movimientos en la misma fecha (diferencia 0)
+    // son proximos.
     private static bool SonProximos(IEnumerable<DateOnly> fechas, int maxDias)
     {
-        var ordenadas = fechas.Distinct().OrderBy(x => x).ToList();
+        var ordenadas = fechas.OrderBy(x => x).ToList();
         for (int i = 1; i < ordenadas.Count; i++)
         {
             if (ordenadas[i].DayNumber - ordenadas[i - 1].DayNumber <= maxDias)

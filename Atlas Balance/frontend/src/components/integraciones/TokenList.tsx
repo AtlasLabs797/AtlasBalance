@@ -3,7 +3,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import api from '@/services/api';
 import type { IntegrationTokenListItem, IntegrationTokenMetrics } from '@/types';
-import { formatDateTime, formatNumber } from '@/utils/formatters';
+import { formatDateTime, formatNumber, formatPercent } from '@/utils/formatters';
 
 type TokenMetricState =
   | { status: 'loading' }
@@ -110,7 +110,7 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
                 </td>
                 <td>{token.scopes.length > 0 ? token.scopes.join(', ') : 'Legacy'}</td>
                 <td>{metricState.status === 'ready' ? metricState.data.total_requests : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
-                <td>{metricState.status === 'ready' ? `${formatNumber(metricState.data.porcentaje_exito)}%` : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
+                <td>{metricState.status === 'ready' ? formatPercent(metricState.data.porcentaje_exito, 2) : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td>{metricState.status === 'ready' ? formatNumber(metricState.data.tiempo_promedio_ms) : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td className="users-row-actions">
                   <button

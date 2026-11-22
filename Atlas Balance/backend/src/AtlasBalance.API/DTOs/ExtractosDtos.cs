@@ -165,6 +165,32 @@ public sealed class ToggleFlagRequest
     public string? Nota { get; set; }
 }
 
+// F-7: borrado y marcado en lote como una sola peticion atomica.
+public sealed class LoteEliminarExtractosRequest
+{
+    public List<Guid> Ids { get; set; } = [];
+}
+
+public sealed class LoteFlagExtractoItem
+{
+    public Guid Id { get; set; }
+    [MaxLength(ExtractoLimits.ComentariosMaxLength)]
+    public string? Nota { get; set; }
+}
+
+public sealed class LoteFlagExtractosRequest
+{
+    public bool Flagged { get; set; }
+    public List<LoteFlagExtractoItem> Items { get; set; } = [];
+}
+
+public sealed class LoteExtractosResponse
+{
+    public int Procesados { get; set; }
+    public List<Guid> Ids { get; set; } = [];
+    public string Message { get; set; } = string.Empty;
+}
+
 public sealed class AuditCellEntryResponse
 {
     public Guid Id { get; set; }

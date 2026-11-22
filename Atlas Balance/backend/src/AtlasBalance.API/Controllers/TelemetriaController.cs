@@ -35,11 +35,18 @@ public sealed class TelemetriaController : ControllerBase
         _cache = cache;
     }
 
+    // S-25: el cuerpo se acota en 32 KB (no hay tope propio para este endpoint anonimo,
+    // solo el de 10 MB global de Kestrel). 32 KB y no 16 KB: el UTF-8 usa hasta 3 bytes
+    // por caracter y el tope de campos ronda los 8,7K caracteres.
     [HttpPost("errores")]
+    [RequestSizeLimit(32 * 1024)]
     public IActionResult RegistrarError([FromBody] ErrorClienteRequest? request)
     {
-        // Siempre 204, pase lo que pase. sendBeacon ignora la respuesta y devolver
-        // detalle aqui solo daria a un cliente hostil una via para sondear el estado.
+        // 204 siempre que el cuerpo se acepta: los campos largos se recortan (S-25) y
+        // las peticiones sobre cuota o sin cuerpo tambien responden 204. Los rechazos
+        // del framework (413 por tamano, 400 por JSON mal formado) ocurren antes de
+        // llegar aqui. sendBeacon ignora la respuesta y devolver detalle daria a un
+        // cliente hostil una via para sondear el estado.
         if (request is null || !TryConsumirCuota())
         {
             return NoContent();

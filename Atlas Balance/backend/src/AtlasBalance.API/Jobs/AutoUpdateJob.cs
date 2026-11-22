@@ -3,9 +3,17 @@ using AtlasBalance.API.Data;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
+using Hangfire;
 
 namespace AtlasBalance.API.Jobs;
 
+// V-03.02 (J-1): cron cada hora. SIN reintento automatico (Attempts = 0): el job
+// pide al Watchdog que aplique una actualizacion, que reinicia la aplicacion; un
+// reintento de Hangfire podria relanzar una actualizacion ya en curso. El propio
+// job ya vuelve a evaluar en la siguiente pasada de su cron y marca la
+// comprobacion del dia antes de actuar, y captura sus errores.
+[DisableConcurrentExecution(timeoutInSeconds: 600)]
+[AutomaticRetry(Attempts = 0)]
 public sealed class AutoUpdateJob
 {
     private const string EnabledKey = "app_update_auto_enabled";

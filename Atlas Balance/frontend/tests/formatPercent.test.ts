@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatPercent } from '../src/utils/formatters.js';
+import { formatPercent, signoPorcentaje } from '../src/utils/formatters.js';
 
 // Separador que emite el locale es-ES entre la cifra y el "%": espacio fino no
 // separable (U+00A0), no un espacio normal.
@@ -55,4 +55,30 @@ test('formatPercent: nunca escribe punto decimal ni "%" pegado', () => {
     assert.ok(!salida.includes('.0%'), `punto decimal en "${salida}"`);
     assert.ok(salida.endsWith(`${SEP}%`), `el "%" va separado en "${salida}"`);
   }
+});
+
+test('formatPercent: showSign antepone "+" solo a cifras que quedan positivas tras redondear', () => {
+  assert.equal(formatPercent(12.34, 1, { showSign: true }), `+12,3${SEP}%`);
+  assert.equal(formatPercent(0.04, 1, { showSign: true }), `0,0${SEP}%`);
+  assert.equal(formatPercent(0.06, 1, { showSign: true }), `+0,1${SEP}%`);
+});
+
+test('formatPercent: showSign no antepone "+" al cero ni a los negativos', () => {
+  assert.equal(formatPercent(0, 1, { showSign: true }), `0,0${SEP}%`);
+  assert.equal(formatPercent(-0.04, 1, { showSign: true }), `0,0${SEP}%`);
+  assert.equal(formatPercent(-5.2, 1, { showSign: true }), `${MINUS_REAL}5,2${SEP}%`);
+});
+
+test('formatPercent: showSign con 0 decimales usa el redondeo de esos decimales', () => {
+  assert.equal(formatPercent(0.4, 0, { showSign: true }), `0${SEP}%`);
+  assert.equal(formatPercent(0.6, 0, { showSign: true }), `+1${SEP}%`);
+});
+
+test('signoPorcentaje: el signo sale del valor ya redondeado', () => {
+  assert.equal(signoPorcentaje(12.34), 1);
+  assert.equal(signoPorcentaje(-5.2), -1);
+  assert.equal(signoPorcentaje(0.04), 0);
+  assert.equal(signoPorcentaje(-0.04), 0);
+  assert.equal(signoPorcentaje(0), 0);
+  assert.equal(signoPorcentaje(undefined), 0);
 });

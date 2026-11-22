@@ -118,8 +118,6 @@ public sealed class RevisionControllerTests
             => Task.FromResult(_scope.HasGlobalAccess);
         public Task<bool> CanReviewCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
             => Task.FromResult(_scope.HasGlobalAccess);
-        public Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
-            => Task.FromResult(_scope.HasGlobalAccess);
         public Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
             => Task.FromResult(_scope.HasGlobalAccess);
         public Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)

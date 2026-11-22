@@ -308,6 +308,53 @@ public class FinancialToolsFiltrosTests
     }
 
     [Fact]
+    public async Task DetectAnomalies_Debe_Aplicar_Concepto()
+    {
+        await using var db = BuildDbContext();
+        var (userId, _) = await SeedAsync(db, "C1", "EUR",
+            new Mov("Pago seguro", -100m, 1),
+            new Mov("Pago seguro", -100m, 2),
+            new Mov("Compra tienda", -100m, 1),
+            new Mov("Compra tienda", -100m, 2));
+        var plan = new FinancialQueryPlan
+        {
+            Operacion = FinancialOperation.Anomalies,
+            Metrica = FinancialMetric.Gastos,
+            Filtros = FiltroMovimiento("seguro", null, null)
+        };
+
+        var result = await BuildSut(db).DetectAnomaliesAsync(AdminScope(userId), plan, CancellationToken.None);
+
+        // Sin el filtro habria un duplicado de "Compra tienda" tambien.
+        result.Data.Should().ContainSingle(a => a.Tipo == "DUPLICADO_PROBABLE");
+        result.Data!.Should().OnlyContain(a => a.Descripcion.Contains("seguro"));
+    }
+
+    [Fact]
+    public async Task DetectAnomalies_Debe_Aplicar_Rango_De_Importes_Sobre_El_Valor_Absoluto()
+    {
+        await using var db = BuildDbContext();
+        var (userId, _) = await SeedAsync(db, "C1", "EUR",
+            new Mov("Pago pequeno", -50m, 1),
+            new Mov("Pago pequeno", -50m, 2),
+            new Mov("Pago medio", -500m, 1),
+            new Mov("Pago medio", -500m, 2),
+            new Mov("Pago grande", -5000m, 1),
+            new Mov("Pago grande", -5000m, 2));
+        var plan = new FinancialQueryPlan
+        {
+            Operacion = FinancialOperation.Anomalies,
+            Metrica = FinancialMetric.Gastos,
+            Filtros = FiltroMovimiento(null!, 100m, 1000m)
+        };
+
+        var result = await BuildSut(db).DetectAnomaliesAsync(AdminScope(userId), plan, CancellationToken.None);
+
+        result.Data.Should().ContainSingle(a => a.Tipo == "DUPLICADO_PROBABLE");
+        result.Data!.Should().OnlyContain(a => a.Descripcion.Contains("Pago medio"));
+    }
+
+    [Fact]
     public async Task PlanExecutor_Debe_Convertir_El_Filtro_No_Aplicable_En_Rechazo_Visible()
     {
         await using var db = BuildDbContext();

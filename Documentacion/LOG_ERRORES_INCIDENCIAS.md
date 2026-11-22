@@ -35,6 +35,27 @@
 - **Causa:** varios ficheros pasaron entero de LF a CRLF o al reves al editarlos. Algunos ficheros ya tenian finales mezclados antes del lote.
 - **Solucion:** solo se devolvieron a LF los 8 ficheros que eran LF puro y pasaron a CRLF. Quedan cambiados y sin restaurar los que pasaron de CRLF o mezclado a LF (`CuentaDetailPage.tsx`, `DashboardTitularPage.tsx`, `entities.css`, `admin.css`, `auth.css`, `formatos-importacion.css`, `importacion.css`) y los mezclados que pasaron a CRLF. Con `core.autocrlf=true` git los normaliza y `git diff` solo muestra los cambios reales.
 
+## 2026-11-19 - V-03.02 - Regresiones introducidas por los lotes del informe de revision integral (CORREGIDO EN CODIGO)
+
+Las encontro la verificacion independiente (`VERIFICACION_CORRECCIONES_REVISION_INTEGRAL_2026-11-19.md`).
+
+### B-10 - La IA dejo de detectar duplicados del mismo dia
+- **Causa:** el LOTE 4 exigio proximidad temporal con `SonProximos(fechas.Distinct())`. Dos movimientos identicos con la misma fecha se reducian a una sola fecha y nunca eran "proximos".
+- **Solucion:** se cuentan elementos, no fechas distintas. Test con fecha identica.
+
+### S-17 - Con credenciales SMTP ya no se exigia STARTTLS
+- **Causa:** el LOTE 2 sustituyo `hasCredentials ? StartTls : StartTlsWhenAvailable` por un modo configurable con default `auto` (`StartTlsWhenAvailable` siempre). Si el servidor no anunciaba STARTTLS, la app se autenticaba y enviaba en claro.
+- **Solucion:** default y modo desconocido pasan a `required`. `auto` con credenciales exige STARTTLS.
+
+### S-25 - Los errores del navegador con stack largo se perdian
+- **Causa:** el LOTE 4 puso `[MaxLength]` en el DTO de telemetria. El cliente no recortaba, y el binding devolvia 400 justo con los errores mas utiles.
+- **Solucion:** se recorta en cliente y en servidor (siempre 204), con un tope de 32 KB por peticion.
+- **Hallazgo lateral:** el test antiguo «400» pasaba por el filtro de host (`AllowedHosts=localhost` frente a `127.0.0.1` en el fixture), no por la validacion.
+
+### B-2 - El antispam de avisos de tipos de cambio no funcionaba en PostgreSQL
+- **Causa:** buscaba el texto `"clave":"x"` en una columna `jsonb`, que PostgreSQL devuelve normalizada como `"clave": "x"`. En los tests en memoria pasaba lo contrario: suprimia los avisos para siempre.
+- **Solucion:** se compara la propiedad deserializada dentro de una ventana de 24 h. Regla general: nunca comparar texto sobre columnas `jsonb`.
+
 ## 2026-11-18 - V-03.02 - LOTE 8 del informe de revision integral: D-1 a D-12, M-1, M-2, M-6, M-10 a M-15, M-17, R-9, T-1 y T-2 (CORREGIDO EN CODIGO)
 
 Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 8. Solo estos IDs; ningun otro tocado. Rama `V-03.02`. Sin commit ni push.
@@ -6457,3 +6478,6 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 - **Solucion aplicada:** el bloque de `xmin` de `PLAZOS_FIJOS` se escribio a mano en el snapshot, con el mismo estilo que las otras cuatro tablas.
 - **Lo que NO se pudo cerrar:** la deriva no es solo del snapshot. Comparando el modelo con el snapshot con el metodo que usa EF por dentro (`IMigrationsAssembly.ModelSnapshot.Model` + `IDesignTimeModel.Model` + `IModelRuntimeInitializer` + `IMigrationsModelDiffer`) salen 27 diferencias, y la base real difiere del modelo en el esquema (`deleted_at` como `timestamp without time zone` en tres tablas donde el modelo pide `timestamp with time zone`, 3 indices `*_deleted_by_id` y 4 FK `deleted_by_id` que faltan, mas diferencias de filtro en tres indices unicos y de nombre en una FK). Cerrarlo exige una migracion de esquema nueva; hasta entonces el `Ignore` es obligatorio y se mantiene, con el comentario actualizado.
 - **Verificacion:** `SnapshotModelDriftTests` (nuevo) fija la comparacion modelo/snapshot con la receta validada y pasa 1/1.
+## 2026-11-20 - Comprobacion MiniMax M3.1 Flash
+
+La suite frontend no pudo sobrescribir archivos existentes en `.test-dist` por EPERM. Se compilo en `.test-dist-minimax-m31` y se ejecuto la prueba dirigida correctamente. El filtro `dotnet test --filter` fue ignorado por el runner xUnit v3; se interrumpio y se uso el ejecutable compilado con `-method` (2 pruebas correctas).
