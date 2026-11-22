@@ -31,7 +31,7 @@ export function SaldoPorDivisaCard({ items, divisaPrincipal, className }: SaldoP
                 {item.divisa === divisaPrincipal ? <span>Base</span> : null}
               </header>
               <p className="dashboard-divisa-total">
-                <SignedAmount value={item.saldo_total ?? item.saldo} showSign>
+                <SignedAmount value={item.saldo_total ?? item.saldo}>
                   {formatCurrency(item.saldo_total ?? item.saldo, item.divisa)}
                 </SignedAmount>
               </p>
@@ -39,7 +39,7 @@ export function SaldoPorDivisaCard({ items, divisaPrincipal, className }: SaldoP
                 <div>
                   <dt>Disponible</dt>
                   <dd>
-                    <SignedAmount value={item.saldo_disponible ?? item.saldo} showSign>
+                    <SignedAmount value={item.saldo_disponible ?? item.saldo}>
                       {formatCurrency(item.saldo_disponible ?? item.saldo, item.divisa)}
                     </SignedAmount>
                   </dd>
@@ -47,7 +47,7 @@ export function SaldoPorDivisaCard({ items, divisaPrincipal, className }: SaldoP
                 <div>
                   <dt>Inmovilizado</dt>
                   <dd>
-                    <SignedAmount value={item.saldo_inmovilizado ?? 0} showSign>
+                    <SignedAmount value={item.saldo_inmovilizado ?? 0}>
                       {formatCurrency(item.saldo_inmovilizado ?? 0, item.divisa)}
                     </SignedAmount>
                   </dd>
@@ -56,7 +56,7 @@ export function SaldoPorDivisaCard({ items, divisaPrincipal, className }: SaldoP
               {item.divisa !== divisaPrincipal ? (
                 <span className="dashboard-divisa-converted">
                   Equivale a{' '}
-                  <SignedAmount value={item.saldo_total_convertido ?? item.saldo_convertido} showSign>
+                  <SignedAmount value={item.saldo_total_convertido ?? item.saldo_convertido}>
                     {formatCurrency(item.saldo_total_convertido ?? item.saldo_convertido, divisaPrincipal)}
                   </SignedAmount>
                 </span>

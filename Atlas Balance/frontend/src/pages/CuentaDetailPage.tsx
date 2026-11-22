@@ -968,7 +968,7 @@ export default function CuentaDetailPage() {
         <KpiCard
           headingLevel="h2"
           title="Saldo total"
-          value={<SignedAmount value={summary.saldo_actual} showSign>{formatCurrency(summary.saldo_actual, summary.divisa)}</SignedAmount>}
+          value={<SignedAmount value={summary.saldo_actual}>{formatCurrency(summary.saldo_actual, summary.divisa)}</SignedAmount>}
           featured
         />
         <KpiCard

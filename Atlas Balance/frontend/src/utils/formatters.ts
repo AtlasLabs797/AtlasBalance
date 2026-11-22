@@ -104,11 +104,9 @@ export function parseEuropeanNumber(value: string | number | null | undefined): 
 
 export type AmountTone = 'positive' | 'negative' | 'neutral';
 
-// D-11 (LOTE 8): el "+" visible de un importe positivo solo se anade cuando el
-// dato CRUDO no lo trae ya, para no pintar "++500". El backend guarda la celda
-// tal cual (sin normalizar), asi que un "+1234,56" es posible.
-export function sinSignoPrevio(valor: string | number | null | undefined): boolean {
-  return !String(valor ?? '').trim().startsWith('+');
+// Quita el signo positivo de valores numericos crudos solo al mostrarlos.
+export function sinSignoPositivo(valor: string): string {
+  return parseEuropeanNumber(valor) !== null ? valor.replace(/^(\s*)\+/, '$1') : valor;
 }
 
 export function getAmountTone(value: unknown): AmountTone {
@@ -183,9 +181,6 @@ export function formatNumber(value: number, decimals: number = 2): string {
 // El valor entra YA en unidades de porcentaje (12.34 -> "12,3 %"), por eso no
 // se usa style: 'percent' de Intl: ese multiplica por 100.
 //
-// El cero se escribe "0,0 %", nunca "+0,0 %": el "+" de las variaciones solo
-// lo pone formatPercent con { showSign: true }, y nunca a una cifra que redondea a cero.
-//
 // Valor ausente o no numerico -> "—", el marcador de valor ausente que ya usa
 // la app. Mismo criterio que formatBytes con "Sin tamaño": si no hay dato, se
 // dice que no lo hay, en vez de inventar un "0,0 %".
@@ -228,8 +223,8 @@ function redondearPorcentaje(numeric: number, decimals: number): number {
 }
 
 // Signo de un porcentaje tal y como se pinta: -1, 0 o 1, decidido sobre el valor
-// ya redondeado. Un 0,04 con un decimal es 0 (no positivo): asi el "+" y la clase
-// de color no contradicen la cifra mostrada. Valor ausente -> 0.
+// ya redondeado. Un 0,04 con un decimal es 0 (no positivo): asi la clase
+// de color no contradice la cifra mostrada. Valor ausente -> 0.
 export function signoPorcentaje(value: number | string | null | undefined, decimals: number = 1): number {
   const numeric = parsePercentValue(value);
   if (numeric === null) return 0;
@@ -238,11 +233,9 @@ export function signoPorcentaje(value: number | string | null | undefined, decim
 
 // Porcentaje en formato es-ES: "12,3 %", "−5,2 %", "0,0 %".
 // decimals admite 0, 1 (por defecto) o 2.
-// showSign: antepone "+" solo si la cifra ya redondeada es positiva.
 export function formatPercent(
   value: number | string | null | undefined,
   decimals: number = 1,
-  opciones?: { showSign?: boolean },
 ): string {
   const numeric = parsePercentValue(value);
   if (numeric === null) return PERCENT_ABSENT;
@@ -260,8 +253,7 @@ export function formatPercent(
     });
   }
 
-  const prefijo = opciones?.showSign && redondeado > 0 ? '+' : '';
-  return `${prefijo}${withRealMinusSign(percentFormatters[decimals].format(safeNumeric))}${getPercentSeparator()}%`;
+  return `${withRealMinusSign(percentFormatters[decimals].format(safeNumeric))}${getPercentSeparator()}%`;
 }
 
 export function formatBytes(value: number | null | undefined): string {

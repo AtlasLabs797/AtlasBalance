@@ -1,5 +1,11 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-22 - V-03.02 - Signo de importes y porcentajes
+
+- Trabajo y decision visual: se elimina el `+` de las cifras positivas en pantallas, tablas, alertas y tooltips de graficos. Los negativos mantienen su signo y los datos almacenados no cambian; en importacion y auditoria se oculta el `+` inicial de los valores numericos crudos.
+- Archivos: `frontend/src/components/common/SignedAmount.tsx`, componentes de dashboard, extractos y alertas, paginas que los utilizan, `frontend/src/utils/formatters.ts`, pruebas `formatPercent.test.ts` e `importesConSigno.test.ts`, documentacion tecnica, de usuario y de version.
+- Verificacion: lint y TypeScript correctos; 316 pruebas unitarias correctas en carpeta alternativa; build de produccion correcto en carpeta alternativa. La carpeta habitual `.test-dist` fallo con EPERM. Pendiente: validacion visual y autenticada de las pantallas.
+
 # 2026-11-22 - V-03.02 - Boton de alertas (campana) en la barra superior
 
 - Trabajo y decision visual: el aviso emergente de saldo bajo se mantiene (esquina superior derecha). Junto al boton de modo claro/oscuro hay un boton campana con contador (ambar, rojo si hay cuentas en negativo) que despliega un menu con todas las alertas activas (cuenta, titular, saldo, minimo), enlace a `/alertas` y un boton para ocultar o volver a mostrar el aviso emergente. Cierra con Escape o clic fuera. El descarte reutiliza la huella del store; se anade `restoreBanner`.

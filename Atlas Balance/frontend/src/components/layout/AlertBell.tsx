@@ -83,7 +83,7 @@ export function AlertBell() {
                       </Link>
                       <span className="alert-bell-item-meta">{alerta.titular_nombre}</span>
                       <span className="alert-bell-item-amounts">
-                        <SignedAmount value={alerta.saldo_actual} showSign>
+                        <SignedAmount value={alerta.saldo_actual}>
                           {formatCurrency(alerta.saldo_actual, divisa)}
                         </SignedAmount>
                         <span className="alert-bell-item-min">mín. {formatCurrency(alerta.saldo_minimo, divisa)}</span>

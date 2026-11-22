@@ -2,7 +2,7 @@ import Modal from '@/components/common/Modal';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import type { AuditCellEntry } from '@/types';
-import { formatDateTime, sinSignoPrevio } from '@/utils/formatters';
+import { formatDateTime } from '@/utils/formatters';
 
 interface AuditCellModalProps {
   open: boolean;
@@ -53,14 +53,14 @@ export default function AuditCellModal({ open, column, data, loading, error, onC
                 <td>{item.celda_referencia ?? '-'}</td>
                 <td>
                   {isAmountColumn && item.valor_anterior != null ? (
-                    <SignedAmount value={item.valor_anterior} showSign={sinSignoPrevio(item.valor_anterior)}>{item.valor_anterior}</SignedAmount>
+                    <SignedAmount value={item.valor_anterior}>{item.valor_anterior}</SignedAmount>
                   ) : (
                     item.valor_anterior ?? '-'
                   )}
                 </td>
                 <td>
                   {isAmountColumn && item.valor_nuevo != null ? (
-                    <SignedAmount value={item.valor_nuevo} showSign={sinSignoPrevio(item.valor_nuevo)}>{item.valor_nuevo}</SignedAmount>
+                    <SignedAmount value={item.valor_nuevo}>{item.valor_nuevo}</SignedAmount>
                   ) : (
                     item.valor_nuevo ?? '-'
                   )}

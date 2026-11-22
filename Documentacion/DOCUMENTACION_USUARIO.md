@@ -1043,3 +1043,7 @@ Pulsa Ctrl+K (⌘K en Mac) o usa el buscador superior y escribe el nombre de un 
 ## Aviso de saldos
 
 Cuando una cuenta queda por debajo del minimo, aparece un aviso flotante sobre la pagina. Puedes abrir «Revisar alertas» u ocultarlo con su boton.
+
+## Signos de cifras (V-03.02)
+
+Los importes y porcentajes positivos se muestran sin signo; los negativos llevan el signo menos. Los datos guardados no cambian.

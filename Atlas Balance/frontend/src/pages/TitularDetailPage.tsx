@@ -74,7 +74,7 @@ export default function TitularDetailPage() {
               <td>{c.cuenta_nombre}</td>
               <td>{c.divisa}</td>
               <td>
-                <SignedAmount value={c.saldo_actual} showSign>{formatCurrency(c.saldo_actual, c.divisa)}</SignedAmount>
+                <SignedAmount value={c.saldo_actual}>{formatCurrency(c.saldo_actual, c.divisa)}</SignedAmount>
               </td>
               <td>
                 <SignedAmount value={c.ingresos_mes}>{formatCurrency(c.ingresos_mes, c.divisa)}</SignedAmount>

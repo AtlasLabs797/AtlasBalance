@@ -80,7 +80,7 @@ export default function TitularSaldoBarChart({ rows, divisa }: TitularSaldoBarCh
             />
             <Tooltip
               content={(props) => (
-                <DashboardTooltip {...props} divisa={divisa} signed formatLabel={(label) => `Titular: ${String(label)}`} />
+                <DashboardTooltip {...props} divisa={divisa} formatLabel={(label) => `Titular: ${String(label)}`} />
               )}
               cursor={{ fill: 'var(--chart-grid)', opacity: 0.4 }}
             />

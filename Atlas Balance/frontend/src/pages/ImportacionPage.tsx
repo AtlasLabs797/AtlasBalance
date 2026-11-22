@@ -36,7 +36,7 @@ import type {
   ImportValidationResult,
   PaginatedResponse,
 } from '@/types';
-import { formatCurrency, parseEuropeanNumber, sinSignoPrevio } from '@/utils/formatters';
+import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
 import '@/styles/layout/routes/importacion.css';
 
 const EFFECTIVO_MARKER = '\u2022 Efectivo';
@@ -1238,14 +1238,14 @@ export default function ImportacionPage() {
                       {selectedMapeo?.tipo_monto === 'tres_columnas' && <td>{row.datos.monto_banco ?? ''}</td>}
                       <td>
                         {row.datos.monto !== null && row.datos.monto !== undefined && row.datos.monto !== '' ? (
-                          <SignedAmount value={row.datos.monto} showSign={sinSignoPrevio(row.datos.monto)}>{String(row.datos.monto)}</SignedAmount>
+                          <SignedAmount value={row.datos.monto}>{String(row.datos.monto)}</SignedAmount>
                         ) : (
                           ''
                         )}
                       </td>
                       <td>
                         {row.datos.saldo !== null && row.datos.saldo !== undefined && row.datos.saldo !== '' ? (
-                          <SignedAmount value={row.datos.saldo} showSign={sinSignoPrevio(row.datos.saldo)}>{String(row.datos.saldo)}</SignedAmount>
+                          <SignedAmount value={row.datos.saldo}>{String(row.datos.saldo)}</SignedAmount>
                         ) : (
                           ''
                         )}

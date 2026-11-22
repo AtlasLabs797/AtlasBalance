@@ -2,6 +2,10 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-22 - Signos de cifras en pantalla
+
+- `SignedAmount`, `formatPercent` y el tooltip de graficos ya no anaden el signo positivo. Los importes crudos mostrados en importacion y auditoria eliminan un `+` inicial solo si se reconocen como numeros; el dato original no se modifica. Los negativos conservan su signo. Esta decision sustituye el criterio anterior D-11 de mostrar `+` en positivos.
+
 ### 2026-11-22 - Buscador superior
 
 - `shell.css` usa tres columnas con laterales iguales para centrar el buscador en la barra; en movil conserva el layout flexible y el buscador oculto.

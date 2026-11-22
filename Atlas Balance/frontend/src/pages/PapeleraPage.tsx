@@ -282,7 +282,7 @@ export default function PapeleraPage() {
                     <td data-label="Detalle">
                       {row.monto !== undefined ? (
                         <>
-                          {row.subtitulo} · <SignedAmount value={row.monto} showSign>{formatCurrency(row.monto, row.divisa ?? 'EUR')}</SignedAmount>
+                          {row.subtitulo} · <SignedAmount value={row.monto}>{formatCurrency(row.monto, row.divisa ?? 'EUR')}</SignedAmount>
                         </>
                       ) : (
                         row.subtitulo

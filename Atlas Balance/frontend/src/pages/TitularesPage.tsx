@@ -405,7 +405,7 @@ export default function TitularesPage() {
                       </span>
                       <span className="titulares-balance-name">{item.titular_nombre}</span>
                     </span>
-                    <SignedAmount value={item.total_convertido} showSign>
+                    <SignedAmount value={item.total_convertido}>
                       {formatCurrency(item.total_convertido, principal.divisa_principal)}
                     </SignedAmount>
                     <span className="titulares-balance-open" aria-hidden="true">Abrir</span>
@@ -528,7 +528,7 @@ export default function TitularesPage() {
                   <div className="titular-card-meta-item titular-card-balance">
                     <span className="cuenta-card-meta-label">Saldo total</span>
                     {typeof saldoTotal === 'number' ? (
-                      <SignedAmount value={saldoTotal} showSign>
+                      <SignedAmount value={saldoTotal}>
                         {formatCurrency(saldoTotal, saldoDivisa)}
                       </SignedAmount>
                     ) : (

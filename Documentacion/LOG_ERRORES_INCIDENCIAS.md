@@ -6492,3 +6492,6 @@ La suite frontend no pudo sobrescribir archivos existentes en `.test-dist` por E
 - Causa: el estilo anterior habia retirado el fondo de las filas marcadas; la columna fija tiene ademas un fondo propio.
 - Solucion: aplicar el fondo de aviso a la fila y a la columna fija, tambien en hover. Verificacion estatica y pruebas de frontend; revision visual pendiente.
 - Incidencia de verificacion: `npm run test:unit` no pudo escribir en `.test-dist` (EPERM). La compilacion y ejecucion en una carpeta alternativa dentro del proyecto terminaron con 345/345 pruebas correctas.
+# 2026-11-22 - EPERM al ejecutar pruebas del frontend
+
+La salida habitual `.test-dist` contiene archivos sin permiso de escritura y `npm run test:unit` no pudo compilarlos. Se compilo la misma configuracion en una carpeta alternativa del frontend y se ejecutaron alli las pruebas: 316 correctas. No se modificaron permisos ni se elimino la carpeta existente.

@@ -304,7 +304,7 @@ function ComisionesTable({
               <td data-label="Cuenta">{item.cuenta}</td>
               <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
               <td data-label="Monto" className="revision-cell-money">
-                <SignedAmount value={item.monto} showSign>{formatCurrency(item.monto, item.divisa)}</SignedAmount>
+                <SignedAmount value={item.monto}>{formatCurrency(item.monto, item.divisa)}</SignedAmount>
               </td>
               <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
               <td data-label="Devolución" className="revision-cell-fixed" title={item.devolucion_fecha ? `Bonificación del ${formatDate(item.devolucion_fecha)}` : undefined}>
@@ -363,7 +363,7 @@ function SegurosTable({
               <td data-label="Cuenta">{item.cuenta}</td>
               <td data-label="Fecha" className="revision-cell-fixed">{formatDate(item.fecha)}</td>
               <td data-label="Importe" className="revision-cell-money">
-                <SignedAmount value={item.importe} showSign>{formatCurrency(item.importe, item.divisa)}</SignedAmount>
+                <SignedAmount value={item.importe}>{formatCurrency(item.importe, item.divisa)}</SignedAmount>
               </td>
               <td data-label="Concepto" title={item.concepto}>{item.concepto}</td>
               <td data-label="Estado">

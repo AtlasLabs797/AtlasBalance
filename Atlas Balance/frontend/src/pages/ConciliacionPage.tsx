@@ -480,7 +480,7 @@ export default function ConciliacionPage() {
                     {item.movimiento_esperado ? (
                       <>
                         <strong>{item.movimiento_esperado.fecha_esperada}</strong><br />
-                        <SignedAmount value={item.movimiento_esperado.monto} showSign>
+                        <SignedAmount value={item.movimiento_esperado.monto}>
                           {formatCurrency(item.movimiento_esperado.monto, item.movimiento_esperado.divisa)}
                         </SignedAmount><br />
                         <span className="conciliacion-concepto">{item.movimiento_esperado.concepto ?? item.movimiento_esperado.referencia ?? ''}</span>
@@ -491,7 +491,7 @@ export default function ConciliacionPage() {
                     {item.extracto ? (
                       <>
                         <strong>{item.extracto.fecha}</strong><br />
-                        <SignedAmount value={item.extracto.monto} showSign>
+                        <SignedAmount value={item.extracto.monto}>
                           {formatCurrency(item.extracto.monto, selectedCuenta?.divisa ?? item.movimiento_esperado?.divisa ?? 'EUR')}
                         </SignedAmount><br />
                         <span>{item.extracto.concepto ?? ''}</span>

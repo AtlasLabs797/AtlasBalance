@@ -281,7 +281,7 @@ export default function DashboardPage() {
                       {variacionPct !== null ? (
                         <>
                           <span className={signoPorcentaje(variacionPct) >= 0 ? 'dashboard-variacion-pill dashboard-variacion--positive' : 'dashboard-variacion-pill dashboard-variacion--negative'}>
-                            {formatPercent(variacionPct, 1, { showSign: true })}
+                            {formatPercent(variacionPct, 1)}
                           </span>
                           <span>vs. periodo anterior · {formatPeriodoLabel(periodo)}</span>
                         </>
@@ -304,7 +304,7 @@ export default function DashboardPage() {
                           </dd>
                           {variacionDispPct !== null ? (
                             <small className={signoPorcentaje(variacionDispPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                              {disponiblePct !== null ? `${formatPercent(disponiblePct)} del saldo total` : formatPercent(variacionDispPct, 1, { showSign: true })}
+                              {disponiblePct !== null ? `${formatPercent(disponiblePct)} del saldo total` : formatPercent(variacionDispPct, 1)}
                             </small>
                           ) : null}
                         </div>
@@ -314,7 +314,7 @@ export default function DashboardPage() {
                           {variacionInmovPct !== null ? (
                             Math.abs(variacionInmovPct) >= 0.1 ? (
                               <small className={signoPorcentaje(variacionInmovPct) > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
-                                {formatPercent(variacionInmovPct, 1, { showSign: true })} vs. inicio del período
+                                {formatPercent(variacionInmovPct, 1)} vs. inicio del período
                               </small>
                             ) : (
                               <small className="dashboard-variacion--neutral">Sin cambios en el período</small>
@@ -388,7 +388,7 @@ export default function DashboardPage() {
                     }
                     helper={variacionIngPct !== null ? (
                       <span className={signoPorcentaje(variacionIngPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                        {formatPercent(variacionIngPct, 1, { showSign: true })} vs. anterior
+                        {formatPercent(variacionIngPct, 1)} vs. anterior
                       </span>
                     ) : undefined}
                   />
@@ -402,7 +402,7 @@ export default function DashboardPage() {
                     }
                     helper={variacionEgrPct !== null ? (
                       <span className={signoPorcentaje(variacionEgrPct) <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                        {formatPercent(variacionEgrPct, 1, { showSign: true })} vs. anterior
+                        {formatPercent(variacionEgrPct, 1)} vs. anterior
                       </span>
                     ) : undefined}
                   />
@@ -435,7 +435,7 @@ export default function DashboardPage() {
                               >
                                 <span>{item.titular_nombre}</span>
                                 <strong>
-                                  <SignedAmount value={item.total_convertido} showSign>
+                                  <SignedAmount value={item.total_convertido}>
                                     {formatCurrency(item.total_convertido, principal.divisa_principal)}
                                   </SignedAmount>
                                 </strong>
@@ -463,7 +463,7 @@ export default function DashboardPage() {
                     <div>
                       <span>Monto total</span>
                       <strong>
-                        <SignedAmount value={principal.plazos_fijos.monto_total_convertido} showSign>
+                        <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
                           {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
                         </SignedAmount>
                       </strong>

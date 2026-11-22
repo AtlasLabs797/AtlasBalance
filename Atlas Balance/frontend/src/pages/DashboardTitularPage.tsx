@@ -207,13 +207,13 @@ export default function DashboardTitularPage() {
             title="Saldo total"
             featured
             value={
-              <SignedAmount value={titular.total_convertido} showSign>
+              <SignedAmount value={titular.total_convertido}>
                 {formatCurrency(titular.total_convertido, titular.divisa_principal)}
               </SignedAmount>
             }
             helper={variacionPct !== null ? (
               <span className={signoPorcentaje(variacionPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                {formatPercent(variacionPct, 1, { showSign: true })} vs. inicio del período
+                {formatPercent(variacionPct, 1)} vs. inicio del período
               </span>
             ) : undefined}
           />
@@ -238,7 +238,7 @@ export default function DashboardTitularPage() {
                 }
                 helper={variacionIngPct !== null ? (
                   <span className={signoPorcentaje(variacionIngPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                    {formatPercent(variacionIngPct, 1, { showSign: true })} vs. anterior
+                    {formatPercent(variacionIngPct, 1)} vs. anterior
                   </span>
                 ) : undefined}
               />
@@ -252,7 +252,7 @@ export default function DashboardTitularPage() {
                 }
                 helper={variacionEgrPct !== null ? (
                   <span className={signoPorcentaje(variacionEgrPct) <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                    {formatPercent(variacionEgrPct, 1, { showSign: true })} vs. anterior
+                    {formatPercent(variacionEgrPct, 1)} vs. anterior
                   </span>
                 ) : undefined}
               />
@@ -318,12 +318,12 @@ export default function DashboardTitularPage() {
                       <td>{cuenta.pais_nombre || 'Sin país'}</td>
                       <td>{cuenta.es_efectivo ? 'Efectivo' : 'Bancaria'}</td>
                       <td>
-                        <SignedAmount value={cuenta.saldo_convertido} showSign>
+                        <SignedAmount value={cuenta.saldo_convertido}>
                           {formatCurrency(cuenta.saldo_convertido, titular.divisa_principal)}
                         </SignedAmount>
                       </td>
                       <td>
-                        <SignedAmount value={cuenta.saldo_actual} showSign>
+                        <SignedAmount value={cuenta.saldo_actual}>
                           {formatCurrency(cuenta.saldo_actual, cuenta.divisa)}
                         </SignedAmount>
                       </td>

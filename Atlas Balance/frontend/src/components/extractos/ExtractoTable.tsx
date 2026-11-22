@@ -862,14 +862,11 @@ function renderCell({
     );
   }
 
-  // D-11: las columnas de importe muestran el "+" visible en los positivos
-  // (SignedAmount con showSign) para que el signo no dependa solo del color;
-  // los negativos ya muestran el "-" del formato.
   const amountValue = column === 'monto' ? row.monto : column === 'saldo' ? row.saldo : null;
   const displayValue = amountValue === null
     ? getDisplayCellValue(row, column)
     : (
-      <SignedAmount value={amountValue} showSign>
+      <SignedAmount value={amountValue}>
         {getDisplayCellValue(row, column)}
       </SignedAmount>
     );

@@ -706,7 +706,7 @@ export default function CuentasPage() {
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
                       <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin país'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
-                      <SignedAmount value={item.saldo_actual} showSign>
+                      <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
                       </SignedAmount>
                       <span className="cuentas-balance-open" aria-hidden="true">Abrir</span>
@@ -725,7 +725,7 @@ export default function CuentasPage() {
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
                       <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin país'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
-                      <SignedAmount value={item.saldo_actual} showSign>
+                      <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
                       </SignedAmount>
                       <span className="dashboard-open-link dashboard-open-link--disabled">Sin acceso</span>
@@ -887,7 +887,7 @@ export default function CuentasPage() {
                     {saldoValue === null ? (
                       <strong className="cuenta-card-meta-value">Sin saldo</strong>
                     ) : (
-                      <SignedAmount value={saldoValue} showSign>
+                      <SignedAmount value={saldoValue}>
                         {formatCurrency(saldoValue, saldoCurrency)}
                       </SignedAmount>
                     )}

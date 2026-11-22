@@ -430,7 +430,7 @@ export default function AlertasPage() {
                       <div className="alertas-notif-amount">
                         <dt>Saldo actual</dt>
                         <dd>
-                          <SignedAmount value={item.saldo_actual} showSign>
+                          <SignedAmount value={item.saldo_actual}>
                             {formatCurrency(item.saldo_actual, item.divisa ?? 'EUR')}
                           </SignedAmount>
                         </dd>
