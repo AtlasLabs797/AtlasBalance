@@ -1,5 +1,15 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-22 - V-03.02 - Instrucciones de agentes: recursos externos y limpieza
+
+- Trabajo: `AGENTS.md` seccion 7 reescrita con las rutas reales de skills (`C:\Users\usuario\Documents\Skills`) y herramientas de diseno (`C:\Users\usuario\Documents\Herramentas`: Impecable Design, Emil Kowlaski Design, Modern Web Guidance, Astryx), para que sirve cada una y que no se ejecuta. Se quitan contradicciones (preguntar vs actuar, servidores dev vs comandos frecuentes, umbral de plan y bitacora), duplicados, ejemplo de version `V-02-07` y entradas obsoletas del arbol. `SKILLS_LOCALES.md` reescrito con rutas verificadas.
+- Segunda pasada, siguiendo la guia oficial de Anthropic (code.claude.com/docs/en/memory y /best-practices; platform.claude.com, prompting best practices): `AGENTS.md` baja de 396 a ~280 lineas, sin mayusculas enfaticas, con el porque de cada regla y sin el arbol de archivos completo. `CLAUDE.md` pasa a importar con `@AGENTS.md`, porque Claude Code no lee `AGENTS.md` si existe un `CLAUDE.md`. Tono de la seccion 1 recortado.
+- Seccion 12 corregida contra el codigo: SPEC esta incompleta (faltan unas 13 tablas) y el codigo manda; soft delete solo en entidades `ISoftDelete` con filtro global de EF; acceso global solo con pais, titular y cuenta a null; CSRF tambien en `mfa/verify`.
+- Regla de Newtonsoft corregida: es un pin de seguridad (Hangfire.Core arrastra 11.0.1 vulnerable; se fuerza 13.0.4), no se usa en codigo.
+- Archivos: `AGENTS.md`, `CLAUDE.md`, `Documentacion/SKILLS_LOCALES.md` y esta bitacora.
+- Verificacion: rutas citadas comprobadas en disco; politica JSON snake_case (`Program.cs:349`), `HasGlobalAccess` (`UserAccessService.cs:231`) y filtro soft delete (`AppDbContext.cs:660`) comprobados; revision en frio del resultado.
+- Pendiente: completar `SPEC.md` con las tablas que faltan y corregir sus lineas 511, 745-747, 1966 y 3719.
+
 # 2026-11-22 - V-03.02 - Centrado del buscador
 
 - Trabajo y decision visual: centrado respecto a la barra superior mediante columnas laterales iguales; en movil se mantiene oculto.

@@ -1,6 +1,5 @@
-# ATLAS BALANCE - Instrucciones para Claude Code
+# ATLAS BALANCE - Claude Code
 
-Las instrucciones del proyecto viven en [`AGENTS.md`](AGENTS.md), en esta misma carpeta.
-Es la fuente canonica y compartida por todos los agentes (Claude Code, Codex, OpenCode, Cursor).
+@AGENTS.md
 
-**Leelo entero antes de trabajar y aplicalo.** No hay reglas adicionales aqui: si algo parece contradecirlo, manda `AGENTS.md`.
+`AGENTS.md` es la fuente canonica compartida con Codex, OpenCode y Cursor; la linea de arriba la importa entera. Anade aqui solo reglas exclusivas de Claude Code.
