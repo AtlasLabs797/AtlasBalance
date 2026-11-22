@@ -230,6 +230,7 @@ public sealed class ConfiguracionControllerTests
                 Provider = "MINIMAX",
                 Model = AiConfiguration.DefaultMiniMaxModel,
                 Habilitada = true,
+                MaxInputTokens = 999300,
                 MiniMaxApiKey = "minimax-test-placeholder"
             }
         }, CancellationToken.None);
@@ -237,6 +238,7 @@ public sealed class ConfiguracionControllerTests
         result.Should().BeOfType<OkObjectResult>();
         (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_provider")).Valor.Should().Be("MINIMAX");
         (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_model")).Valor.Should().Be(AiConfiguration.DefaultMiniMaxModel);
+        (await db.Configuraciones.SingleAsync(x => x.Clave == "ai_max_input_tokens")).Valor.Should().Be("999300");
         (await db.Configuraciones.SingleAsync(x => x.Clave == "minimax_api_key")).Valor.Should().Be("minimax-test-placeholder");
 
         var audit = await db.Auditorias.SingleAsync(x => x.TipoAccion == AuditActions.UpdateConfiguracion);
@@ -510,6 +512,9 @@ public sealed class ConfiguracionControllerTests
 
     private sealed class NoOpEmailService : IEmailService
     {
+        public Task SendAccountLockedAsync(IReadOnlyList<string> recipients, DateTime lockedAtUtc, int lockMinutes, string? ipSummary, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
         public Task SendSaldoBajoAlertAsync(
             IReadOnlyList<string> recipients,
             string titularNombre,

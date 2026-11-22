@@ -12,6 +12,7 @@ import {
   Scale,
   SearchCheck,
   Settings,
+  ShieldCheck,
   TableProperties,
   Trash2,
   Upload,
@@ -33,7 +34,7 @@ const iconProps = {
   'aria-hidden': true,
 } as const;
 
-export interface NavigationItem {
+interface NavigationItem {
   to: string;
   label: string;
   /** Etiqueta corta para el menú inferior móvil */
@@ -61,6 +62,9 @@ export const navigationItems: NavigationItem[] = [
   { to: '/backups',              label: 'Copias',        short: 'Copias',    icon: createElement(DatabaseBackup, iconProps), group: 'sistema', adminOnly: true },
   { to: '/configuracion',        label: 'Configuración', short: 'Ajustes',   icon: createElement(Settings, iconProps), group: 'sistema', adminOnly: true },
   { to: '/papelera',             label: 'Papelera',      short: 'Papelera',  icon: createElement(Trash2, iconProps), group: 'sistema', adminOnly: true },
+  // V-03.02 (LOTE 6, seccion 8.1): sin adminOnly. Cada usuario autenticado
+  // puede ver y revocar sus propios dispositivos MFA de confianza.
+  { to: '/seguridad/dispositivos-mfa', label: 'Dispositivos MFA', short: 'MFA', icon: createElement(ShieldCheck, iconProps), group: 'sistema' },
 ];
 
 export function getVisibleNavigationItems(

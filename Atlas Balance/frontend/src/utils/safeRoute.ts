@@ -1,4 +1,4 @@
-export const DEFAULT_INTERNAL_ROUTE = '/dashboard';
+const DEFAULT_INTERNAL_ROUTE = '/dashboard';
 
 function safeDecode(value: string): string {
   try {

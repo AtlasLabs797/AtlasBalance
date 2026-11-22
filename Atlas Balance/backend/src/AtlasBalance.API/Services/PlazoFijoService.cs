@@ -55,8 +55,14 @@ public sealed class PlazoFijoService : IPlazoFijoService
             }
 
             var estadoCambio = item.Plazo.Estado != nuevoEstado.Value;
+            // J-3: reintentar el aviso de "proximo a vencer" mientras no se haya
+            // entregado. FechaUltimaNotificacion solo se actualiza cuando el email
+            // y la notificacion de admin se completaron, asi que si sigue a null el
+            // aviso nunca salio y hay que reintentarlo (sin repetir el mismo dia).
             var debeNotificar = item.Plazo.FechaUltimaNotificacion != hoy &&
-                (estadoCambio || nuevoEstado.Value == EstadoPlazoFijo.VENCIDO);
+                (estadoCambio
+                 || nuevoEstado.Value == EstadoPlazoFijo.VENCIDO
+                 || (nuevoEstado.Value == EstadoPlazoFijo.PROXIMO_VENCER && item.Plazo.FechaUltimaNotificacion == null));
 
             item.Plazo.Estado = nuevoEstado.Value;
             item.Plazo.FechaModificacion = DateTime.UtcNow;
@@ -86,16 +92,29 @@ public sealed class PlazoFijoService : IPlazoFijoService
             var items = grupo
                 .Select(se => $"{se.Cuenta.Nombre} (vence {se.Plazo.FechaVencimiento:dd/MM/yyyy})")
                 .ToList();
-            var notificacionAdminCreada = await TryAddAdminNotificationAsync(
-                representante.Cuenta, representante.Titular, representante.Plazo, representante.NuevoEstado, cancellationToken);
+            // J-3: el admin necesita una notificacion por cada plazo del grupo, no
+            // solo para el representante. TryAddAdminNotificationAsync deduplica por
+            // cuenta + estado + vencimiento, asi que no duplica si ya existia.
+            var notificacionesAdminCreadas = true;
+            foreach (var se in grupo)
+            {
+                var creada = await TryAddAdminNotificationAsync(
+                    se.Cuenta, se.Titular, se.Plazo, se.NuevoEstado, cancellationToken);
+                notificacionesAdminCreadas = notificacionesAdminCreadas && creada;
+            }
             var emailEnviado = await TrySendDigestEmailAsync(
                 representante.Titular.Nombre, items, representante.NuevoEstado, cancellationToken);
-            if (notificacionAdminCreada && emailEnviado)
+            if (notificacionesAdminCreadas && emailEnviado)
             {
                 foreach (var se in grupo)
                 {
                     se.Plazo.FechaUltimaNotificacion = hoy;
                 }
+
+                // J-1: persistir ya la marca de "avisado hoy". Si un fallo posterior
+                // (auditoria, BD) hace reintentar el job, el digest ya enviado no se
+                // vuelve a mandar.
+                await _dbContext.SaveChangesAsync(cancellationToken);
             }
         }
 
@@ -191,16 +210,7 @@ public sealed class PlazoFijoService : IPlazoFijoService
         EstadoPlazoFijo estado,
         CancellationToken cancellationToken)
     {
-        var cuentaToken = cuenta.Id.ToString();
-        var estadoToken = estado.ToString();
-        var vencimientoToken = plazo.FechaVencimiento.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        var alreadyExists = await _dbContext.NotificacionesAdmin.AnyAsync(
-            x => x.Tipo == "PLAZO_FIJO" &&
-                 x.DetallesJson != null &&
-                 x.DetallesJson.Contains(cuentaToken) &&
-                 x.DetallesJson.Contains(estadoToken) &&
-                 x.DetallesJson.Contains(vencimientoToken),
-            cancellationToken);
+        var alreadyExists = await YaExisteNotificacionAsync(cuenta, plazo, estado, cancellationToken);
 
         if (alreadyExists)
         {
@@ -226,6 +236,63 @@ public sealed class PlazoFijoService : IPlazoFijoService
         });
 
         return true;
+    }
+
+    /// <summary>
+    /// A-9: NOTIFICACIONES_ADMIN.detalles_json es jsonb. Un Contains de string
+    /// sobre jsonb lo traduce a "detalles_json ~~ @p" y PostgreSQL no define el
+    /// operador "jsonb ~~ jsonb" (42883), asi que el job de vencimientos
+    /// reventaba siempre que llegaba a esta consulta. JsonContains traduce a
+    /// "detalles_json @> @p", que compara el objeto jsonb por clave/valor: los
+    /// tres tokens (cuenta, estado y vencimiento) se comprueban de una vez
+    /// porque @> exige que el objeto contenido este entero en el almacenado.
+    /// </summary>
+    private async Task<bool> YaExisteNotificacionAsync(
+        Cuenta cuenta,
+        PlazoFijo plazo,
+        EstadoPlazoFijo estado,
+        CancellationToken cancellationToken)
+    {
+        var duplicado = new
+        {
+            cuenta_id = cuenta.Id,
+            estado = estado.ToString(),
+            fecha_vencimiento = plazo.FechaVencimiento
+        };
+
+        if (_dbContext.Database.IsRelational())
+        {
+            var duplicadoJson = JsonSerializer.Serialize(duplicado);
+            return await _dbContext.NotificacionesAdmin.AnyAsync(
+                x => x.Tipo == "PLAZO_FIJO" &&
+                     x.DetallesJson != null &&
+                     EF.Functions.JsonContains(x.DetallesJson, duplicadoJson),
+                cancellationToken);
+        }
+
+        // InMemory (tests unitarios): EF.Functions.JsonContains no se puede
+        // traducir a SQL y el provider no la evalua en memoria. Se replica la
+        // misma semantica de @> sobre el JSON ya materializado.
+        var duplicadoDoc = JsonSerializer.SerializeToElement(duplicado);
+        var detalles = await _dbContext.NotificacionesAdmin
+            .Where(x => x.Tipo == "PLAZO_FIJO" && x.DetallesJson != null)
+            .Select(x => x.DetallesJson!)
+            .ToListAsync(cancellationToken);
+
+        return detalles.Any(detallesJson =>
+        {
+            using var doc = JsonDocument.Parse(detallesJson);
+            foreach (var propiedad in duplicadoDoc.EnumerateObject())
+            {
+                if (!doc.RootElement.TryGetProperty(propiedad.Name, out var valor) ||
+                    !JsonElement.DeepEquals(valor, propiedad.Value))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        });
     }
 
     private static EstadoPlazoFijo? ResolveEstado(DateOnly fechaVencimiento, DateOnly hoy)

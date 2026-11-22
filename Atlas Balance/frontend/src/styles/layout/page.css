@@ -1,0 +1,104 @@
+/* D-5 (LOTE 8): clases compartidas de pagina y de cabecera.
+   Sustituyen al bloque de prefijos de pagina y al bloque de cabeceras de
+   system-coherence.css (15 prefijos + 11 cabeceras).
+
+   Se carga ANTES que las hojas de pagina: las variantes por pantalla
+   (.users-header, .extractos-header, .import-header, .conciliation-header y
+   los @media propios de cada pagina) siguen mandando por orden de fuente,
+   igual que antes de que existiera la capa de parches. El unico caso que
+   necesita mas especificidad que la variante es el titulo, por eso el
+   selector del h1 es descendiente (.page-header .page-header__title) y no
+   una clase suelta: asi gana a `.app-content h1` (0,1,1) y a
+   `.extractos-heading h1` (0,1,1) igual que ganaba la capa de parches. */
+
+/* --- Contenedor de pagina --- */
+.page {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+}
+
+.page--wide {
+  max-width: 1600px;
+}
+
+/* --- Cabecera de pagina --- */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-default);
+}
+
+/* Cabecera en bloque (Papelera, Alertas): ambas son <header> sin regla
+   base propia, asi que no adoptan el reparto en flex de la clase comun.
+   Se anulan las propiedades de reparto porque en bloque no aplican. */
+.page-header--static {
+  display: block;
+  align-items: normal;
+  justify-content: normal;
+  gap: normal;
+}
+
+.page-header .page-header__title {
+  margin: 0;
+  color: var(--text-primary);
+  /* DESIGN.md §5.1: titulo de cabecera de pagina a 28px. No se usa el alias
+     --font-size-xl porque en variables.css sigue resolviendo a --text-24
+     (ver hallazgo reportado al orquestador). */
+  font-size: var(--text-28);
+  /* 600, no 700: el valor efectivo de hoy era 600 porque `.app-content h1`
+     (0,1,1) ganaba por orden de fuente al 700 del parche. La clase comun
+     tiene mas especificidad que esa regla, asi que declara el peso efectivo. */
+  font-weight: var(--weight-semibold);
+  line-height: 1.08;
+  letter-spacing: 0;
+  text-wrap: balance;
+}
+
+.page-header__lead {
+  min-width: 0;
+}
+
+.page-header__subtitle {
+  max-width: 72ch;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* Subtitulo estandar de cabecera: 14px (--type-body-sm), secundario, 8px bajo
+   el titulo. El selector descendiente (0,2,0) gana a .dashboard-subtitle (13px)
+   y a .users-subtitle (hereda el cuerpo) cuando ambas clases van en el mismo
+   <p>. No fija max-width para no pisar .page-header__subtitle--narrow. */
+.page-header .page-header__subtitle {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+/* Sobretitulo opcional encima del titulo (overline). */
+.page-header .page-header__eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--text-tertiary);
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+/* Las tres clases legacy de subtitulo siguen usandose fuera de las cabeceras
+   de pagina (tarjetas de dashboard, notas de cuenta, celdas de tabla). Antes las
+   normalizaba el bloque de parches; se conservan aqui con el mismo reparto. */
+.dashboard-subtitle,
+.users-subtitle,
+.config-subtitle {
+  max-width: 72ch;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+@media (max-width: 767.98px) {
+  .page {
+    max-width: none;
+  }}

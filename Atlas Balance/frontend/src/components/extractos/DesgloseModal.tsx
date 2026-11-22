@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
+import Modal from '@/components/common/Modal';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import type { Extracto, ExtractoDesgloseResumen } from '@/types';
 import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
 
@@ -93,6 +93,7 @@ export default function DesgloseModal({
         title: 'Cerrar desglose',
         message: 'Hay cambios sin guardar en el desglose. Si cierras ahora, se perderan.',
         confirmLabel: 'Cerrar sin guardar',
+        tone: 'reversible',
         cancelLabel: 'Seguir editando',
       });
       if (!discard) return;
@@ -100,10 +101,6 @@ export default function DesgloseModal({
 
     onClose();
   }, [confirm, isDirty, onClose, saving]);
-
-  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    onEscape: saving ? undefined : () => void requestClose(),
-  });
 
   if (!open || !row) {
     return null;
@@ -155,24 +152,29 @@ export default function DesgloseModal({
   };
 
   return (
-    <div className="modal-backdrop" role="presentation" onClick={saving ? undefined : () => void requestClose()}>
-      <div
-        ref={dialogRef}
-        className="desglose-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="desglose-modal-title"
-        tabIndex={-1}
-        onClick={(event) => event.stopPropagation()}
+    <>
+      <Modal
+        open={open}
+        onClose={() => void requestClose()}
+        titleId="desglose-modal-title"
+        title="Desglose del extracto"
+        subtitle={`${row.fecha} - ${row.concepto || 'Sin concepto'}`}
+        closeLabel="Cerrar desglose"
+        size="lg"
+        busy={saving}
+        footer={
+          <>
+            <button type="button" className="modal-panel__footer-start" onClick={addLine} disabled={!canEdit || saving || loading}>
+              <Plus size={16} aria-hidden="true" />
+              Añadir línea
+            </button>
+            <button type="button" onClick={() => void requestClose()} disabled={saving}>Cancelar</button>
+            <button type="button" className="primary" onClick={() => void save()} disabled={!canEdit || saving || loading}>
+              {saving ? 'Guardando...' : 'Guardar'}
+            </button>
+          </>
+        }
       >
-        <header className="desglose-modal-header">
-          <div>
-            <h3 id="desglose-modal-title">Desglose del extracto</h3>
-            <p>{row.fecha} - {row.concepto || 'Sin concepto'}</p>
-          </div>
-          <CloseIconButton onClick={() => void requestClose()} ariaLabel="Cerrar desglose" />
-        </header>
-
         <section className={`desglose-summary desglose-summary--${estado}`}>
           <span>Extracto: <strong>{formatCurrency(extractoMonto, row.divisa ?? 'EUR')}</strong></span>
           <span>Desglose: <strong>{formatCurrency(draftTotal, row.divisa ?? 'EUR')}</strong></span>
@@ -180,7 +182,7 @@ export default function DesgloseModal({
         </section>
 
         {loading ? (
-          <p>Cargando desglose...</p>
+          <PageSkeleton variant="table" rows={3} columns={4} label="Cargando desglose..." />
         ) : (
           <>
             {(error || localError) ? <p className="auth-error" role="alert">{localError ?? error}</p> : null}
@@ -243,19 +245,8 @@ export default function DesgloseModal({
             </div>
           </>
         )}
-
-        <footer className="desglose-modal-actions">
-          <button type="button" onClick={addLine} disabled={!canEdit || saving || loading}>
-            <Plus size={16} aria-hidden="true" />
-            Añadir línea
-          </button>
-          <button type="button" onClick={() => void requestClose()} disabled={saving}>Cancelar</button>
-          <button type="button" className="primary" onClick={() => void save()} disabled={!canEdit || saving || loading}>
-            {saving ? 'Guardando...' : 'Guardar'}
-          </button>
-        </footer>
-        <ConfirmDialog {...discardDialogProps} />
-      </div>
-    </div>
+      </Modal>
+      <ConfirmDialog {...discardDialogProps} />
+    </>
   );
 }

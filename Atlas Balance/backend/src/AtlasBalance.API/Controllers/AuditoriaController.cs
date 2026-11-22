@@ -103,6 +103,8 @@ public sealed class AuditoriaController : ControllerBase
         [FromQuery] string? tipoAccion = null,
         [FromQuery] DateOnly? fechaDesde = null,
         [FromQuery] DateOnly? fechaHasta = null,
+        [FromQuery] string sortBy = "timestamp",
+        [FromQuery] string sortDir = "desc",
         CancellationToken ct = default)
     {
         if (!DateRangeValidator.TryValidate(fechaDesde, fechaHasta, out var rangoError))
@@ -115,8 +117,11 @@ public sealed class AuditoriaController : ControllerBase
         pageSize = Math.Clamp(pageSize, 1, 200);
 
         var total = await query.CountAsync(ct);
-        var rawRows = await query
-            .OrderByDescending(x => x.Timestamp)
+        // R-3 (seccion 9): el listado admite `sortBy`/`sortDir`. El valor por
+        // defecto mantiene el orden por timestamp descendente que ya devolvia.
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var ordered = ApplySorting(query, sortBy, desc);
+        var rawRows = await ordered
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(x => new RawAuditoriaRow
@@ -278,7 +283,58 @@ public sealed class AuditoriaController : ControllerBase
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var fileName = $"auditoria_{DateTime.UtcNow:yyyyMMdd_HHmmss}.csv";
+
+        // S-7: la extraccion del historico deja rastro: quien lo extrajo, con
+        // que filtros y cuantas filas se llevaron. Sin esta fila, el CSV sale
+        // del servidor sin dejar ningun indicio de quien se lo llevo.
+        await _auditService.LogAsync(
+            GetCurrentUserId(),
+            AuditActions.AuditoriaExportacionCsv,
+            "AUDITORIAS",
+            null,
+            HttpContext,
+            JsonSerializer.Serialize(new
+            {
+                filas_exportadas = rows.Count,
+                usuario_id = usuarioId,
+                cuenta_id = cuentaId,
+                pais_id = paisId,
+                tipo_accion = tipoAccion,
+                fecha_desde = fechaDesde,
+                fecha_hasta = fechaHasta
+            }),
+            ct);
+
         return File(bytes, "text/csv; charset=utf-8", fileName);
+    }
+
+    // R-3 (seccion 9): ordenacion por `sortBy`/`sortDir` del listado de
+    // auditoria. El caso por defecto (timestamp descendente) es el que ya
+    // devolvia el listado; un `sortBy` desconocido cae en ese mismo criterio
+    // pero respetando el sentido pedido.
+    private static IQueryable<Models.Auditoria> ApplySorting(IQueryable<Models.Auditoria> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("secuencia", true) => query.OrderByDescending(x => x.Secuencia),
+            ("secuencia", false) => query.OrderBy(x => x.Secuencia),
+            ("tipo_accion", true) => query.OrderByDescending(x => x.TipoAccion),
+            ("tipo_accion", false) => query.OrderBy(x => x.TipoAccion),
+            ("entidad_tipo", true) => query.OrderByDescending(x => x.EntidadTipo),
+            ("entidad_tipo", false) => query.OrderBy(x => x.EntidadTipo),
+            ("origen", true) => query.OrderByDescending(x => x.Origen),
+            ("origen", false) => query.OrderBy(x => x.Origen),
+            ("timestamp", true) => query.OrderByDescending(x => x.Timestamp),
+            ("timestamp", false) => query.OrderBy(x => x.Timestamp),
+            _ => desc
+                ? query.OrderByDescending(x => x.Timestamp)
+                : query.OrderBy(x => x.Timestamp)
+        };
+
+        // B-15: desempate estable por clave primaria. Sin el, dos filas con
+        // el mismo timestamp pueden caer en paginas distintas o desaparecer
+        // entre peticiones.
+        return ((IOrderedQueryable<Models.Auditoria>)ordered).ThenBy(x => x.Id);
     }
 
     private IQueryable<Models.Auditoria> BuildFilteredAuditoriaQuery(Guid? usuarioId, Guid? cuentaId, Guid? paisId, string? tipoAccion, DateOnly? fechaDesde, DateOnly? fechaHasta)

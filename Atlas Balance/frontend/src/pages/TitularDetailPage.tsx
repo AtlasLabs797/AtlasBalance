@@ -9,6 +9,7 @@ import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { PeriodoDashboard, TitularConCuentas } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDateTime } from '@/utils/formatters';
+import '@/styles/layout/routes/titular-detail.css';
 
 export default function TitularDetailPage() {
   const { id } = useParams();
@@ -43,23 +44,24 @@ export default function TitularDetailPage() {
 
   return (
     <section className="page-placeholder">
-      <header className="dashboard-toolbar">
-        <div>
-          <h1>{data.titular_nombre}</h1>
-          <p className="dashboard-subtitle">Detalle por cuenta</p>
+      <header className="dashboard-toolbar page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">{data.titular_nombre}</h1>
+          <p className="page-header__subtitle">Detalle por cuenta</p>
         </div>
         <PeriodoSelector value={periodo} onChange={setPeriodo} />
       </header>
       <div className="dashboard-table-wrap titular-detail-table-wrap">
         <table className="titular-detail-table">
+        <caption className="sr-only">Cuentas del titular</caption>
         <thead>
           <tr>
-            <th>Cuenta</th>
-            <th>Divisa</th>
-            <th>Saldo</th>
-            <th>Ingresos período</th>
-            <th>Egresos período</th>
-            <th>Últ. Actualización</th>
+            <th scope="col">Cuenta</th>
+            <th scope="col">Divisa</th>
+            <th scope="col">Saldo</th>
+            <th scope="col">Ingresos período</th>
+            <th scope="col">Egresos período</th>
+            <th scope="col">Últ. Actualización</th>
           </tr>
         </thead>
         <tbody>

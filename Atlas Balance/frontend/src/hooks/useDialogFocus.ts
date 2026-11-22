@@ -4,6 +4,11 @@ import { useBlockingOverlay } from '@/hooks/useBlockingOverlay';
 const FOCUSABLE_SELECTOR =
   'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
+// Pila de dialogos abiertos: con modales apilados (variant 'stack-top') solo el
+// ultimo procesa Escape y Tab; si no, un Escape cerraba los dos y el foco saltaba
+// al modal inferior.
+const openDialogStack: symbol[] = [];
+
 interface DialogFocusOptions {
   onEscape?: () => void;
   initialFocus?: () => HTMLElement | null;
@@ -31,6 +36,8 @@ export function useDialogFocus<T extends HTMLElement>(
     }
 
     triggerRef.current = document.activeElement;
+    const stackToken = Symbol('dialog');
+    openDialogStack.push(stackToken);
 
     const focusTimeoutId = window.setTimeout(() => {
       const target =
@@ -41,7 +48,13 @@ export function useDialogFocus<T extends HTMLElement>(
     }, 0);
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && onEscapeRef.current) {
+      if (openDialogStack[openDialogStack.length - 1] !== stackToken) {
+        return;
+      }
+
+      // Un Combobox o DatePicker interno que ya uso el Escape para cerrarse no
+      // debe cerrar tambien el dialogo.
+      if (event.key === 'Escape' && !event.defaultPrevented && onEscapeRef.current) {
         onEscapeRef.current();
         return;
       }
@@ -74,6 +87,10 @@ export function useDialogFocus<T extends HTMLElement>(
       // ya desmontado si el dialogo se abre y cierra muy rapido.
       window.clearTimeout(focusTimeoutId);
       window.removeEventListener('keydown', handleKeyDown);
+      const stackIndex = openDialogStack.indexOf(stackToken);
+      if (stackIndex !== -1) {
+        openDialogStack.splice(stackIndex, 1);
+      }
       if (triggerRef.current instanceof HTMLElement) {
         triggerRef.current.focus();
       }

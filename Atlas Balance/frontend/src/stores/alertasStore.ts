@@ -22,37 +22,83 @@ export interface AlertaActiva {
 interface AlertasState {
   alertasActivas: AlertaActiva[];
   bannerDismissed: boolean;
+  // Huella del contenido que el usuario oculto. El descarte se ancla al
+  // contenido para que recargar o cambiar de pais no lo borre: solo deja de
+  // aplicar cuando el contenido cambia de verdad.
+  bannerDismissedFor: string | null;
   loading: boolean;
   lastError: string | null;
 
   setAlertasActivas: (alertas: AlertaActiva[]) => void;
   dismissBanner: () => void;
-  resetBanner: () => void;
+  restoreBanner: () => void;
   clear: () => void;
+  syncAlertas: (
+    alertas: AlertaActiva[] | undefined,
+    estado: { loading: boolean; error: string | null },
+  ) => void;
   loadAlertasActivas: (paisId?: string) => Promise<void>;
 }
 
 const SESSION_KEY = USER_SCOPED_STORAGE_KEYS.alertasBannerDismissed;
 const sessionStorage = () => getBrowserStorage('sessionStorage');
 
-export const useAlertasStore = create<AlertasState>((set) => ({
+// Huella del contenido del banner: los pares (alerta, cuenta) que estan por
+// debajo del minimo, ordenados. Dos contenidos con la misma huella son el
+// mismo aviso, aunque se recargue o se cambie de pais.
+function huellaAlertas(alertas: AlertaActiva[]): string {
+  return alertas
+    .map((alerta) => `${alerta.alerta_id}:${alerta.cuenta_id}`)
+    .sort()
+    .join('|');
+}
+
+function leerHuellaDescartada(): string | null {
+  const valor = sessionStorage()?.getItem(SESSION_KEY);
+  return valor ? valor : null;
+}
+
+export const useAlertasStore = create<AlertasState>((set, get) => ({
   alertasActivas: [],
-  bannerDismissed: sessionStorage()?.getItem(SESSION_KEY) === '1',
+  bannerDismissed: false,
+  bannerDismissedFor: leerHuellaDescartada(),
   loading: false,
   lastError: null,
 
   setAlertasActivas: (alertasActivas) => set({ alertasActivas, lastError: null }),
   dismissBanner: () => {
-    sessionStorage()?.setItem(SESSION_KEY, '1');
-    set({ bannerDismissed: true });
+    const huella = huellaAlertas(get().alertasActivas);
+    sessionStorage()?.setItem(SESSION_KEY, huella);
+    set({ bannerDismissed: true, bannerDismissedFor: huella });
   },
-  resetBanner: () => {
+  restoreBanner: () => {
     sessionStorage()?.removeItem(SESSION_KEY);
-    set({ bannerDismissed: false });
+    set({ bannerDismissed: false, bannerDismissedFor: null });
   },
   clear: () => {
     sessionStorage()?.removeItem(SESSION_KEY);
-    set({ alertasActivas: [], bannerDismissed: false, loading: false, lastError: null });
+    set({
+      alertasActivas: [],
+      bannerDismissed: false,
+      bannerDismissedFor: null,
+      loading: false,
+      lastError: null,
+    });
+  },
+  // Unico punto por el que entra el contenido de alertas. `alertas` es
+  // undefined mientras la consulta aun no ha devuelto datos: eso no es un
+  // cambio de contenido, asi que el descarte del usuario se respeta.
+  syncAlertas: (alertas, estado) => {
+    if (alertas === undefined) {
+      set({ alertasActivas: [], loading: estado.loading, lastError: estado.error });
+      return;
+    }
+    set({
+      alertasActivas: alertas,
+      loading: estado.loading,
+      lastError: estado.error,
+      bannerDismissed: get().bannerDismissedFor === huellaAlertas(alertas),
+    });
   },
   loadAlertasActivas: async (paisId) => {
     const generation = getSessionGeneration();
@@ -62,17 +108,12 @@ export const useAlertasStore = create<AlertasState>((set) => ({
         params: { paisId: paisId || undefined },
       });
       if (!isSessionGenerationCurrent(generation)) return;
-      set({ alertasActivas: data, lastError: null });
-      if (data.length === 0) {
-        sessionStorage()?.removeItem(SESSION_KEY);
-        set({ bannerDismissed: false });
-      }
+      get().syncAlertas(data ?? [], { loading: false, error: null });
     } catch (error: unknown) {
       if (!isSessionGenerationCurrent(generation)) return;
-      set({
-        alertasActivas: [],
-        bannerDismissed: false,
-        lastError: extractErrorMessage(error, 'No se pudieron cargar las alertas activas.'),
+      get().syncAlertas(undefined, {
+        loading: false,
+        error: extractErrorMessage(error, 'No se pudieron cargar las alertas activas.'),
       });
     } finally {
       if (isSessionGenerationCurrent(generation)) {

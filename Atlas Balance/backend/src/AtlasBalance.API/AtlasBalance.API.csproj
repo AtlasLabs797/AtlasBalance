@@ -16,6 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Lista de contrasenas comunes (SecLists, MIT) para SecurityPolicy -->
+    <EmbeddedResource Include="Resources\common-passwords-12plus.txt" LogicalName="AtlasBalance.API.Resources.common-passwords-12plus.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Windows Service -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
 
@@ -50,8 +55,8 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 
     <!-- Email -->
-    <PackageReference Include="MailKit" Version="4.17.0" />
-    <PackageReference Include="MimeKit" Version="4.17.0" />
+    <PackageReference Include="MailKit" Version="4.18.2" />
+    <PackageReference Include="MimeKit" Version="4.18.2" />
 
     <!-- Excel Export -->
     <PackageReference Include="ClosedXML" Version="0.105.1" />

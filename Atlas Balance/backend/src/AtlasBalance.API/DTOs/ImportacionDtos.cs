@@ -133,6 +133,9 @@ public sealed class ImportacionValidarResponse
     public string SeparadorDetectado { get; set; } = string.Empty;
     public IReadOnlyList<FilaValidacionResponse> Filas { get; set; } = [];
     public IReadOnlyList<ErrorFilaResponse> Errores { get; set; } = [];
+    // Avisos que afectan al fichero entero, no a una fila concreta (por
+    // ejemplo, el orden de las filas pegadas). B-17 (LOTE 5).
+    public IReadOnlyList<string> Advertencias { get; set; } = [];
 }
 
 public sealed class ImportacionConfirmarResponse

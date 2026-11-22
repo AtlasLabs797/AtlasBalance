@@ -57,6 +57,12 @@ public class RefreshToken
     // JWT como claim `sid` y de ahi a AUDITORIAS.session_id.
     public string? SessionId { get; set; }
 
+    // S-13: ancla de la sesion. Se fija al abrir la sesion y se hereda en cada
+    // rotacion del refresh token, para que la vida maxima de la sesion no se
+    // reinicie eternamente al rotar el token. Los tokens previos a esta columna
+    // la tienen a null y no caducan por edad.
+    public DateTime? SesionIniEn { get; set; }
+
     public Usuario? Usuario { get; set; }
 }
 
@@ -308,7 +314,13 @@ public class PreferenciaUsuarioCuenta
     public Guid? TitularId { get; set; }
     public Guid? CuentaId { get; set; }
     public string? ColumnasVisibles { get; set; }
+    public string? OrdenColumnas { get; set; }
     public string? ColumnasEditables { get; set; }
+    // S-2: whitelist que fija el ADMIN. Es una restriccion, no una preferencia:
+    // el usuario solo puede estrechar su propia vista, nunca ampliarla.
+    // Se separa de ColumnasVisibles (que es la preferencia del usuario) para
+    // que el PUT del usuario no pueda pisar la regla del administrador.
+    public string? ColumnasVisiblesAdmin { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

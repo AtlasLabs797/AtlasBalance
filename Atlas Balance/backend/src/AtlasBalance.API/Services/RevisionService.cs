@@ -173,9 +173,7 @@ public sealed class RevisionService : IRevisionService
             query = query.Where(x => x.Estado != EstadoDescartada);
         }
 
-        query = query
-            .OrderByDescending(x => x.Fecha)
-            .ThenByDescending(x => x.Monto < 0 ? -x.Monto : x.Monto);
+        query = ApplyRevisionSorting(query, request.SortBy, request.SortDir);
 
         var total = await query.CountAsync(cancellationToken);
         var rows = await query
@@ -213,8 +211,21 @@ public sealed class RevisionService : IRevisionService
         var estadoFiltro = NormalizeEstadoFilter(request.Estado);
         var page = NormalizePage(request.Page);
         var pageSize = NormalizePageSize(request.PageSize);
-        var query = BuildRevisionBaseQuery(scope, request.PaisId, TipoSeguro, SeguroSearchTerms)
-            .Where(x => x.Monto < 0m)
+        var raw = BuildRevisionBaseQuery(scope, request.PaisId, TipoSeguro, SeguroSearchTerms)
+            .Where(x => x.Monto < 0m);
+
+        if (estadoFiltro is not null)
+        {
+            raw = raw.Where(x => x.Estado == estadoFiltro);
+        }
+        else
+        {
+            raw = raw.Where(x => x.Estado != EstadoDescartada);
+        }
+
+        // R-3 (seccion 9): la ordenacion se resuelve en SQL, antes de la
+        // proyeccion, para no traer todas las filas al controller.
+        var query = ApplyRevisionSorting(raw, request.SortBy, request.SortDir)
             .Select(x => new RevisionSeguroItemResponse
             {
                 ExtractoId = x.ExtractoId,
@@ -229,19 +240,6 @@ public sealed class RevisionService : IRevisionService
                 Concepto = x.Concepto,
                 Estado = x.Estado
             });
-
-        if (estadoFiltro is not null)
-        {
-            query = query.Where(x => x.Estado == estadoFiltro);
-        }
-        else
-        {
-            query = query.Where(x => x.Estado != EstadoDescartada);
-        }
-
-        query = query
-            .OrderByDescending(x => x.Fecha)
-            .ThenByDescending(x => x.Importe < 0 ? -x.Importe : x.Importe);
 
         return await ToPaginatedResponseAsync(query, page, pageSize, cancellationToken);
     }
@@ -422,6 +420,41 @@ public sealed class RevisionService : IRevisionService
     public static bool IsCommissionConcept(string? concept) => MatchesAnyIncludedTerm(concept, ComisionTerms, ComisionExcludedTerms);
 
     public static bool IsInsuranceConcept(string? concept) => MatchesAnyIncludedTerm(concept, SeguroTerms, SeguroExcludedTerms);
+
+    // R-3 (seccion 9): unico punto donde se decide el orden del listado de
+    // revision. El `sortBy` desconocido cae en el criterio por defecto (fecha)
+    // y `sortDir` decide el sentido en TODOS los casos (antes el caso por
+    // defecto ignoraba el sentido). Se resuelve en SQL: el controller no trae
+    // todas las filas para ordenarlas en memoria.
+    private static IOrderedQueryable<RevisionRawRow> ApplyRevisionSorting(
+        IQueryable<RevisionRawRow> query,
+        string? sortBy,
+        string? sortDir)
+    {
+        // Sin `sortDir` se conserva el orden historico (mas reciente primero).
+        // Solo un "asc" explicito invierte el sentido.
+        var desc = !string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase);
+        var campo = (sortBy ?? string.Empty).ToLowerInvariant();
+
+        var ordenados = campo switch
+        {
+            "estado" => desc ? query.OrderByDescending(x => x.Estado) : query.OrderBy(x => x.Estado),
+            "monto" or "importe" => desc
+                ? query.OrderByDescending(x => x.Monto < 0 ? -x.Monto : x.Monto)
+                : query.OrderBy(x => x.Monto < 0 ? -x.Monto : x.Monto),
+            "concepto" => desc ? query.OrderByDescending(x => x.Concepto) : query.OrderBy(x => x.Concepto),
+            "cuenta" => desc ? query.OrderByDescending(x => x.Cuenta) : query.OrderBy(x => x.Cuenta),
+            "titular" => desc ? query.OrderByDescending(x => x.Titular) : query.OrderBy(x => x.Titular),
+            "extracto_id" => desc ? query.OrderByDescending(x => x.ExtractoId) : query.OrderBy(x => x.ExtractoId),
+            _ => desc ? query.OrderByDescending(x => x.Fecha) : query.OrderBy(x => x.Fecha)
+        };
+
+        // B-15: desempate estable por clave primaria, despues del criterio
+        // de ordenacion pedido.
+        return desc
+            ? ordenados.ThenByDescending(x => x.Monto < 0 ? -x.Monto : x.Monto).ThenBy(x => x.ExtractoId)
+            : ordenados.ThenBy(x => x.Monto < 0 ? -x.Monto : x.Monto).ThenBy(x => x.ExtractoId);
+    }
 
     private IQueryable<RevisionRawRow> BuildRevisionBaseQuery(UserAccessScope scope, Guid? paisId, string tipo, IReadOnlyList<string> terms)
     {

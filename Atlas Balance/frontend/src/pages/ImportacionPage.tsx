@@ -1,10 +1,12 @@
 ﻿import { AxiosError } from 'axios';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
@@ -12,12 +14,16 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
+import { usePermisosStore } from '@/stores/permisosStore';
+import { useUiStore } from '@/stores/uiStore';
 import { IMPORTACION_COMPLETADA_EVENT } from '@/utils/appEvents';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { hoy } from '@/utils/hoy';
 import {
   buildConfirmImportacionLoteRequest,
   buildCreateImportacionLoteRequest,
 } from '@/utils/importacionRequest';
+import { puedeRevertirLote, textoConfirmacionRevertir } from '@/utils/revertirLote';
 import { sanitizeInternalPath } from '@/utils/safeRoute';
 import type {
   ImportConfirmResult,
@@ -31,6 +37,7 @@ import type {
   PaginatedResponse,
 } from '@/types';
 import { formatCurrency, parseEuropeanNumber } from '@/utils/formatters';
+import '@/styles/layout/routes/importacion.css';
 
 const EFFECTIVO_MARKER = '\u2022 Efectivo';
 const EMPTY_MARKER = '\u2014';
@@ -42,14 +49,14 @@ const VALIDATION_PAGE_SIZE = 200;
 
 type ImportStep = 1 | 2;
 type ImportTab = 'nueva' | 'historial' | 'lote';
+
+const importTabs: Array<{ key: ImportTab; label: string }> = [
+  { key: 'nueva', label: 'Nueva' },
+  { key: 'historial', label: 'Historial' },
+  { key: 'lote', label: 'Lote' },
+];
 type PlazoFijoMovimiento = 'INGRESO' | 'EGRESO';
 type ImportValidationRow = ImportValidationResult['filas'][number];
-
-function getTodayInputValue(): string {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
-}
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof AxiosError) {
@@ -68,7 +75,7 @@ function getValidationStatusLabel(row: ImportValidationRow): string {
     return 'Aviso importable';
   }
 
-  return 'Valida';
+  return 'Válida';
 }
 
 function detectSeparator(lines: string[]): 'tab' | 'comma' | 'semicolon' {
@@ -159,6 +166,10 @@ export default function ImportacionPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const selectedPaisId = usePaisScopeStore((state) => state.selectedPaisId);
   const invalidate = useInvalidateAfterMutation();
+  // V-03.02 (LOTE 6, S-3): revertir un lote borra masivamente los extractos
+  // del lote, asi que el backend exige `puede_eliminar_lineas` en la cuenta.
+  const canDeleteInCuenta = usePermisosStore((state) => state.canDeleteInCuenta);
+  const addToast = useUiStore((state) => state.addToast);
   const rawDataId = useId();
   const [step, setStep] = useState<ImportStep>(1);
   const [activeTab, setActiveTab] = useState<ImportTab>('nueva');
@@ -189,6 +200,7 @@ export default function ImportacionPage() {
   const [validationPage, setValidationPage] = useState(1);
   const [confirmResult, setConfirmResult] = useState<ImportConfirmResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [revertingLoteId, setRevertingLoteId] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const plazoFijoSubmittingRef = useRef(false);
   const createIdempotencyKeyRef = useRef(crypto.randomUUID());
@@ -197,7 +209,7 @@ export default function ImportacionPage() {
   const [closeAttempted, setCloseAttempted] = useState(false);
   const [plazoTipoMovimiento, setPlazoTipoMovimiento] = useState<PlazoFijoMovimiento>('INGRESO');
   const [plazoMonto, setPlazoMonto] = useState('');
-  const [plazoFecha, setPlazoFecha] = useState(getTodayInputValue);
+  const [plazoFecha, setPlazoFecha] = useState(() => hoy());
   const [plazoConcepto, setPlazoConcepto] = useState('');
 
   useEffect(() => {
@@ -226,6 +238,11 @@ export default function ImportacionPage() {
         if (initialCuenta) {
           setCuentaId(initialCuenta.id);
           setDivisaEsperada(initialCuenta.divisa);
+          // F-10: al recargar el contexto cambia la cuenta objetivo del POST de
+          // creacion, asi que la clave de idempotencia de creacion debe cambiar.
+          // Si no, el backend responde 409 ("la clave ya se uso con otro
+          // contenido") porque la clave ya identifica a un lote de otra cuenta.
+          createIdempotencyKeyRef.current = crypto.randomUUID();
         }
 
         // V-02.06 (HIGH-1, bug 18): cargar la lista de monedas activas para
@@ -269,7 +286,7 @@ export default function ImportacionPage() {
           return;
         }
 
-        setError(getApiErrorMessage(err, 'No se pudo cargar el contexto de importación'));
+        setError(getApiErrorMessage(err, 'No se pudo cargar el contexto de importación. Revisa la conexión con el servidor e inténtalo de nuevo.'));
       } finally {
         if (mounted) {
           setLoadingContext(false);
@@ -303,7 +320,7 @@ export default function ImportacionPage() {
       setLotes(data.data ?? []);
     } catch (err: unknown) {
       if (requestId !== lotesRequestIdRef.current) return;
-      setError(getApiErrorMessage(err, 'No se pudo cargar el historial de lotes'));
+      setError(getApiErrorMessage(err, 'No se pudo cargar el historial de lotes. Revisa la conexión con el servidor e inténtalo de nuevo.'));
       // Sin esto, si falla la carga del historico al cambiar de cuenta, los
       // lotes de la cuenta anterior siguen visibles y se pueden abrir bajo el
       // cuentaId ya actualizado.
@@ -331,6 +348,14 @@ export default function ImportacionPage() {
   const selectedCuenta = useMemo(
     () => contexto.find((cuenta) => cuenta.id === cuentaId) ?? null,
     [contexto, cuentaId]
+  );
+  // V-03.02 (LOTE 6, S-3): el boton "Revertir" solo se muestra si el usuario
+  // puede eliminar lineas en la cuenta del lote. El contexto de importacion no
+  // devuelve el titular, asi que se pasa como desconocido (undefined): el
+  // backend sigue siendo quien autoriza y devuelve el 403 si no puede.
+  const puedeEliminarEnCuenta = useMemo(
+    () => (cuentaId ? canDeleteInCuenta(cuentaId, undefined, selectedCuenta?.pais_id ?? null) : false),
+    [canDeleteInCuenta, cuentaId, selectedCuenta]
   );
   const isPlazoFijo = selectedCuenta?.tipo_cuenta === 'PLAZO_FIJO';
 
@@ -476,7 +501,7 @@ export default function ImportacionPage() {
     }
 
     if (!rawData.trim()) {
-      setError('Pega datos para validar.');
+      setError('Pega los datos que quieres validar.');
       return;
     }
 
@@ -507,6 +532,9 @@ export default function ImportacionPage() {
       });
       const { data } = await api.post<ImportacionLoteDetalle>(request.url, request.body, request.config);
 
+      // F-10: la clave de idempotencia de la confirmacion es por lote. Al
+      // validar cambia el lote al que se aplica, asi que se regenera.
+      confirmIdempotencyKeyRef.current = crypto.randomUUID();
       setCurrentLote(data.lote);
       setValidacion(data.validacion);
       setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
@@ -519,9 +547,9 @@ export default function ImportacionPage() {
       // Crear lote solo escribe en IMPORTACION_LOTES (no en EXTRACTOS); los
       // catalogos y el historial cambian, los agregados no. Invalidamos el
       // catalogo para que la cuenta aparezca ya en el selector.
-      await invalidate('catalogo' as never);
+      await invalidate('importacionLoteCrear');
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo validar la importación'));
+      setError(getApiErrorMessage(err, 'No se pudo validar la importación. Revisa los datos pegados y el formato de importación de la cuenta e inténtalo de nuevo.'));
     } finally {
       setSubmitting(false);
     }
@@ -550,7 +578,8 @@ export default function ImportacionPage() {
     const confirmed = await confirm({
       title: 'Confirmar importación',
       message: `Se importarán ${selectedValidRowsCount} ${selectedValidRowsCount === 1 ? 'fila' : 'filas'} a la cuenta seleccionada. Esta acción escribe movimientos en el extracto. ¿Continuar?`,
-      confirmLabel: 'Importar',
+      confirmLabel: 'Importar filas',
+      tone: 'normal',
     });
     if (!confirmed) {
       return;
@@ -585,10 +614,57 @@ export default function ImportacionPage() {
         invalidate('conciliacion'),
       ]);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo confirmar la importación'));
+      setError(getApiErrorMessage(err, 'No se pudo confirmar la importación. Revisa las filas seleccionadas e inténtalo de nuevo.'));
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
+    }
+  };
+
+  // V-03.02 (LOTE 6, seccion 8.1): revertir un lote confirmado. El backend
+  // borra (soft delete) los extractos del lote, deja las conciliaciones de
+  // esos extractos en estado 'excepcion' y marca el lote como revertido.
+  const revertirLote = async (lote: ImportacionLote) => {
+    const confirmed = await confirm({
+      title: 'Revertir lote de importación',
+      message: textoConfirmacionRevertir(lote),
+      confirmLabel: 'Revertir lote',
+      tone: 'reversible',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setRevertingLoteId(lote.id);
+    setError(null);
+
+    try {
+      // El cuerpo respeta ImportacionLoteRevertirRequest: el motivo es
+      // opcional y el backend lo guarda en la auditoria de la reversion.
+      await api.post(`/importacion/lotes/${lote.id}/revertir`, { motivo: null });
+      addToast({
+        type: 'success',
+        message: 'Lote revertido. Los extractos de esa importación se han borrado y ya puedes volver a importar.',
+      });
+      await loadLotes(cuentaId);
+      // La reversion borra extractos y deja conciliaciones en 'excepcion':
+      // invalidamos las familias afectadas para que Extractos, Revision y
+      // Conciliacion re-consulten en cualquier tab abierta.
+      await Promise.all([
+        invalidate('importarRevertir'),
+        invalidate('revision'),
+        invalidate('conciliacion'),
+      ]);
+    } catch (err: unknown) {
+      // El 403 ("No tienes permisos para eliminar lineas en esta cuenta") y el
+      // 409 ("El lote esta en estado 'x' y no se puede revertir") se muestran
+      // tal cual, sin inventar texto.
+      addToast({
+        type: 'error',
+        message: getApiErrorMessage(err, 'No se pudo revertir el lote de importación. Comprueba que el lote está confirmado y que puedes eliminar líneas en la cuenta, e inténtalo de nuevo.'),
+      });
+    } finally {
+      setRevertingLoteId(null);
     }
   };
 
@@ -628,7 +704,7 @@ export default function ImportacionPage() {
 
     const monto = plazoMontoNumber;
     if (monto === null || monto <= 0) {
-      setError('Introduce un monto mayor que cero.');
+      setError('Introduce un monto mayor que cero (por ejemplo, 100,00).');
       plazoFijoSubmittingRef.current = false;
       return;
     }
@@ -668,7 +744,7 @@ export default function ImportacionPage() {
       // en lugar del cache stale.
       await invalidate('extractoCreate');
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, 'No se pudo registrar el movimiento del plazo fijo'));
+      setError(getApiErrorMessage(err, 'No se pudo registrar el movimiento del plazo fijo. Revisa el monto y la fecha e inténtalo de nuevo.'));
     } finally {
       setSubmitting(false);
       plazoFijoSubmittingRef.current = false;
@@ -677,19 +753,20 @@ export default function ImportacionPage() {
 
   if (loadingContext) {
     return (
-      <section className="import-page">
-        <p>Cargando configuración de importación...</p>
+      <section className="import-page page">
+        <PageSkeleton label="Cargando configuración de importación..." />
       </section>
     );
   }
 
   if (error && contexto.length === 0) {
     return (
-      <section className="import-page">
-        <header className="import-header">
-          <h1>Importación de extractos</h1>
+      <section className="import-page page">
+        <header className="import-header page-header page-header--stacked">
+          <h1 className="page-header__title">Importación de extractos</h1>
         </header>
         <EmptyState
+          headingLevel="h2"
           variant="error"
           title="No se pudo cargar la importación."
           subtitle={error}
@@ -701,10 +778,10 @@ export default function ImportacionPage() {
 
   if (contexto.length === 0) {
     return (
-      <section className="import-page">
-        <header className="import-header">
-          <h1>Importación de extractos</h1>
-          <p>No tienes cuentas habilitadas para importar.</p>
+      <section className="import-page page">
+        <header className="import-header page-header page-header--stacked">
+          <h1 className="page-header__title">Importación de extractos</h1>
+          <p className="page-header__subtitle">No tienes cuentas habilitadas para importar.</p>
         </header>
         {canManageFormatos && (
           <div className="import-actions">
@@ -715,11 +792,38 @@ export default function ImportacionPage() {
     );
   }
 
+  // Pestanas navegables: se omite 'lote' mientras no haya lote cargado (boton deshabilitado)
+  const enabledImportTabs = importTabs.filter((item) => item.key !== 'lote' || currentLote);
+
+  const handleImportTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, key: ImportTab) => {
+    const currentIndex = enabledImportTabs.findIndex((item) => item.key === key);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const moveTo = (nextIndex: number) => {
+      const nextTab = enabledImportTabs[(nextIndex + enabledImportTabs.length) % enabledImportTabs.length].key;
+      event.preventDefault();
+      setActiveTab(nextTab);
+      window.setTimeout(() => document.getElementById(`import-tab-${nextTab}`)?.focus(), 0);
+    };
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      moveTo(currentIndex + 1);
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      moveTo(currentIndex - 1);
+    } else if (event.key === 'Home') {
+      moveTo(0);
+    } else if (event.key === 'End') {
+      moveTo(enabledImportTabs.length - 1);
+    }
+  };
+
   return (
-    <section className="import-page">
-      <header className="import-header">
-        <h1>Importación de extractos</h1>
-        <p>Las cuentas normales y de efectivo usan formato de importación. Las de plazo fijo solo permiten añadir o sacar dinero.</p>
+    <section className="import-page page">
+      <header className="import-header page-header page-header--stacked">
+        <h1 className="page-header__title">Importación de extractos</h1>
+        <p className="page-header__subtitle">Las cuentas normales y de efectivo usan formato de importación. Las de plazo fijo solo permiten añadir o sacar dinero.</p>
         {canManageFormatos && (
           <div className="import-actions">
             <Link to="/formatos-importacion">Gestionar formatos de importación</Link>
@@ -728,34 +832,25 @@ export default function ImportacionPage() {
       </header>
 
       <div className="import-tabs" role="tablist" aria-label="Secciones de importación">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'nueva'}
-          className={activeTab === 'nueva' ? 'active' : ''}
-          onClick={() => setActiveTab('nueva')}
-        >
-          Nueva
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'historial'}
-          className={activeTab === 'historial' ? 'active' : ''}
-          onClick={() => setActiveTab('historial')}
-        >
-          Historial
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'lote'}
-          className={activeTab === 'lote' ? 'active' : ''}
-          disabled={!currentLote}
-          onClick={() => setActiveTab('lote')}
-        >
-          Lote
-        </button>
+        {importTabs.map(({ key, label }) => {
+          const isActive = activeTab === key;
+          return (
+            <button
+              key={key}
+              id={`import-tab-${key}`}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              className={isActive ? 'active' : ''}
+              tabIndex={isActive ? 0 : -1}
+              disabled={key === 'lote' && !currentLote}
+              onClick={() => setActiveTab(key)}
+              onKeyDown={(event) => handleImportTabKeyDown(event, key)}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {activeTab !== 'historial' && (
@@ -779,25 +874,30 @@ export default function ImportacionPage() {
       {activeTab === 'historial' ? (
         <div className="import-card">
           <div className="import-history-header">
-            <h3>Historial de lotes</h3>
+            <h2>Historial de lotes</h2>
             <button type="button" className="button-secondary" onClick={() => void loadLotes()}>
               {loadingLotes ? 'Actualizando...' : 'Actualizar'}
             </button>
           </div>
           {lotes.length === 0 ? (
-            <p className="import-muted">{loadingLotes ? 'Cargando lotes...' : 'No hay lotes para esta cuenta.'}</p>
+            loadingLotes ? (
+              <PageSkeleton variant="table" rows={3} columns={7} label="Cargando lotes..." />
+            ) : (
+              <p className="import-muted">No hay lotes para esta cuenta.</p>
+            )
           ) : (
             <div className="import-validation-table-wrap">
-              <table className="import-validation-table">
+              <table className="import-validation-table import-history-table">
+                <caption className="sr-only">Historial de lotes</caption>
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Cuenta</th>
-                    <th>Origen</th>
-                    <th>Estado</th>
-                    <th>Filas</th>
-                    <th>SHA-256</th>
-                    <th>Acción</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Cuenta</th>
+                    <th scope="col">Origen</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Filas</th>
+                    <th scope="col">SHA-256</th>
+                    <th scope="col">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -806,10 +906,23 @@ export default function ImportacionPage() {
                       <td>{new Date(lote.fecha_creacion).toLocaleString()}</td>
                       <td>{lote.cuenta_nombre ?? EMPTY_MARKER}</td>
                       <td>{lote.tipo_origen}{lote.nombre_archivo ? ` / ${lote.nombre_archivo}` : ''}</td>
-                      <td>{lote.estado}</td>
-                      <td>{lote.filas_validas}/{lote.filas_total}</td>
-                      <td><code>{lote.sha256.slice(0, 12)}</code></td>
                       <td>
+                        <span
+                          className={
+                            lote.estado.toLowerCase() === 'confirmado'
+                              ? 'users-badge users-badge--ok'
+                              : lote.estado.toLowerCase() === 'error'
+                                ? 'users-badge users-badge--danger'
+                                : 'users-badge'
+                          }
+                        >
+                          {lote.estado}
+                        </span>
+                      </td>
+                      <td>{lote.filas_validas}/{lote.filas_total}</td>
+                      <td><code title={lote.sha256}>{lote.sha256.slice(0, 8)}</code></td>
+                      <td>
+                        <div className="users-row-actions">
                         <button
                           type="button"
                           className="button-secondary"
@@ -824,9 +937,13 @@ export default function ImportacionPage() {
                               // error generico.
                               const estadoLote = (data.lote?.estado ?? lote.estado ?? '').toLowerCase();
                               if (estadoLote === 'confirmado' || estadoLote === 'revertido' || estadoLote === 'error') {
-                                setError(`El lote esta ${estadoLote} y no se puede confirmar de nuevo.`);
+                                setError(`El lote está ${estadoLote} y no se puede confirmar de nuevo.`);
                                 return;
                               }
+                              // F-10: la clave de idempotencia de la confirmacion es por
+                              // lote. Al abrir otro lote del historial se regenera, para
+                              // que cada confirmacion use la clave de su propio lote.
+                              confirmIdempotencyKeyRef.current = crypto.randomUUID();
                               setCurrentLote(data.lote);
                               setValidacion(data.validacion);
                               setSelectedRows(data.validacion.filas.filter((row) => row.valida && row.advertencias.length === 0).map((row) => row.indice));
@@ -836,7 +953,7 @@ export default function ImportacionPage() {
                               setStep(2);
                               setActiveTab('lote');
                             } catch (err: unknown) {
-                              setError(getApiErrorMessage(err, 'No se pudo abrir el lote'));
+                              setError(getApiErrorMessage(err, 'No se pudo abrir el lote. Recarga el historial de lotes e inténtalo de nuevo.'));
                             } finally {
                               setSubmitting(false);
                             }
@@ -844,6 +961,22 @@ export default function ImportacionPage() {
                         >
                           Abrir
                         </button>
+                        {/* V-03.02 (LOTE 6, S-3): solo un lote confirmado es
+                            reversible y hace falta `puede_eliminar_lineas` en la
+                            cuenta. Si falta el permiso, el boton no se muestra
+                            (el backend ya lo deniega con 403). */}
+                        {puedeRevertirLote(lote, puedeEliminarEnCuenta) ? (
+                          <button
+                            type="button"
+                            className="button-danger"
+                            onClick={() => void revertirLote(lote)}
+                            disabled={revertingLoteId !== null}
+                            aria-label={`Revertir el lote del ${new Date(lote.fecha_creacion).toLocaleString()}`}
+                          >
+                            {revertingLoteId === lote.id ? 'Revirtiendo...' : 'Revertir'}
+                          </button>
+                        ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -877,7 +1010,7 @@ export default function ImportacionPage() {
                     label="Movimiento"
                     value={plazoTipoMovimiento}
                     options={[
-                      { value: 'INGRESO', label: 'Anadir dinero' },
+                      { value: 'INGRESO', label: 'Añadir dinero' },
                       { value: 'EGRESO', label: 'Sacar dinero' },
                     ]}
                     onChange={(next) => setPlazoTipoMovimiento(next as PlazoFijoMovimiento)}
@@ -928,7 +1061,7 @@ export default function ImportacionPage() {
               <>
             <p className={selectedMapeo ? 'import-muted' : 'auth-error'} role={selectedMapeo ? 'status' : 'alert'}>
               {selectedMapeo
-                ? `Formato automatico aplicado: ${selectedMapeo.tipo_monto === 'tres_columnas' ? 'ingreso/egreso + monto de control' : selectedMapeo.tipo_monto === 'dos_columnas' ? 'ingreso/egreso separados' : 'monto firmado'} (${selectedMapeo.columnas_extra.length} columnas extra).`
+                ? `Formato automático aplicado: ${selectedMapeo.tipo_monto === 'tres_columnas' ? 'ingreso/egreso + monto de control' : selectedMapeo.tipo_monto === 'dos_columnas' ? 'ingreso/egreso separados' : 'monto firmado'} (${selectedMapeo.columnas_extra.length} columnas extra).`
                 : 'Esta cuenta no tiene formato de importación activo. Asígnalo en la ficha de cuenta antes de importar.'}
             </p>
 
@@ -982,12 +1115,13 @@ export default function ImportacionPage() {
               }
             />
 
-            <h3>Preview (primeras 3 filas)</h3>
+            <h2>Vista previa (primeras 3 filas)</h2>
             <div className="import-preview-grid">
               {previewRows.length === 0 ? (
-                <p className="import-muted">Aun no hay datos pegados.</p>
+                <p className="import-muted">Aún no hay datos pegados.</p>
               ) : (
                 <table>
+                  <caption className="sr-only">Vista previa de los datos pegados</caption>
                   <tbody>
                     {previewRows.map((row, index) => (
                       <tr key={`preview-${index}`}>
@@ -1013,11 +1147,11 @@ export default function ImportacionPage() {
 
         {step === 2 && validacion && (
           <>
-            <h3>Validar y confirmar</h3>
+            <h2>Validar y confirmar</h2>
             <div className="import-result-box import-validation-summary" role="status">
               <div>
                 <strong>{validacion.filas_ok}</strong>
-                <span>Filas validas</span>
+                <span>Filas válidas</span>
               </div>
               <div>
                 <strong>{validacion.filas_error}</strong>
@@ -1035,6 +1169,15 @@ export default function ImportacionPage() {
             <p className="import-muted">
               Cuenta: {selectedCuenta ? `${selectedCuenta.titular_nombre} / ${selectedCuenta.nombre}` : EMPTY_MARKER}. Separador: {validacion.separador_detectado}.
             </p>
+            {validacion.advertencias?.length > 0 && (
+              <div className="import-warning-accept" role="alert">
+                {validacion.advertencias.map((aviso) => (
+                  <p key={aviso} className="auth-error" style={{ margin: '0 0 var(--space-2) 0' }}>
+                    {aviso}
+                  </p>
+                ))}
+              </div>
+            )}
             {currentLote && (
               <p className="import-muted">
                 Lote: <code>{currentLote.lote_hash.slice(0, 12)}</code> · SHA-256 <code>{currentLote.sha256.slice(0, 12)}</code> · {currentLote.estado}
@@ -1043,19 +1186,20 @@ export default function ImportacionPage() {
 
             <div className="import-validation-table-wrap">
               <table className="import-validation-table">
+                <caption className="sr-only">Validación de movimientos</caption>
                 <thead>
                   <tr>
-                    <th>Importar</th>
-                    <th>Fila</th>
-                    <th>Estado</th>
-                    <th>Fecha</th>
-                    <th>Concepto</th>
-                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th>Ingreso</th>}
-                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th>Egreso</th>}
-                    {selectedMapeo?.tipo_monto === 'tres_columnas' && <th>Monto banco</th>}
-                    <th>Monto</th>
-                    <th>Saldo</th>
-                    <th>Errores / avisos</th>
+                    <th scope="col">Importar</th>
+                    <th scope="col">Fila</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Concepto</th>
+                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th scope="col">Ingreso</th>}
+                    {(selectedMapeo?.tipo_monto === 'dos_columnas' || selectedMapeo?.tipo_monto === 'tres_columnas') && <th scope="col">Egreso</th>}
+                    {selectedMapeo?.tipo_monto === 'tres_columnas' && <th scope="col">Monto banco</th>}
+                    <th scope="col">Monto</th>
+                    <th scope="col">Saldo</th>
+                    <th scope="col">Errores / avisos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1151,7 +1295,7 @@ export default function ImportacionPage() {
                 <p className="auth-error" style={{ margin: '0 0 var(--space-2) 0' }}>
                   Aviso de divisa: la cuenta destino opera en{' '}
                   <strong>{currentLote.divisa_cuenta}</strong> pero declaraste pegar datos en{' '}
-                  <strong>{currentLote.divisa_esperada ?? '?'}</strong>. Si confirmas, los importes quedaran registrados con tu declaracion.
+                  <strong>{currentLote.divisa_esperada ?? '?'}</strong>. Si confirmas, los importes quedarán registrados con tu declaración.
                 </p>
                 <label style={{ display: 'block', marginTop: 'var(--space-1)' }}>
                   <input
@@ -1185,7 +1329,7 @@ export default function ImportacionPage() {
             <div className="import-actions">
               {!importAlreadyConfirmed && (
                 <>
-                  <button type="button" className="button-secondary" onClick={() => setStep(1)}>Atras</button>
+                  <button type="button" className="button-secondary" onClick={() => setStep(1)}>Atrás</button>
                   <button
                     type="button"
                     className="button-primary"

@@ -1,14 +1,16 @@
-﻿import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Coins, Globe, KeyRound, Mail, ServerCog } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useUiStore } from '@/stores/uiStore';
 import { useUpdateStore } from '@/stores/updateStore';
 import { CreateTokenModal } from '@/components/integraciones/CreateTokenModal';
 import { TokenCreatedModal } from '@/components/integraciones/TokenCreatedModal';
@@ -23,7 +25,9 @@ import {
   normalizeAiProvider,
 } from '@/utils/aiModels';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatDateTime as formatDateTimeValue } from '@/utils/formatters';
+import { formatDateTime as formatDateTimeValue, parseStrictDecimal } from '@/utils/formatters';
+import { parseOptionalNumberInput } from '@/utils/numberInput';
+import { createPollLifecycle, type PollLifecycle } from '@/utils/pollLifecycle';
 import type {
   ConfiguracionSistema,
   DivisaActiva,
@@ -33,15 +37,29 @@ import type {
   TipoCambio,
   WatchdogState,
 } from '@/types';
+import '@/styles/layout/routes/configuracion.css';
 
 type TabKey = 'general' | 'revision-ia' | 'divisas' | 'sistema' | 'integraciones' | 'paises';
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 const MFA_REMEMBER_DEVICE_DAYS = 90;
 
+// S-17: modo de cifrado del SMTP. "required" = STARTTLS obligatorio,
+// "auto" = STARTTLS obligatorio con usuario; sin usuario, si el servidor lo
+// admite. "none" = sin cifrar.
+// El tipo compartido ConfiguracionSistema todavia no declara tls_mode, asi que
+// se amplia aqui sin tocar types/index.ts.
+type SmtpTlsMode = 'required' | 'auto' | 'none';
+type SmtpConfig = ConfiguracionSistema['smtp'] & { tls_mode?: SmtpTlsMode };
+type ConfiguracionConTls = Omit<ConfiguracionSistema, 'smtp'> & { smtp: SmtpConfig };
+
+function normalizarTlsMode(valor: string | null | undefined): SmtpTlsMode {
+  return valor === 'required' || valor === 'auto' || valor === 'none' ? valor : 'required';
+}
+
 const tabs: Array<{ key: TabKey; label: string; Icon: typeof Mail }> = [
   { key: 'general', label: 'General + SMTP', Icon: Mail },
   { key: 'revision-ia', label: 'Revisión + IA', Icon: Bot },
-  { key: 'divisas', label: 'Divisas y Tipos', Icon: Coins },
+  { key: 'divisas', label: 'Divisas y tipos', Icon: Coins },
   { key: 'sistema', label: 'Sistema', Icon: ServerCog },
   { key: 'integraciones', label: 'Integraciones', Icon: KeyRound },
   { key: 'paises', label: 'Países', Icon: Globe },
@@ -61,8 +79,233 @@ function formatOptionalDateTime(value: string | null) {
   return formatDateTimeValue(value);
 }
 
+// Importe decimal no negativo: vacio = 0; invalido/negativo = null.
+function parseDecimalInput(raw: string): number | null {
+  if (!raw.trim()) {
+    return 0;
+  }
+  const parsed = parseStrictDecimal(raw);
+  return parsed === null || parsed < 0 ? null : parsed;
+}
+
+// toFixed evita la notacion cientifica (1e-7); se recortan ceros sobrantes.
+function decimalToInput(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '';
+  }
+  return value.toFixed(8).replace(/\.?0+$/, '').replace('.', ',');
+}
+
+interface DecimalFieldProps {
+  fieldKey: string;
+  value: number;
+  onValue: (next: number) => void;
+  onValidity: (fieldKey: string, valid: boolean) => void;
+}
+
+// Campo de importe con texto local (admite coma europea) que propaga el numero
+// ya parseado al estado de configuracion; si el texto no es valido avisa por
+// onValidity para bloquear el guardado.
+function DecimalField({ fieldKey, value, onValue, onValidity }: DecimalFieldProps) {
+  const [text, setText] = useState(() => decimalToInput(value));
+
+  useEffect(() => {
+    // Sincroniza cuando el valor externo cambia (carga/guardado) y ya no coincide con el texto
+    if (parseDecimalInput(text) !== value) {
+      setText(decimalToInput(value));
+      onValidity(fieldKey, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo reacciona al valor externo
+  }, [value]);
+
+  useEffect(() => () => onValidity(fieldKey, true), [fieldKey, onValidity]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      value={text}
+      aria-invalid={parseDecimalInput(text) === null}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const parsed = parseDecimalInput(raw);
+        onValidity(fieldKey, parsed !== null);
+        if (parsed !== null) {
+          onValue(parsed);
+        }
+      }}
+    />
+  );
+}
+
+interface NumberFieldProps {
+  fieldKey: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onValue: (next: number) => void;
+}
+
+// F-8: campo numerico con texto local. Se puede vaciar (el campo queda vacio,
+// no 0) y un valor vacio no se convierte en 0 al guardar: si el campo esta
+// vacio se conserva el ultimo valor valido de la configuracion.
+function NumberField({ fieldKey, value, min, max, step, onValue }: NumberFieldProps) {
+  const [text, setText] = useState(() => String(value));
+
+  useEffect(() => {
+    // Sincroniza cuando el valor externo cambia (carga/guardado) y el texto
+    // local ya no representa ese valor. Un campo vacio se deja como esta.
+    setText((prev) => (parseOptionalNumberInput(prev) === value ? prev : String(value)));
+  }, [value]);
+
+  return (
+    <input
+      id={fieldKey}
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      value={text}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setText(raw);
+        const parsed = parseOptionalNumberInput(raw);
+        if (parsed !== null) {
+          onValue(parsed);
+        }
+      }}
+    />
+  );
+}
+
+// D-8: los colores del grafico eran texto libre: se podia guardar cualquier
+// cosa y el grafico se rompia en silencio. Solo se acepta un color
+// hexadecimal (#RGB o #RRGGBB) o el valor vacio, que significa "usa el color
+// del tema".
+const COLOR_HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+// D-8: tokens de grafico del design system (--chart-1..--chart-10) y sus
+// aliases de variables.css. El color por defecto de cada campo sale del token
+// (leido del CSS del tema activo), no de un hex escrito a mano, asi que se
+// adapta al tema claro/oscuro.
+const CHART_COLOR_TOKEN_NAMES = [
+  '--chart-1',
+  '--chart-2',
+  '--chart-3',
+  '--chart-4',
+  '--chart-5',
+  '--chart-6',
+  '--chart-7',
+  '--chart-8',
+  '--chart-9',
+  '--chart-10',
+  '--chart-series-1',
+  '--chart-series-2',
+  '--chart-series-3',
+  '--chart-series-4',
+  '--chart-series-5',
+  '--chart-series-6',
+  '--chart-series-7',
+  '--chart-series-8',
+  '--chart-series-9',
+  '--chart-series-10',
+  '--chart-series-other',
+  '--chart-ingresos',
+  '--chart-egresos',
+  '--chart-saldo',
+  '--chart-color-ingresos',
+  '--chart-color-egresos',
+  '--chart-color-saldo',
+] as const;
+
+// Los tres colores del grafico y el token del tema que aporta cada uno.
+const CHART_COLOR_KEYS = ['color_ingresos', 'color_egresos', 'color_saldo'] as const;
+
+type ChartColorKey = (typeof CHART_COLOR_KEYS)[number];
+
+const CHART_COLOR_FIELDS: Record<ChartColorKey, { label: string; campo: string; token: string; alias: string }> = {
+  color_ingresos: { label: 'Color ingresos', campo: 'El color de ingresos', token: '--chart-5', alias: '--chart-ingresos' },
+  color_egresos: { label: 'Color egresos', campo: 'El color de egresos', token: '--chart-7', alias: '--chart-egresos' },
+  color_saldo: { label: 'Color saldo', campo: 'El color de saldo', token: '--chart-1', alias: '--chart-saldo' },
+};
+
+// Cache por tema: los tokens solo cambian cuando cambia [data-theme].
+let chartTokenCache: { theme: string; tokens: Record<string, string> } | null = null;
+
+// Lee el valor resuelto de cada token de grafico del tema activo.
+function readChartColorTokens(theme: string): Record<string, string> {
+  if (chartTokenCache?.theme === theme) {
+    return chartTokenCache.tokens;
+  }
+
+  const tokens: Record<string, string> = {};
+  if (typeof document !== 'undefined') {
+    const styles = getComputedStyle(document.documentElement);
+    for (const token of CHART_COLOR_TOKEN_NAMES) {
+      const value = styles.getPropertyValue(token).trim();
+      if (COLOR_HEX_PATTERN.test(value)) {
+        tokens[token] = value;
+      }
+    }
+  }
+
+  chartTokenCache = { theme, tokens };
+  return tokens;
+}
+
+interface ChartColorFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  tokenLabel: string;
+  tokenHex: string;
+  listId: string;
+  onChange: (next: string) => void;
+}
+
+// Campo de color del grafico: valida el hexadecimal, explica junto al campo
+// cual es el formato esperado y muestra el color efectivo (el valor escrito o,
+// si esta vacio, el del token del tema).
+function ChartColorField({ id, label, value, tokenLabel, tokenHex, listId, onChange }: ChartColorFieldProps) {
+  const trimmed = value.trim();
+  const invalid = trimmed.length > 0 && !COLOR_HEX_PATTERN.test(trimmed);
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
+  const previewHex = invalid || trimmed.length === 0 ? tokenHex : trimmed;
+
+  return (
+    <label className="config-field config-field--color">
+      <span>{label}</span>
+      <div className="config-color-control">
+        <input
+          id={id}
+          list={listId}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          aria-invalid={invalid}
+          aria-describedby={invalid ? `${errorId} ${hintId}` : hintId}
+          placeholder={tokenHex || '#1A2B3C'}
+        />
+        <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: previewHex || 'transparent' }} />
+      </div>
+      {invalid ? (
+        <p className="auth-error" id={errorId} role="alert">
+          El color no es válido. Escribe un hexadecimal como #1A2B3C (o #fff) y deja el campo vacío para usar el color del tema.
+        </p>
+      ) : null}
+      <small id={hintId} className="import-muted">
+        {`Vacío = color del tema (${tokenLabel}${tokenHex ? ` · ${tokenHex}` : ''}).`}
+      </small>
+    </label>
+  );
+}
+
 export default function ConfiguracionPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const onPaisesSubroute = location.pathname.startsWith('/configuracion/paises');
   const [tab, setTab] = useState<TabKey>('general');
   const [loading, setLoading] = useState(true);
@@ -70,9 +313,27 @@ export default function ConfiguracionPage() {
   const { confirm, dialogProps: confirmDialogProps } = useConfirmDialog();
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // D-8: los tokens de grafico se releen cuando cambia el tema activo.
+  const theme = useUiStore((state) => state.theme);
+  const chartTokens = readChartColorTokens(theme);
+  // Paleta de graficos: los hex de los tokens, agrupados por color para no
+  // repetir el mismo valor en el desplegable del campo.
+  const chartPalette = useMemo(() => {
+    const porHex = new Map<string, string[]>();
+    for (const token of CHART_COLOR_TOKEN_NAMES) {
+      const hex = chartTokens[token];
+      if (!hex) {
+        continue;
+      }
+      const labels = porHex.get(hex) ?? [];
+      labels.push(token);
+      porHex.set(hex, labels);
+    }
+    return [...porHex.entries()].map(([hex, labels]) => ({ hex, labels }));
+  }, [chartTokens]);
 
-  const [config, setConfig] = useState<ConfiguracionSistema>({
-    smtp: { host: '', port: 587, user: '', password: '', from: '' },
+  const [config, setConfig] = useState<ConfiguracionConTls>({
+    smtp: { host: '', port: 587, user: '', password: '', from: '', tls_mode: 'auto' },
     general: {
       app_base_url: '',
       app_update_check_url: '',
@@ -88,7 +349,13 @@ export default function ConfiguracionPage() {
       export_path: '',
     },
     exchange: { api_key: '', api_key_configurada: false },
-    dashboard: { color_ingresos: '#43B430', color_egresos: '#FF4757', color_saldo: '#7B7B7B' },
+    // D-8: el color por defecto sale del token del tema, no de un hex escrito
+    // a mano (--chart-5 / --chart-7 / --chart-1).
+    dashboard: {
+      color_ingresos: chartTokens[CHART_COLOR_FIELDS.color_ingresos.token] ?? '',
+      color_egresos: chartTokens[CHART_COLOR_FIELDS.color_egresos.token] ?? '',
+      color_saldo: chartTokens[CHART_COLOR_FIELDS.color_saldo.token] ?? '',
+    },
     revision: { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
     ia: {
       provider: 'OPENROUTER',
@@ -126,6 +393,15 @@ export default function ConfiguracionPage() {
     },
   });
   const [smtpTo, setSmtpTo] = useState('');
+  // Campos decimales con texto invalido (bloquean el guardado de configuracion)
+  const invalidDecimalsRef = useRef<Set<string>>(new Set());
+  const handleDecimalValidity = useCallback((fieldKey: string, valid: boolean) => {
+    if (valid) {
+      invalidDecimalsRef.current.delete(fieldKey);
+    } else {
+      invalidDecimalsRef.current.add(fieldKey);
+    }
+  }, []);
   // Snapshot de la configuracion cargada para avisar de cambios sin guardar al
   // refrescar/cerrar el navegador. Los tabs son render condicional sobre este
   // estado, asi que cambiar de pestana NO pierde datos (no necesita guardia).
@@ -144,6 +420,12 @@ export default function ConfiguracionPage() {
   const [openRouterModels, setOpenRouterModels] = useState<IaModel[]>([]);
   const [showCreateTokenModal, setShowCreateTokenModal] = useState(false);
   const [tokenPlano, setTokenPlano] = useState<string | null>(null);
+
+  // R-6: la busqueda del campo "Modelo" pasa por el hook de debounce ya
+  // existente: antes se pedia /ia/modelos en cada pulsacion de tecla.
+  const debouncedModelSearch = useDebouncedValue(config.ia.model, 300);
+  // F-4: sondeo de la actualizacion; se detiene al desmontar la pagina.
+  const updatePollRef = useRef<PollLifecycle | null>(null);
 
   const logout = useAuthStore((state) => state.logout);
   const updateAvailable = useUpdateStore((state) => state.available);
@@ -174,100 +456,128 @@ export default function ConfiguracionPage() {
   const canEditRates = divisasActivas.length >= 2;
   const exchangeApiConfigured = config.exchange.api_key_configurada;
 
+  // A-8: un recargador por seccion. Ninguno activa el loading global (el
+  // skeleton de pagina completa): las acciones menores recargan solo la
+  // seccion que modifican, para no perder lo escrito sin guardar.
+  const loadConfiguracion = async () => {
+    const cfg = await api.get<ConfiguracionConTls>('/configuracion');
+    const fallbackIa: ConfiguracionSistema['ia'] = {
+      provider: 'OPENROUTER',
+      openrouter_api_key: '',
+      openrouter_api_key_configurada: false,
+      openai_api_key: '',
+      openai_api_key_configurada: false,
+      minimax_api_key: '',
+      minimax_api_key_configurada: false,
+      model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
+      habilitada: false,
+      usuario_puede_usar: false,
+      configurada: false,
+      mensaje_estado: 'La IA está desactivada globalmente.',
+      permite_retencion_datos: false,
+      requests_por_minuto: 6,
+      requests_por_hora: 30,
+      requests_por_dia: 60,
+      requests_globales_por_dia: 300,
+      presupuesto_mensual_eur: 0,
+      presupuesto_mensual_usuario_eur: 0,
+      presupuesto_total_eur: 0,
+      coste_mes_estimado_eur: 0,
+      coste_mes_usuario_estimado_eur: 0,
+      coste_total_estimado_eur: 0,
+      requests_mes_usuario: 0,
+      tokens_entrada_mes_usuario: 0,
+      tokens_salida_mes_usuario: 0,
+      porcentaje_aviso_presupuesto: 80,
+      input_cost_per_million_tokens_eur: 0,
+      output_cost_per_million_tokens_eur: 0,
+      max_input_tokens: 6000,
+      max_output_tokens: 700,
+      max_context_rows: 80,
+    };
+    const loadedIa = cfg.data.ia ?? fallbackIa;
+    const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
+    const nextConfig: ConfiguracionConTls = {
+      ...cfg.data,
+      general: {
+        ...cfg.data.general,
+        mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? true,
+        mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
+        require_mfa_for_non_admin_users: cfg.data.general?.require_mfa_for_non_admin_users ?? true,
+      },
+      // V-02.07: el backend ya no envia api_key ni smtp.password en el GET
+      // (los DTO de respuesta no declaran esos campos). Los inicializamos
+      // aqui a '' igual que las claves de IA, porque son estado del
+      // formulario: sin esto el input pasaria a no controlado.
+      // S-17: tls_mode se conserva si el backend lo devuelve; si no, "auto".
+      smtp: { ...cfg.data.smtp, password: '', tls_mode: normalizarTlsMode(cfg.data.smtp?.tls_mode) },
+      exchange: {
+        api_key: '',
+        api_key_configurada: cfg.data.exchange?.api_key_configurada ?? false,
+      },
+      revision: cfg.data.revision ?? { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
+      ia: {
+        ...loadedIa,
+        provider: loadedIaProvider,
+        model: normalizeAiModel(loadedIaProvider, loadedIa.model),
+        openrouter_api_key: '',
+        openai_api_key: '',
+        minimax_api_key: '',
+      },
+    };
+    setConfig(nextConfig);
+    configBaselineRef.current = JSON.stringify(nextConfig);
+    setSmtpTo(cfg.data.smtp.from);
+  };
+
+  // A-8: recarga solo los tipos de cambio.
+  const loadTiposCambio = async () => {
+    const tiposRes = await api.get<TipoCambio[]>('/tipos-cambio');
+    setTipos(tiposRes.data ?? []);
+  };
+
+  // A-8: recarga solo las divisas; la divisa base se deriva de es_base.
+  const loadDivisas = async () => {
+    const divisasRes = await api.get<DivisaActiva[]>('/divisas');
+    const nextDivisas = divisasRes.data ?? [];
+    const activeCodes = nextDivisas.filter((item) => item.activa).map((item) => item.codigo);
+    const baseDivisa = nextDivisas.find((d) => d.es_base)?.codigo ?? activeCodes[0] ?? 'EUR';
+    setDivisas(nextDivisas);
+    setDivisaPorDefecto(baseDivisa);
+    setManualRate((prev) => {
+      const origen = activeCodes.includes(prev.origen) ? prev.origen : (activeCodes[0] ?? '');
+      const destinosDisponibles = activeCodes.filter((code) => code !== origen);
+      const destino = destinosDisponibles.includes(prev.destino) ? prev.destino : (destinosDisponibles[0] ?? '');
+      return { ...prev, origen, destino };
+    });
+  };
+
+  // A-8: recarga solo los tokens de integracion.
+  const loadTokens = async () => {
+    const tokensRes = await api.get<PaginatedResponse<IntegrationTokenListItem>>('/integraciones/tokens', { params: { page: 1, pageSize: 100 } });
+    setTokens(tokensRes.data.data ?? []);
+  };
+
+  // A-8: el catalogo de permisos solo se necesita en la carga inicial.
+  const loadCatalogos = async () => {
+    const catalogosRes = await api.get<CatalogoPermisos>('/usuarios/catalogos-permisos');
+    setCatalogos(catalogosRes.data);
+  };
+
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [cfg, tiposRes, divisasRes, tokensRes, catalogosRes] = await Promise.all([
-        api.get<ConfiguracionSistema>('/configuracion'),
-        api.get<TipoCambio[]>('/tipos-cambio'),
-        api.get<DivisaActiva[]>('/divisas'),
-        api.get<PaginatedResponse<IntegrationTokenListItem>>('/integraciones/tokens', { params: { page: 1, pageSize: 100 } }),
-        api.get<CatalogoPermisos>('/usuarios/catalogos-permisos'),
+      await Promise.all([
+        loadConfiguracion(),
+        loadTiposCambio(),
+        loadDivisas(),
+        loadTokens(),
+        loadCatalogos(),
       ]);
-      const nextDivisas = divisasRes.data ?? [];
-      const activeCodes = nextDivisas.filter((item) => item.activa).map((item) => item.codigo);
-      const baseDivisa = nextDivisas.find((d) => d.es_base)?.codigo ?? activeCodes[0] ?? 'EUR';
-      const fallbackIa: ConfiguracionSistema['ia'] = {
-        provider: 'OPENROUTER',
-        openrouter_api_key: '',
-        openrouter_api_key_configurada: false,
-        openai_api_key: '',
-        openai_api_key_configurada: false,
-        minimax_api_key: '',
-        minimax_api_key_configurada: false,
-        model: OPENROUTER_DEFAULT_RUNTIME_MODEL,
-        habilitada: false,
-        usuario_puede_usar: false,
-        configurada: false,
-        mensaje_estado: 'La IA está desactivada globalmente.',
-        permite_retencion_datos: false,
-        requests_por_minuto: 6,
-        requests_por_hora: 30,
-        requests_por_dia: 60,
-        requests_globales_por_dia: 300,
-        presupuesto_mensual_eur: 0,
-        presupuesto_mensual_usuario_eur: 0,
-        presupuesto_total_eur: 0,
-        coste_mes_estimado_eur: 0,
-        coste_mes_usuario_estimado_eur: 0,
-        coste_total_estimado_eur: 0,
-        requests_mes_usuario: 0,
-        tokens_entrada_mes_usuario: 0,
-        tokens_salida_mes_usuario: 0,
-        porcentaje_aviso_presupuesto: 80,
-        input_cost_per_million_tokens_eur: 0,
-        output_cost_per_million_tokens_eur: 0,
-        max_input_tokens: 6000,
-        max_output_tokens: 700,
-        max_context_rows: 80,
-      };
-      const loadedIa = cfg.data.ia ?? fallbackIa;
-      const loadedIaProvider = normalizeAiProvider(loadedIa.provider);
-      const nextConfig: ConfiguracionSistema = {
-        ...cfg.data,
-        general: {
-          ...cfg.data.general,
-          mfa_remember_device_enabled: cfg.data.general?.mfa_remember_device_enabled ?? true,
-          mfa_remember_device_days: cfg.data.general?.mfa_remember_device_days ?? MFA_REMEMBER_DEVICE_DAYS,
-          require_mfa_for_non_admin_users: cfg.data.general?.require_mfa_for_non_admin_users ?? true,
-        },
-        // V-02.07: el backend ya no envia api_key ni smtp.password en el GET
-        // (los DTO de respuesta no declaran esos campos). Los inicializamos
-        // aqui a '' igual que las claves de IA, porque son estado del
-        // formulario: sin esto el input pasaria a no controlado.
-        smtp: { ...cfg.data.smtp, password: '' },
-        exchange: {
-          api_key: '',
-          api_key_configurada: cfg.data.exchange?.api_key_configurada ?? false,
-        },
-        revision: cfg.data.revision ?? { comisiones_importe_minimo: 1, saldo_bajo_cooldown_horas: 24 },
-        ia: {
-          ...loadedIa,
-          provider: loadedIaProvider,
-          model: normalizeAiModel(loadedIaProvider, loadedIa.model),
-          openrouter_api_key: '',
-          openai_api_key: '',
-          minimax_api_key: '',
-        },
-      };
-      setConfig(nextConfig);
-      configBaselineRef.current = JSON.stringify(nextConfig);
-      setSmtpTo(cfg.data.smtp.from);
-      setTipos(tiposRes.data ?? []);
-      setDivisas(nextDivisas);
-      setDivisaPorDefecto(baseDivisa);
-      setTokens(tokensRes.data.data ?? []);
-      setCatalogos(catalogosRes.data);
-      setManualRate((prev) => {
-        const origen = activeCodes.includes(prev.origen) ? prev.origen : (activeCodes[0] ?? '');
-        const destinosDisponibles = activeCodes.filter((code) => code !== origen);
-        const destino = destinosDisponibles.includes(prev.destino) ? prev.destino : (destinosDisponibles[0] ?? '');
-        return { ...prev, origen, destino };
-      });
       await checkUpdate(true);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo cargar configuración.'));
+      setError(extractErrorMessage(err, 'No se pudo cargar la configuración. Revisa la conexión con el servidor e inténtalo de nuevo.'));
     } finally {
       setLoading(false);
     }
@@ -276,6 +586,12 @@ export default function ConfiguracionPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial explícita de configuración
+  }, []);
+
+  // F-4: al desmontar la pagina el sondeo de la actualizacion se detiene:
+  // limpia el timer y no vuelve a consultar ni a tocar el estado.
+  useEffect(() => () => {
+    updatePollRef.current?.stop();
   }, []);
 
   useEffect(() => {
@@ -287,7 +603,7 @@ export default function ConfiguracionPage() {
     const loadModels = async () => {
       try {
         const { data } = await api.get<IaModel[]>('/ia/modelos', {
-          params: { provider: 'OPENROUTER', search: config.ia.model || undefined },
+          params: { provider: 'OPENROUTER', search: debouncedModelSearch || undefined },
         });
         if (mounted) {
           setOpenRouterModels(data ?? []);
@@ -303,12 +619,34 @@ export default function ConfiguracionPage() {
     return () => {
       mounted = false;
     };
-  }, [config.ia.provider, config.ia.model]);
+  }, [config.ia.provider, debouncedModelSearch]);
 
   const saveConfig = async (message: string) => {
+    if (invalidDecimalsRef.current.size > 0) {
+      throw new Error('Hay importes con formato inválido (presupuestos, costes o importe mínimo). Corrígelos antes de guardar.');
+    }
+    // D-8: un color que no sea un hexadecimal no se guarda. Sin esta
+    // comprobacion el grafico se rompia en silencio y nadie sabia por que.
+    const colorInvalido = CHART_COLOR_KEYS.find((key) => {
+      const valor = config.dashboard[key].trim();
+      return valor.length > 0 && !COLOR_HEX_PATTERN.test(valor);
+    });
+    if (colorInvalido) {
+      throw new Error(`${CHART_COLOR_FIELDS[colorInvalido].campo} no es válido. Escribe un hexadecimal como #1A2B3C (o #fff) o deja el campo vacío para usar el color del tema.`);
+    }
     const aiProvider = normalizeAiProvider(config.ia.provider);
-    const payload: ConfiguracionSistema = {
+    const payload: ConfiguracionConTls = {
       ...config,
+      // S-17: el modo TLS viaja siempre en el objeto smtp del guardado.
+      smtp: { ...config.smtp, tls_mode: normalizarTlsMode(config.smtp.tls_mode) },
+      // D-8: se guarda el color tal cual, siempre como hexadecimal valido (o
+      // vacio, que el grafico resuelve con el color del tema).
+      dashboard: {
+        ...config.dashboard,
+        color_ingresos: config.dashboard.color_ingresos.trim(),
+        color_egresos: config.dashboard.color_egresos.trim(),
+        color_saldo: config.dashboard.color_saldo.trim(),
+      },
       ia: {
         ...config.ia,
         provider: aiProvider,
@@ -316,8 +654,8 @@ export default function ConfiguracionPage() {
       },
     };
     await api.put('/configuracion', payload);
-    const refreshed = await api.get<ConfiguracionSistema>('/configuracion');
-    const merged: ConfiguracionSistema = {
+    const refreshed = await api.get<ConfiguracionConTls>('/configuracion');
+    const merged: ConfiguracionConTls = {
       ...refreshed.data,
       general: {
         ...(refreshed.data.general ?? config.general),
@@ -338,7 +676,13 @@ export default function ConfiguracionPage() {
         openai_api_key: '',
         minimax_api_key: '',
       },
-      smtp: { ...(refreshed.data.smtp ?? config.smtp), password: '' },
+      smtp: {
+        ...(refreshed.data.smtp ?? config.smtp),
+        password: '',
+        // S-17: si el backend todavia no devuelve tls_mode, se mantiene el
+        // valor elegido en el formulario.
+        tls_mode: normalizarTlsMode(refreshed.data.smtp?.tls_mode ?? config.smtp.tls_mode),
+      },
     };
     setConfig(merged);
     // Tras guardar, la configuracion vuelve a estar limpia: reseteamos la linea base.
@@ -354,7 +698,7 @@ export default function ConfiguracionPage() {
     try {
       await saveConfig('Configuración guardada.');
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar.'));
+      setError(extractErrorMessage(err, 'No se pudo guardar la configuración. Revisa los campos marcados e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -369,7 +713,7 @@ export default function ConfiguracionPage() {
       await saveConfig('Ajustes de actualizaciones guardados.');
       await checkUpdate(true);
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudieron guardar los ajustes de actualizaciones.'));
+      setError(extractErrorMessage(err, 'No se pudieron guardar los ajustes de actualización. Revisa los campos marcados e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -384,8 +728,9 @@ export default function ConfiguracionPage() {
       const confirmed = await confirm({
         title: 'Desactivar Authenticator para gerentes y empleados',
         message:
-          'Los gerentes y empleados podran iniciar sesion solo con contrasena. Los administradores seguiran obligados a usar Authenticator. El cambio se aplica al siguiente inicio de sesion y queda registrado en auditoria.',
+          'Los gerentes y empleados podrán iniciar sesión solo con contraseña. Los administradores seguirán obligados a usar Authenticator. El cambio se aplica al siguiente inicio de sesión y queda registrado en auditoría.',
         confirmLabel: 'Desactivar para no administradores',
+        tone: 'reversible',
       });
       if (!confirmed) {
         return;
@@ -405,7 +750,7 @@ export default function ConfiguracionPage() {
       await api.post('/configuracion/smtp/test', { to: smtpTo || null });
       setFeedback('Correo de prueba enviado.');
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo enviar correo de prueba.'));
+      setError(extractErrorMessage(err, 'No se pudo enviar el correo de prueba. Revisa el servidor SMTP y la dirección de destino e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -415,7 +760,8 @@ export default function ConfiguracionPage() {
     const confirmed = await confirm({
       title: 'Actualizar ahora',
       message: 'Se instalará la nueva versión y la aplicación se reiniciará. Tu sesión se cerrará y el servicio no estará disponible unos minutos. Esta acción no se puede deshacer. ¿Continuar?',
-      confirmLabel: 'Actualizar',
+      confirmLabel: 'Actualizar ahora',
+      tone: 'reversible',
     });
     if (!confirmed) {
       return;
@@ -423,12 +769,22 @@ export default function ConfiguracionPage() {
 
     setBusy(true);
     setError(null);
+    // F-4: el sondeo se cancela al desmontar la pagina y pide el estado sin
+    // toast: durante una actualizacion real la API esta caida a proposito.
+    const poll = createPollLifecycle();
+    updatePollRef.current = poll;
     try {
       await api.post('/sistema/actualizar', {});
       const timeoutAt = Date.now() + 10 * 60 * 1000;
       while (Date.now() < timeoutAt) {
+        if (!poll.active) {
+          return;
+        }
         try {
-          const { data } = await api.get<WatchdogState>('/sistema/estado');
+          const { data } = await api.get<WatchdogState>('/sistema/estado', { skipErrorToast: true });
+          if (!poll.active) {
+            return;
+          }
           const state = (data.estado ?? '').toUpperCase();
           if (state === 'SUCCESS') {
             sessionStorage.setItem('atlas_balance_update_message', 'Aplicación actualizada correctamente.');
@@ -449,25 +805,39 @@ export default function ConfiguracionPage() {
           // Durante una actualizacion real la API se detiene y vuelve a arrancar.
           // No es fallo final mientras el timeout del watchdog siga abierto.
         }
-        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const continuar = await poll.wait(2500);
+        if (!continuar) {
+          return;
+        }
       }
-      setError('La actualización no confirmó el resultado dentro del tiempo esperado.');
+      if (poll.active) {
+        setError('La actualización no confirmó el resultado dentro del tiempo esperado. Revisa el estado del servicio e inténtalo de nuevo.');
+      }
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo actualizar.'));
+      if (poll.active) {
+        setError(extractErrorMessage(err, 'No se pudo actualizar la aplicación. Revisa el estado del servicio e inténtalo de nuevo.'));
+      }
     } finally {
-      setBusy(false);
+      const cancelado = !poll.active;
+      poll.stop();
+      if (updatePollRef.current === poll) {
+        updatePollRef.current = null;
+      }
+      if (!cancelado) {
+        setBusy(false);
+      }
     }
   };
 
   const saveManualRate = async (event: FormEvent) => {
     event.preventDefault();
     if (!manualRate.origen || !manualRate.destino || manualRate.origen === manualRate.destino) {
-      setError('Selecciona dos divisas activas distintas.');
+      setError('Selecciona dos divisas activas distintas: una de origen y otra de destino.');
       return;
     }
-    const tasa = Number(manualRate.tasa);
-    if (!Number.isFinite(tasa) || tasa <= 0) {
-      setError('Tasa inválida.');
+    const tasa = parseStrictDecimal(manualRate.tasa);
+    if (tasa === null || tasa <= 0) {
+      setError('La tasa no es válida. Escribe un número mayor que 0 (por ejemplo, 1,25) e inténtalo de nuevo.');
       return;
     }
     setBusy(true);
@@ -475,9 +845,9 @@ export default function ConfiguracionPage() {
     try {
       await api.put(`/tipos-cambio/${manualRate.origen}/${manualRate.destino}`, { tasa });
       setFeedback('Tipo de cambio actualizado.');
-      await load();
+      await loadTiposCambio();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo actualizar tipo de cambio.'));
+      setError(extractErrorMessage(err, 'No se pudo actualizar el tipo de cambio. Revisa la tasa y las divisas seleccionadas e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -488,11 +858,18 @@ export default function ConfiguracionPage() {
     setError(null);
     setFeedback(null);
     try {
-      await api.post('/tipos-cambio/sincronizar');
-      setFeedback('Tipos de cambio sincronizados.');
-      await load();
+      const response = await api.post('/tipos-cambio/sincronizar');
+      // B-2 (LOTE 5): las tasas manuales no se sobrescriben; el servidor
+      // dice cuantas ha omitido y deja aviso al administrador.
+      const manualOmitidas = Number(response?.data?.manual_omitidas ?? 0);
+      setFeedback(
+        manualOmitidas > 0
+          ? `Tipos de cambio sincronizados. ${manualOmitidas} tasa(s) marcada(s) como manual no se han sobrescrito: se ha avisado al administrador.`
+          : 'Tipos de cambio sincronizados.'
+      );
+      await loadTiposCambio();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo sincronizar tipos de cambio.'));
+      setError(extractErrorMessage(err, 'No se pudieron sincronizar los tipos de cambio. Revisa la clave API de ExchangeRate y la conexión e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -525,7 +902,8 @@ export default function ConfiguracionPage() {
         message: divisa.es_base
           ? `Vas a fijar ${codigo} como divisa base. Todas las conversiones y totales pasarán a calcularse en ${codigo}. ¿Continuar?`
           : `Vas a desactivar la divisa ${codigo}. Dejará de estar disponible en la aplicación. ¿Continuar?`,
-        confirmLabel: divisa.es_base ? 'Fijar como base' : 'Desactivar',
+        confirmLabel: divisa.es_base ? 'Fijar como base' : 'Desactivar divisa',
+        tone: 'reversible',
       });
       if (!confirmed) {
         return;
@@ -543,9 +921,9 @@ export default function ConfiguracionPage() {
         es_base: divisa.es_base,
       });
       setFeedback(`Divisa ${codigo} actualizada.`);
-      await load();
+      await loadDivisas();
     } catch (err) {
-      setError(extractErrorMessage(err, `No se pudo actualizar la divisa ${codigo}.`));
+      setError(extractErrorMessage(err, `No se pudo actualizar la divisa ${codigo}. Revisa su nombre, su símbolo y si está activa, e inténtalo de nuevo.`));
     } finally {
       setBusy(false);
     }
@@ -554,7 +932,7 @@ export default function ConfiguracionPage() {
   const createDivisa = async (event: FormEvent) => {
     event.preventDefault();
     if (!nuevaDivisa.codigo.trim()) {
-      setError('Código obligatorio.');
+      setError('Escribe el código de la divisa (por ejemplo, USD) para poder crearla.');
       return;
     }
     setBusy(true);
@@ -569,33 +947,25 @@ export default function ConfiguracionPage() {
       });
       setFeedback('Divisa creada.');
       setNuevaDivisa({ codigo: '', nombre: '', simbolo: '' });
-      await load();
+      await loadDivisas();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo crear divisa.'));
+      setError(extractErrorMessage(err, 'No se pudo crear la divisa. Revisa el código (por ejemplo, USD) e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
   };
 
   const revokeToken = async (id: string) => {
-    const confirmed = await confirm({
-      title: 'Revocar token',
-      message: 'El token dejará de funcionar de inmediato y cualquier integración que lo use dejará de tener acceso. ¿Revocar?',
-      confirmLabel: 'Revocar',
-    });
-    if (!confirmed) {
-      return;
-    }
-
+    // La confirmacion (nivel irreversible) la pide TokenList antes de llamar aqui.
     setBusy(true);
     setError(null);
     setFeedback(null);
     try {
       await api.post(`/integraciones/tokens/${id}/revocar`);
       setFeedback('Token revocado.');
-      await load();
+      await loadTokens();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo revocar token.'));
+      setError(extractErrorMessage(err, 'No se pudo revocar el token. Recarga la lista de tokens e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -605,7 +975,8 @@ export default function ConfiguracionPage() {
     const confirmed = await confirm({
       title: 'Rotar token',
       message: 'Se generará un token nuevo y el actual dejará de funcionar. Las integraciones que usen el valor anterior deberán actualizarse. ¿Rotar?',
-      confirmLabel: 'Rotar',
+      confirmLabel: 'Rotar token',
+      tone: 'irreversible',
     });
     if (!confirmed) {
       return;
@@ -618,33 +989,25 @@ export default function ConfiguracionPage() {
       const { data } = await api.post<{ token_plano: string }>(`/integraciones/tokens/${id}/rotar`, {});
       setTokenPlano(data.token_plano);
       setFeedback('Token rotado. Copia el nuevo valor ahora.');
-      await load();
+      await loadTokens();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo rotar token.'));
+      setError(extractErrorMessage(err, 'No se pudo rotar el token. Recarga la lista de tokens e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
   };
 
   const deleteToken = async (id: string) => {
-    const confirmed = await confirm({
-      title: 'Eliminar token',
-      message: 'El token se eliminará de forma permanente y cualquier integración que lo use dejará de tener acceso. ¿Eliminar?',
-      confirmLabel: 'Eliminar',
-    });
-    if (!confirmed) {
-      return;
-    }
-
+    // La confirmacion (nivel irreversible) la pide TokenList antes de llamar aqui.
     setBusy(true);
     setError(null);
     setFeedback(null);
     try {
       await api.delete(`/integraciones/tokens/${id}`);
       setFeedback('Token eliminado.');
-      await load();
+      await loadTokens();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo eliminar token.'));
+      setError(extractErrorMessage(err, 'No se pudo eliminar el token. Recarga la lista de tokens e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -657,9 +1020,11 @@ export default function ConfiguracionPage() {
     try {
       await api.post('/divisas/establecer-por-defecto', { codigo: divisaPorDefecto });
       setFeedback(`Divisa por defecto establecida en ${divisaPorDefecto}.`);
-      await load();
+      // A-8: la divisa base solo se expone en GET /divisas (es_base); GET
+      // /configuracion no la devuelve y recargarla tiraria lo sin guardar.
+      await loadDivisas();
     } catch (err) {
-      setError(extractErrorMessage(err, 'No se pudo guardar divisa por defecto.'));
+      setError(extractErrorMessage(err, 'No se pudo guardar la divisa por defecto. Recarga la lista de divisas e inténtalo de nuevo.'));
     } finally {
       setBusy(false);
     }
@@ -667,6 +1032,20 @@ export default function ConfiguracionPage() {
 
   const focusConfigTab = (nextTab: TabKey) => {
     window.setTimeout(() => document.getElementById(`config-tab-${nextTab}`)?.focus(), 0);
+  };
+
+  // Activa una pestana: 'paises' es una subruta; las demas vuelven a /configuracion si se esta en ella
+  const activateTab = (key: TabKey) => {
+    if (key === 'paises') {
+      if (!onPaisesSubroute) {
+        navigate('/configuracion/paises', { replace: true });
+      }
+      return;
+    }
+    setTab(key);
+    if (onPaisesSubroute) {
+      navigate('/configuracion', { replace: true });
+    }
   };
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, key: TabKey) => {
@@ -678,7 +1057,7 @@ export default function ConfiguracionPage() {
     const moveTo = (nextIndex: number) => {
       const nextTab = tabs[(nextIndex + tabs.length) % tabs.length].key;
       event.preventDefault();
-      setTab(nextTab);
+      activateTab(nextTab);
       focusConfigTab(nextTab);
     };
 
@@ -717,32 +1096,17 @@ export default function ConfiguracionPage() {
       : config.ia.openrouter_api_key_configurada;
 
   return (
-    <section className="config-page">
-      <header className="config-header">
-        <h1>Configuración</h1>
+    <section className="config-page page">
+      <header className="config-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Configuración</h1>
+          <p className="page-header__subtitle">Ajustes generales, IA, divisas, sistema, integraciones y países.</p>
+        </div>
       </header>
 
       <div className="config-tabs config-tabs--settings" role="tablist" aria-label="Secciones de configuración">
         {tabs.map(({ key, label, Icon }) => {
-          const isActive = key === 'paises' ? onPaisesSubroute : tab === key;
-          if (key === 'paises') {
-            return (
-              <NavLink
-                key={key}
-                id={`config-tab-${key}`}
-                to="/configuracion/paises"
-                className={isActive ? 'config-tab config-tab--active' : 'config-tab'}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls={`config-panel-${key}`}
-              >
-                <span className="config-tab-icon" aria-hidden="true">
-                  <Icon size={18} strokeWidth={1.9} />
-                </span>
-                <span>{label}</span>
-              </NavLink>
-            );
-          }
+          const isActive = key === 'paises' ? onPaisesSubroute : !onPaisesSubroute && tab === key;
           return (
             <button
               key={key}
@@ -751,9 +1115,8 @@ export default function ConfiguracionPage() {
               className={isActive ? 'config-tab config-tab--active' : 'config-tab'}
               role="tab"
               aria-selected={isActive}
-              aria-controls={`config-panel-${key}`}
               tabIndex={isActive ? 0 : -1}
-              onClick={() => setTab(key)}
+              onClick={() => activateTab(key)}
               onKeyDown={(event) => handleTabKeyDown(event, key)}
             >
               <span className="config-tab-icon" aria-hidden="true">
@@ -848,7 +1211,11 @@ export default function ConfiguracionPage() {
                 </label>
                 <label className="config-field">
                   <span>Puerto SMTP</span>
-                  <input type="number" value={config.smtp.port} onChange={(e) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, port: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="smtp_port"
+                    value={config.smtp.port}
+                    onValue={(next) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, port: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Usuario SMTP</span>
@@ -862,7 +1229,21 @@ export default function ConfiguracionPage() {
                   <span>Remitente</span>
                   <input value={config.smtp.from} onChange={(e) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, from: e.target.value } }))} />
                 </label>
+                <AppSelect
+                  label="Modo TLS"
+                  value={normalizarTlsMode(config.smtp.tls_mode)}
+                  options={[
+                    { value: 'required', label: 'Obligatorio (STARTTLS)' },
+                    { value: 'auto', label: 'Automático (STARTTLS con usuario; sin usuario, si el servidor lo admite)' },
+                    { value: 'none', label: 'Sin cifrar (servidor sin TLS)' },
+                  ]}
+                  onChange={(next) => setConfig((p) => ({ ...p, smtp: { ...p.smtp, tls_mode: normalizarTlsMode(next) } }))}
+                />
               </div>
+
+              <p className="config-note">
+                Si tu servidor SMTP no admite TLS, elige «Sin cifrar»: las alertas con saldos saldrán sin cifrar.
+              </p>
 
               <div className="config-inline-action">
                 <label className="config-field">
@@ -877,6 +1258,11 @@ export default function ConfiguracionPage() {
 
             <article className="config-section-panel">
               <h3>Exchange y dashboard</h3>
+              <datalist id="config-colores-grafico">
+                {chartPalette.map((opcion) => (
+                  <option key={opcion.hex} value={opcion.hex} label={opcion.labels.join(' · ')} />
+                ))}
+              </datalist>
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Clave API de ExchangeRate</span>
@@ -887,27 +1273,33 @@ export default function ConfiguracionPage() {
                     onChange={(e) => setConfig((p) => ({ ...p, exchange: { ...p.exchange, api_key: e.target.value } }))}
                   />
                 </label>
-                <label className="config-field config-field--color">
-                  <span>Color ingresos</span>
-                  <div className="config-color-control">
-                    <input value={config.dashboard.color_ingresos} onChange={(e) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_ingresos: e.target.value } }))} />
-                    <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: config.dashboard.color_ingresos }} />
-                  </div>
-                </label>
-                <label className="config-field config-field--color">
-                  <span>Color egresos</span>
-                  <div className="config-color-control">
-                    <input value={config.dashboard.color_egresos} onChange={(e) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_egresos: e.target.value } }))} />
-                    <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: config.dashboard.color_egresos }} />
-                  </div>
-                </label>
-                <label className="config-field config-field--color">
-                  <span>Color saldo</span>
-                  <div className="config-color-control">
-                    <input value={config.dashboard.color_saldo} onChange={(e) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_saldo: e.target.value } }))} />
-                    <span aria-hidden="true" className="config-color-dot" style={{ backgroundColor: config.dashboard.color_saldo }} />
-                  </div>
-                </label>
+                <ChartColorField
+                  id="config-color-ingresos"
+                  label={CHART_COLOR_FIELDS.color_ingresos.label}
+                  listId="config-colores-grafico"
+                  value={config.dashboard.color_ingresos}
+                  tokenLabel={CHART_COLOR_FIELDS.color_ingresos.alias}
+                  tokenHex={chartTokens[CHART_COLOR_FIELDS.color_ingresos.token] ?? ''}
+                  onChange={(valor) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_ingresos: valor } }))}
+                />
+                <ChartColorField
+                  id="config-color-egresos"
+                  label={CHART_COLOR_FIELDS.color_egresos.label}
+                  listId="config-colores-grafico"
+                  value={config.dashboard.color_egresos}
+                  tokenLabel={CHART_COLOR_FIELDS.color_egresos.alias}
+                  tokenHex={chartTokens[CHART_COLOR_FIELDS.color_egresos.token] ?? ''}
+                  onChange={(valor) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_egresos: valor } }))}
+                />
+                <ChartColorField
+                  id="config-color-saldo"
+                  label={CHART_COLOR_FIELDS.color_saldo.label}
+                  listId="config-colores-grafico"
+                  value={config.dashboard.color_saldo}
+                  tokenLabel={CHART_COLOR_FIELDS.color_saldo.alias}
+                  tokenHex={chartTokens[CHART_COLOR_FIELDS.color_saldo.token] ?? ''}
+                  onChange={(valor) => setConfig((p) => ({ ...p, dashboard: { ...p.dashboard, color_saldo: valor } }))}
+                />
               </div>
             </article>
           </div>
@@ -941,30 +1333,29 @@ export default function ConfiguracionPage() {
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Importe mínimo comisión</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <DecimalField
+                    fieldKey="comisiones_importe_minimo"
                     value={config.revision.comisiones_importe_minimo}
-                    onChange={(e) =>
+                    onValidity={handleDecimalValidity}
+                    onValue={(next) =>
                       setConfig((p) => ({
                         ...p,
-                        revision: { ...p.revision, comisiones_importe_minimo: Number(e.target.value) || 0 },
+                        revision: { ...p.revision, comisiones_importe_minimo: next },
                       }))
                     }
                   />
                 </label>
                 <label className="config-field">
                   <span>Horas sin duplicar saldo bajo</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
+                  <NumberField
+                    fieldKey="saldo_bajo_cooldown_horas"
                     value={config.revision.saldo_bajo_cooldown_horas}
-                    onChange={(e) =>
+                    min={1}
+                    step={1}
+                    onValue={(next) =>
                       setConfig((p) => ({
                         ...p,
-                        revision: { ...p.revision, saldo_bajo_cooldown_horas: Number(e.target.value) || 24 },
+                        revision: { ...p.revision, saldo_bajo_cooldown_horas: next },
                       }))
                     }
                   />
@@ -991,7 +1382,7 @@ export default function ConfiguracionPage() {
                   label="Proveedor"
                   value={config.ia.provider}
                   options={aiProviderOptions}
-                  onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value) } }))}
+                  onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, provider: value, model: getDefaultAiModel(value), max_input_tokens: value === 'MINIMAX' ? 1000000 - p.ia.max_output_tokens : p.ia.max_input_tokens } }))}
                 />
                 {aiUsesOpenRouter ? (
                   <>
@@ -1068,7 +1459,7 @@ export default function ConfiguracionPage() {
                     label="Modelo"
                     value={selectedAiModel}
                     options={aiModelOptions}
-                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value } }))}
+                    onChange={(value) => setConfig((p) => ({ ...p, ia: { ...p.ia, model: value, max_input_tokens: aiUsesMiniMax && value === 'MiniMax-M3.1-Flash' ? 1000000 - p.ia.max_output_tokens : p.ia.max_input_tokens } }))}
                   />
                 )}
               </div>
@@ -1085,43 +1476,69 @@ export default function ConfiguracionPage() {
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Peticiones/min por usuario</span>
-                  <input type="number" min="0" value={config.ia.requests_por_minuto} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_minuto: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_por_minuto"
+                    value={config.ia.requests_por_minuto}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_minuto: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Peticiones/hora por usuario</span>
-                  <input type="number" min="0" value={config.ia.requests_por_hora} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_hora: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_por_hora"
+                    value={config.ia.requests_por_hora}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_hora: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Peticiones/día por usuario</span>
-                  <input type="number" min="0" value={config.ia.requests_por_dia} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_dia: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_por_dia"
+                    value={config.ia.requests_por_dia}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_por_dia: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Peticiones/día de la app</span>
-                  <input type="number" min="0" value={config.ia.requests_globales_por_dia} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_globales_por_dia: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="requests_globales_por_dia"
+                    value={config.ia.requests_globales_por_dia}
+                    min={0}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, requests_globales_por_dia: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Presupuesto mensual EUR</span>
-                  <input type="number" min="0" step="0.01" value={config.ia.presupuesto_mensual_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="presupuesto_mensual_eur" value={config.ia.presupuesto_mensual_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Presupuesto mensual usuario EUR</span>
-                  <input type="number" min="0" step="0.01" value={config.ia.presupuesto_mensual_usuario_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_usuario_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="presupuesto_mensual_usuario_eur" value={config.ia.presupuesto_mensual_usuario_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_mensual_usuario_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Presupuesto total EUR</span>
-                  <input type="number" min="0" step="0.01" value={config.ia.presupuesto_total_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_total_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="presupuesto_total_eur" value={config.ia.presupuesto_total_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, presupuesto_total_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Aviso presupuesto %</span>
-                  <input type="number" min="1" max="100" value={config.ia.porcentaje_aviso_presupuesto} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, porcentaje_aviso_presupuesto: Number(e.target.value) || 80 } }))} />
+                  <NumberField
+                    fieldKey="porcentaje_aviso_presupuesto"
+                    value={config.ia.porcentaje_aviso_presupuesto}
+                    min={1}
+                    max={100}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, porcentaje_aviso_presupuesto: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Coste entrada / 1 M tokens</span>
-                  <input type="number" min="0" step="0.000001" value={config.ia.input_cost_per_million_tokens_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, input_cost_per_million_tokens_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="input_cost_per_million_tokens_eur" value={config.ia.input_cost_per_million_tokens_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, input_cost_per_million_tokens_eur: next } }))} />
                 </label>
                 <label className="config-field">
                   <span>Coste salida / 1 M tokens</span>
-                  <input type="number" min="0" step="0.000001" value={config.ia.output_cost_per_million_tokens_eur} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, output_cost_per_million_tokens_eur: Number(e.target.value) || 0 } }))} />
+                  <DecimalField fieldKey="output_cost_per_million_tokens_eur" value={config.ia.output_cost_per_million_tokens_eur} onValidity={handleDecimalValidity} onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, output_cost_per_million_tokens_eur: next } }))} />
                 </label>
               </div>
               <p className="config-note">
@@ -1134,15 +1551,33 @@ export default function ConfiguracionPage() {
               <div className="config-field-grid">
                 <label className="config-field">
                   <span>Tokens entrada máx.</span>
-                  <input type="number" min="1000" max="50000" value={config.ia.max_input_tokens} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_input_tokens: Number(e.target.value) || 6000 } }))} />
+                  <NumberField
+                    fieldKey="max_input_tokens"
+                    value={config.ia.max_input_tokens}
+                    min={1000}
+                    max={1000000}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_input_tokens: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Tokens salida máx.</span>
-                  <input type="number" min="64" max="4000" value={config.ia.max_output_tokens} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_output_tokens: Number(e.target.value) || 700 } }))} />
+                  <NumberField
+                    fieldKey="max_output_tokens"
+                    value={config.ia.max_output_tokens}
+                    min={64}
+                    max={4000}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_output_tokens: next } }))}
+                  />
                 </label>
                 <label className="config-field">
                   <span>Movimientos enviados máx.</span>
-                  <input type="number" min="0" max="500" value={config.ia.max_context_rows} onChange={(e) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_context_rows: Number(e.target.value) || 0 } }))} />
+                  <NumberField
+                    fieldKey="max_context_rows"
+                    value={config.ia.max_context_rows}
+                    min={0}
+                    max={500}
+                    onValue={(next) => setConfig((p) => ({ ...p, ia: { ...p.ia, max_context_rows: next } }))}
+                  />
                 </label>
               </div>
               <p className="config-note config-note--warning">
@@ -1273,8 +1708,8 @@ export default function ConfiguracionPage() {
                       .map((code) => ({ value: code, label: code }))}
                 onChange={(next) => setManualRate((p) => ({ ...p, destino: next }))}
               />
-              <label>Tasa<input type="number" step="0.00000001" value={manualRate.tasa} onChange={(e) => setManualRate((p) => ({ ...p, tasa: e.target.value }))} /></label>
-              <button type="submit" disabled={busy || !canEditRates}>Guardar tasa</button>
+              <label>Tasa<input type="text" inputMode="decimal" autoComplete="off" value={manualRate.tasa} onChange={(e) => setManualRate((p) => ({ ...p, tasa: e.target.value }))} /></label>
+              <button type="submit" className="button-primary" disabled={busy || !canEditRates}>Guardar tasa</button>
             </form>
             {!canEditRates ? <p className="import-muted">Necesitas al menos dos divisas activas para editar una tasa manual.</p> : null}
           </section>
@@ -1285,7 +1720,7 @@ export default function ConfiguracionPage() {
               <label>Código<input value={nuevaDivisa.codigo} onChange={(e) => setNuevaDivisa((p) => ({ ...p, codigo: e.target.value.toUpperCase() }))} /></label>
               <label>Nombre<input value={nuevaDivisa.nombre} onChange={(e) => setNuevaDivisa((p) => ({ ...p, nombre: e.target.value }))} /></label>
               <label>Símbolo<input value={nuevaDivisa.simbolo} onChange={(e) => setNuevaDivisa((p) => ({ ...p, simbolo: e.target.value }))} /></label>
-              <button type="submit" disabled={busy}>Crear divisa</button>
+              <button type="submit" className="button-primary" disabled={busy}>Crear divisa</button>
             </form>
           </section>
 
@@ -1294,13 +1729,14 @@ export default function ConfiguracionPage() {
             {tiposOrdenados.length === 0 ? <p>No hay tipos de cambio cargados.</p> : (
               <div className="config-table-wrap">
                 <table>
+                  <caption className="sr-only">Tipos de cambio vigentes</caption>
                   <thead>
                     <tr>
-                      <th>Origen</th>
-                      <th>Destino</th>
-                      <th>Tasa</th>
-                      <th>Fuente</th>
-                      <th>Actualización</th>
+                      <th scope="col">Origen</th>
+                      <th scope="col">Destino</th>
+                      <th scope="col">Tasa</th>
+                      <th scope="col">Fuente</th>
+                      <th scope="col">Actualización</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1336,23 +1772,26 @@ export default function ConfiguracionPage() {
               <input
                 type="url"
                 placeholder="https://github.com/AtlasLabs797/AtlasBalance"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={config.general.app_update_check_url}
                 onChange={(e) => setConfig((p) => ({ ...p, general: { ...p.general, app_update_check_url: e.target.value } }))}
               />
             </label>
             <label>
               Hora UTC automática
-              <input
-                type="number"
-                min="0"
-                max="23"
+              <NumberField
+                fieldKey="app_update_auto_hour_utc"
                 value={config.general.app_update_auto_hour_utc}
-                onChange={(e) =>
+                min={0}
+                max={23}
+                onValue={(next) =>
                   setConfig((p) => ({
                     ...p,
                     general: {
                       ...p.general,
-                      app_update_auto_hour_utc: Math.max(0, Math.min(23, Number(e.target.value) || 0)),
+                      app_update_auto_hour_utc: Math.max(0, Math.min(23, next)),
                     },
                   }))
                 }
@@ -1374,7 +1813,7 @@ export default function ConfiguracionPage() {
           </label>
           <p className="import-muted">Usa el repositorio oficial por HTTPS. Atlas Balance consulta el último GitHub Release, descarga el ZIP win-x64 y lo prepara en la carpeta segura de actualizaciones.</p>
           <div className="config-status-grid">
-            <article><h3>Versión actual</h3><p>{currentVersion ?? 'Sin dato'}</p></article>
+            <article><h3>Versión actual</h3><p title={currentVersion ?? undefined}>{currentVersion ?? 'Sin dato'}</p></article>
             <article><h3>Versión disponible</h3><p>{availableVersion ?? 'Ninguna'}</p></article>
             <article><h3>Estado</h3><p className={updateAvailable ? 'config-badge config-badge--stale' : 'config-badge config-badge--ok'}>{updateAvailable ? 'Actualización disponible' : 'Actualizado'}</p></article>
             <article><h3>Instalable</h3><p className={updateInstallable ? 'config-badge config-badge--ok' : 'config-badge config-badge--stale'}>{updateInstallable ? 'Listo' : 'Bloqueado'}</p></article>
@@ -1434,7 +1873,7 @@ export default function ConfiguracionPage() {
         onClose={() => setShowCreateTokenModal(false)}
         onCreated={async (plain) => {
           setTokenPlano(plain);
-          await load();
+          await loadTokens();
         }}
         onError={setError}
       />

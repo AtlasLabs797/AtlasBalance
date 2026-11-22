@@ -5,18 +5,18 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import type { TooltipContentProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import type { DashboardConcentracionBanco, DashboardSaldoTitular } from '@/types';
-import { formatCompactCurrency, formatCurrency } from '@/utils/formatters';
+import { formatCompactCurrency, formatCurrency, formatPercent } from '@/utils/formatters';
 
 // La referencia visual limita cada donut a cuatro partes visibles; el resto se
 // agrupa en "Otros", que va siempre en --chart-8 (via --chart-series-other).
 const DONUT_COLORS = [
-  'var(--chart-series-1)',
-  'var(--chart-series-2)',
-  'var(--chart-series-3)',
-  'var(--chart-series-4)',
-  'var(--chart-series-5)',
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
 ];
-const OTROS_COLOR = 'var(--chart-series-other)';
+const OTROS_COLOR = 'var(--chart-8)';
 const SMALL_SLICE_THRESHOLD = 1.5;
 const MAX_SLICES = 3;
 
@@ -184,7 +184,7 @@ function DonutPanel({ title, data, total, divisa, ariaLabel }: DonutPanelProps) 
                 {entry.isOtros ? `Otros (${entry.otrosCount})` : entry.name}
               </span>
               <span className="concentracion-donut-legend-pct">
-                {Math.round(entry.porcentaje)}%
+                {formatPercent(entry.porcentaje, 0)}
               </span>
             </li>
           ))}
@@ -209,8 +209,8 @@ function DonutTooltip({
         <i style={{ background: String(item.payload.fill ?? item.color) }} />
         {formatCurrency(entry.value, divisa)}
       </span>
-      <span style={{ color: 'var(--color-text-secondary)' }}>
-        {entry.porcentaje.toFixed(1)}% del total
+      <span style={{ color: 'var(--text-secondary)' }}>
+        {formatPercent(entry.porcentaje)} del total
       </span>
     </div>
   );

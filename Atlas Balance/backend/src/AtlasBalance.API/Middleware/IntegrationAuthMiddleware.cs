@@ -7,6 +7,7 @@ using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace AtlasBalance.API.Middleware;
 
@@ -96,15 +97,23 @@ public sealed class IntegrationAuthMiddleware
     private readonly RequestDelegate _next;
     private readonly IMemoryCache _cache;
     private readonly IClock _clock;
+    private readonly ILogger<IntegrationAuthMiddleware>? _logger;
     private readonly object _rateLimitLock = new();
     private readonly object _invalidAuthRateLimitLock = new();
+    private readonly object _rateLimitNotificationLock = new();
     private readonly int _invalidAuthLimitPerMinute;
 
-    public IntegrationAuthMiddleware(RequestDelegate next, IMemoryCache cache, IClock clock, IConfiguration? configuration = null)
+    public IntegrationAuthMiddleware(
+        RequestDelegate next,
+        IMemoryCache cache,
+        IClock clock,
+        IConfiguration? configuration = null,
+        ILogger<IntegrationAuthMiddleware>? logger = null)
     {
         _next = next;
         _cache = cache;
         _clock = clock;
+        _logger = logger;
         _invalidAuthLimitPerMinute = Math.Max(
             1,
             configuration?.GetValue<int?>("IntegrationSecurity:InvalidAuthLimitPerMinute") ?? DefaultInvalidAuthLimitPerMinute);
@@ -139,30 +148,15 @@ public sealed class IntegrationAuthMiddleware
         ClearInvalidAuthFailures(context);
         context.Items[IntegrationHttpContextItemKeys.CurrentIntegrationToken] = integrationToken;
 
-        if (!TokenAllowsEndpoint(integrationToken, context.Request.Path))
-        {
-            await SaveIntegrationAuditAsync(
-                dbContext,
-                integrationToken.Id,
-                context,
-                StatusCodes.Status403Forbidden,
-                0,
-                null,
-                _clock.UtcNow);
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("FORBIDDEN: El token no tiene scope para este endpoint"));
-            return;
-        }
-
+        // S-22: el rate-limit se aplica ANTES del chequeo de scope. Con el orden
+        // inverso, sondear rutas fuera de scope no consumia cuota y un token mal
+        // configurado podia recorrer el prefijo /api/integration/openclaw sin
+        // acercarse nunca al limite.
         var limit = await ResolveRateLimitAsync(dbContext, CancellationToken.None);
         if (!TryConsumeRateLimit(integrationToken.Id, limit))
         {
-            AddAdminNotification(
-                dbContext,
-                "integration_rate_limit",
-                "Token OpenClaw bloqueado por rate limit.",
-                new { token_id = integrationToken.Id, endpoint = context.Request.Path.Value, limit });
-            await SaveIntegrationAuditAsync(
+            await NotifyRateLimitOnceAsync(dbContext, integrationToken.Id, context, limit);
+            await SaveIntegrationAuditSafeAsync(
                 dbContext,
                 integrationToken.Id,
                 context,
@@ -175,6 +169,21 @@ public sealed class IntegrationAuthMiddleware
             // valor real es configurable y queda en el log del servidor; anunciarlo
             // solo sirve para que un cliente abusivo ajuste su ritmo.
             await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("RATE_LIMITED: Demasiadas peticiones para este token. Reintenta mas tarde."));
+            return;
+        }
+
+        if (!TokenAllowsEndpoint(integrationToken, context.Request.Path))
+        {
+            await SaveIntegrationAuditSafeAsync(
+                dbContext,
+                integrationToken.Id,
+                context,
+                StatusCodes.Status403Forbidden,
+                0,
+                null,
+                _clock.UtcNow);
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(IntegrationApiResponses.Failure("FORBIDDEN: El token no tiene scope para este endpoint"));
             return;
         }
 
@@ -235,6 +244,77 @@ public sealed class IntegrationAuthMiddleware
                 parametros,
                 _clock.UtcNow);
         }
+    }
+
+    /// <summary>
+    /// S-22: la auditoria de un rechazo (403/429) es best-effort. Si la BD falla,
+    /// la respuesta tiene que seguir siendo 403/429 y no un 500 por no poder
+    /// escribir el rastro.
+    /// </summary>
+    private async Task SaveIntegrationAuditSafeAsync(
+        AppDbContext dbContext,
+        Guid tokenId,
+        HttpContext context,
+        int statusCode,
+        int elapsedMs,
+        string? parametros,
+        DateTime timestamp)
+    {
+        try
+        {
+            await SaveIntegrationAuditAsync(dbContext, tokenId, context, statusCode, elapsedMs, parametros, timestamp);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "No se pudo escribir la auditoria de integracion del token {TokenId}.", tokenId);
+        }
+    }
+
+    /// <summary>
+    /// S-22: notifica al admin UNA VEZ por token y ventana de rate-limit. Antes,
+    /// cada peticion rechazada (429) creaba una fila en NOTIFICACIONES_ADMIN y
+    /// un token abusivo inundaba el panel de notificaciones. La fila de auditoria
+    /// se sigue escribiendo en cada rechazo (rastro append-only); lo que se
+    /// limita es el aviso al administrador.
+    /// </summary>
+    private async Task NotifyRateLimitOnceAsync(AppDbContext dbContext, Guid tokenId, HttpContext context, int limit)
+    {
+        var key = BuildRateLimitNotificationKey(tokenId);
+        lock (_rateLimitNotificationLock)
+        {
+            if (_cache.Get<bool>(key))
+            {
+                return;
+            }
+
+            _cache.Set(key, true, TimeSpan.FromMinutes(2));
+        }
+
+        try
+        {
+            AddAdminNotification(
+                dbContext,
+                "integration_rate_limit",
+                "Token OpenClaw bloqueado por rate limit.",
+                new { token_id = tokenId, endpoint = context.Request.Path.Value, limit });
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "No se pudo registrar la notificacion de rate limit del token {TokenId}.", tokenId);
+            // Se descarta la notificacion pendiente: si se queda en el contexto,
+            // el siguiente SaveChanges (el de la fila de auditoria) reintentaria
+            // el INSERT y volveria a fallar.
+            dbContext.NotificacionesAdmin.RemoveRange(
+                dbContext.NotificacionesAdmin.Local.Where(x => x.Tipo == "integration_rate_limit"));
+        }
+    }
+
+    private string BuildRateLimitNotificationKey(Guid tokenId)
+    {
+        var now = _clock.UtcNow;
+        var currentMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc);
+        return $"integration_rate_limit_notified:{tokenId:N}:{currentMinute:yyyyMMddHHmm}";
     }
 
     private static async Task SaveIntegrationAuditAsync(

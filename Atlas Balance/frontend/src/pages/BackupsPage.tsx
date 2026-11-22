@@ -3,8 +3,9 @@ import { Cloud, CloudOff, DownloadCloud, Link2, RefreshCcw, RotateCcw, Save, Shi
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { EmptyState } from '@/components/common/EmptyState';
+import Modal from '@/components/common/Modal';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
-import { useBlockingOverlay } from '@/hooks/useBlockingOverlay';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -21,6 +22,8 @@ import type {
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatBytes, formatDateTime } from '@/utils/formatters';
+import { createPollLifecycle, type PollLifecycle } from '@/utils/pollLifecycle';
+import '@/styles/layout/routes/backups.css';
 
 const pageSizeOptions = [10, 20, 50];
 const dayOptions = [
@@ -49,7 +52,7 @@ const estadoCopiaLabels: Record<string, string> = {
   FAILED: 'Fallida',
 };
 const tipoCopiaLabels: Record<string, string> = {
-  AUTO: 'Automatica',
+  AUTO: 'Automática',
   MANUAL: 'Manual',
 };
 const cloudEstadoLabels: Record<string, string> = {
@@ -126,8 +129,9 @@ export default function BackupsPage() {
 
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [overlayMessage, setOverlayMessage] = useState('No cierres esta ventana; al terminar volverás al inicio de sesión.');
-  const restoreOverlayRef = useRef<HTMLDivElement | null>(null);
-  useBlockingOverlay(overlayVisible);
+
+  // F-4: sondeo de las operaciones de backup; se detiene al desmontar la pagina.
+  const backupPollRef = useRef<PollLifecycle | null>(null);
 
   const logout = useAuthStore((state) => state.logout);
 
@@ -144,12 +148,6 @@ export default function BackupsPage() {
   const driveConnected = Boolean(config?.google_drive.connected);
   const linkTerminalState = (linkStatus?.estado ?? '').toUpperCase();
   const linkCanRetry = linkTerminalState === 'FAILED' || linkTerminalState === 'EXPIRED';
-
-  useEffect(() => {
-    if (overlayVisible) {
-      restoreOverlayRef.current?.focus();
-    }
-  }, [overlayVisible]);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -206,7 +204,10 @@ export default function BackupsPage() {
     setError(null);
     try {
       const { data } = await api.post<{ operation_id: string }>('/backups/manual');
-      await pollBackupOperation(data.operation_id);
+      const terminado = await pollBackupOperation(data.operation_id);
+      if (!terminado) {
+        return;
+      }
       await fetchRows();
       await fetchConfig();
     } catch (err) {
@@ -267,7 +268,8 @@ export default function BackupsPage() {
     const confirmed = await confirm({
       title: 'Desvincular Google Drive',
       message: 'Se cerrará la conexión con Google Drive. Las copias dejarán de subirse a la nube hasta que vuelvas a vincular la cuenta. ¿Continuar?',
-      confirmLabel: 'Desvincular',
+      confirmLabel: 'Desvincular Google Drive',
+      tone: 'reversible',
     });
     if (!confirmed) {
       return;
@@ -309,7 +311,10 @@ export default function BackupsPage() {
     setError(null);
     try {
       const { data } = await api.post<{ operation_id: string }>('/backups/google-drive/import', { file_id: file.file_id });
-      await pollBackupOperation(data.operation_id);
+      const terminado = await pollBackupOperation(data.operation_id);
+      if (!terminado) {
+        return;
+      }
       await fetchRows();
     } catch (err) {
       setError(extractErrorMessage(err, 'No se pudo importar la copia desde Google Drive.'));
@@ -318,41 +323,64 @@ export default function BackupsPage() {
     }
   };
 
-  const pollBackupOperation = async (operationId: string, restore = false) => {
+  const pollBackupOperation = async (operationId: string, restore = false): Promise<boolean> => {
     setOverlayVisible(true);
     setOverlayMessage('No cierres esta ventana; al terminar volverás al inicio de sesión.');
     const timeoutAt = Date.now() + 10 * 60 * 1000;
+    // F-4: el sondeo se cancela al desmontar la pagina y pide el estado sin
+    // toast: durante una restauracion la API esta caida a proposito.
+    const poll = createPollLifecycle();
+    backupPollRef.current = poll;
 
-    while (Date.now() < timeoutAt) {
-      try {
-        const { data } = await api.get<{ status: string; error?: string }>(`/backups/operations/${operationId}`);
-        const state = (data.status ?? '').toUpperCase();
-        if (state === 'RUNNING') {
-          setOverlayMessage(restore ? 'Restauración en curso; no cierres esta ventana.' : 'Operación de backup en curso.');
-        } else if (state === 'SUCCESS') {
-          if (restore) {
-            setOverlayMessage('Restauración completada. Volverás al inicio de sesión.');
-            await new Promise((resolve) => setTimeout(resolve, 1200));
-            logout();
-            window.location.href = '/login';
-          } else {
-            setOverlayVisible(false);
-          }
-          return;
-        } else if (state === 'FAILED') {
-          setOverlayVisible(false);
-          setError(data.error || 'La operación falló. Revisa el estado del sistema antes de intentarlo de nuevo.');
-          return;
+    try {
+      while (Date.now() < timeoutAt) {
+        if (!poll.active) {
+          return false;
         }
-      } catch {
-        // Keep polling.
+        try {
+          const { data } = await api.get<{ status: string; error?: string }>(`/backups/operations/${operationId}`, { skipErrorToast: true });
+          if (!poll.active) {
+            return false;
+          }
+          const state = (data.status ?? '').toUpperCase();
+          if (state === 'RUNNING') {
+            setOverlayMessage(restore ? 'Restauración en curso; no cierres esta ventana.' : 'Operación de backup en curso.');
+          } else if (state === 'SUCCESS') {
+            if (restore) {
+              setOverlayMessage('Restauración completada. Volverás al inicio de sesión.');
+              await new Promise((resolve) => setTimeout(resolve, 1200));
+              logout();
+              window.location.href = '/login';
+            } else {
+              setOverlayVisible(false);
+            }
+            return true;
+          } else if (state === 'FAILED') {
+            setOverlayVisible(false);
+            setError(data.error || 'La operación falló. Revisa el estado del sistema antes de intentarlo de nuevo.');
+            return true;
+          }
+        } catch {
+          // Keep polling.
+        }
+
+        const continuar = await poll.wait(2500);
+        if (!continuar) {
+          return false;
+        }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2500));
+      if (poll.active) {
+        setOverlayVisible(false);
+        setError('La restauración está tardando más de lo esperado. Comprueba el estado antes de iniciar otra restauración.');
+      }
+      return true;
+    } finally {
+      poll.stop();
+      if (backupPollRef.current === poll) {
+        backupPollRef.current = null;
+      }
     }
-
-    setOverlayVisible(false);
-    setError('La restauración está tardando más de lo esperado. Comprueba el estado antes de iniciar otra restauración.');
   };
 
   const triggerRestore = async () => {
@@ -375,6 +403,12 @@ export default function BackupsPage() {
     fetchRows();
   }, [fetchRows]);
 
+  // F-4: al desmontar la pagina el sondeo de la operacion de backup se detiene:
+  // limpia el timer y no vuelve a consultar ni a tocar el estado.
+  useEffect(() => () => {
+    backupPollRef.current?.stop();
+  }, []);
+
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
@@ -387,7 +421,7 @@ export default function BackupsPage() {
 
     const poll = async () => {
       try {
-        const { data } = await api.get<GoogleDriveLinkStatus>(`/backups/google-drive/link/${linkStart.session_id}`);
+        const { data } = await api.get<GoogleDriveLinkStatus>(`/backups/google-drive/link/${linkStart.session_id}`, { skipErrorToast: true });
         if (cancelled) return;
         setLinkStatus(data);
         const state = (data.estado ?? '').toUpperCase();
@@ -430,11 +464,11 @@ export default function BackupsPage() {
   }, [driveConnected, fetchDriveFiles]);
 
   return (
-    <section className="backups-page">
-      <header className="backups-header">
-        <div>
-          <h1>Copias de seguridad</h1>
-          <p className="dashboard-subtitle">Programacion, copias locales y subida cifrada a Google Drive</p>
+    <section className="backups-page page">
+      <header className="backups-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Copias de seguridad</h1>
+          <p className="page-header__subtitle">Programación, copias locales y subida cifrada a Google Drive</p>
         </div>
         <button type="button" className="button-primary" onClick={createBackup} disabled={creating || loading}>
           <UploadCloud size={18} aria-hidden="true" />
@@ -447,8 +481,8 @@ export default function BackupsPage() {
       <section className="backup-admin-grid" aria-label="Configuración de copias">
         <article className="backup-config-panel">
           <div className="backup-panel-heading">
-            <h2>Programacion</h2>
-            <button type="button" className="button-primary" onClick={saveConfig} disabled={!draft || savingConfig || configLoading}>
+            <h2>Programación</h2>
+            <button type="button" className="button-secondary" onClick={saveConfig} disabled={!draft || savingConfig || configLoading}>
               <Save size={17} aria-hidden="true" />
               {savingConfig ? 'Guardando...' : 'Guardar'}
             </button>
@@ -462,7 +496,7 @@ export default function BackupsPage() {
                   checked={draft.auto_enabled}
                   onChange={(event) => setDraft((prev) => prev ? { ...prev, auto_enabled: event.target.checked } : prev)}
                 />
-                <span>Copias automaticas activas</span>
+                <span>Copias automáticas activas</span>
               </label>
 
               <AppSelect
@@ -538,7 +572,7 @@ export default function BackupsPage() {
               </dl>
             </div>
           ) : (
-            <p className="import-muted">Cargando configuración...</p>
+            <PageSkeleton variant="inline" label="Cargando configuración..." />
           )}
         </article>
 
@@ -622,7 +656,7 @@ export default function BackupsPage() {
               ) : null}
             </div>
           ) : (
-            <p className="import-muted">Cargando Google Drive...</p>
+            <PageSkeleton variant="inline" label="Cargando Google Drive..." />
           )}
         </article>
       </section>
@@ -634,7 +668,7 @@ export default function BackupsPage() {
             <strong>{formatDateTime(latestSuccessfulBackup.fecha_creacion)}</strong>
           </article>
           <article className="backup-summary-card">
-            <span>Tamano</span>
+            <span>Tamaño</span>
             <strong>{formatBytes(latestSuccessfulBackup.tamanio_bytes)}</strong>
           </article>
           <article className="backup-summary-card">
@@ -661,7 +695,7 @@ export default function BackupsPage() {
               {driveFilesLoading ? 'Cargando...' : 'Actualizar'}
             </button>
           </div>
-          {driveFilesLoading ? <p className="import-muted">Cargando archivos de Drive...</p> : null}
+          {driveFilesLoading ? <PageSkeleton variant="inline" label="Cargando archivos de Drive..." /> : null}
           {!driveFilesLoading && driveFiles.length === 0 ? (
             <p className="import-muted">No hay copias creadas por Atlas Balance en esta cuenta.</p>
           ) : null}
@@ -690,7 +724,7 @@ export default function BackupsPage() {
       ) : null}
 
       <div className="users-table-card">
-        {loading ? <p className="import-muted">Cargando copias de seguridad...</p> : null}
+        {loading ? <PageSkeleton variant="table" rows={5} columns={7} label="Cargando copias de seguridad..." /> : null}
         {!loading && rows.length === 0 ? (
           <EmptyState
             title="No hay copias de seguridad registradas."
@@ -700,17 +734,18 @@ export default function BackupsPage() {
 
         {!loading && rows.length > 0 ? (
           <>
-            <div className="users-table-scroll">
+            <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de backups">
               <table>
+                <caption className="sr-only">Copias de seguridad</caption>
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Estado</th>
-                    <th>Tipo</th>
-                    <th>Tamano</th>
-                    <th>Nube</th>
-                    <th>Archivo</th>
-                    <th>Acciones</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Tipo</th>
+                    <th scope="col">Tamaño</th>
+                    <th scope="col">Nube</th>
+                    <th scope="col">Archivo</th>
+                    <th scope="col">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -762,7 +797,7 @@ export default function BackupsPage() {
                 Anterior
               </button>
               <span>
-                Pagina {page} / {totalPages} - {totalRowsText}
+                Página {page} / {totalPages} - {totalRowsText}
               </span>
               <button type="button" onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))} disabled={page >= totalPages}>
                 Siguiente
@@ -785,6 +820,7 @@ export default function BackupsPage() {
         title="Restaurar copia"
         message={confirmTarget ? `Vas a restaurar la copia del ${formatDateTime(confirmTarget.fecha_creacion)}.` : 'Confirma que copia quieres restaurar.'}
         confirmLabel="Revisar restauración"
+        tone="reversible"
         onCancel={() => {
           setConfirmOpen(false);
           setConfirmTarget(null);
@@ -800,6 +836,7 @@ export default function BackupsPage() {
         title="Última confirmación"
         message="Esto reemplazará toda la base de datos y cerrará tu sesión. No sigas si no tienes claro que esta copia es la correcta."
         confirmLabel="Restaurar base de datos"
+        tone="irreversible"
         loadingLabel="Restaurando..."
         loading={restoring}
         onCancel={() => {
@@ -809,23 +846,25 @@ export default function BackupsPage() {
         onConfirm={triggerRestore}
       />
 
-      {overlayVisible ? (
-        <div className="modal-backdrop">
-          <div
-            ref={restoreOverlayRef}
-            className="loading-overlay"
-            role="alertdialog"
-            aria-live="assertive"
-            aria-busy="true"
-            aria-labelledby="backup-restore-overlay-title"
-            aria-describedby="backup-restore-overlay-message"
-            tabIndex={-1}
-          >
-            <h2 id="backup-restore-overlay-title">Restaurando copia de seguridad</h2>
-            <p id="backup-restore-overlay-message">{overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}</p>
-          </div>
-        </div>
-      ) : null}
+      <Modal
+        open={overlayVisible}
+        onClose={() => {}}
+        titleId="backup-restore-overlay-title"
+        title="Restaurando copia de seguridad"
+        descriptionId="backup-restore-overlay-message"
+        panelClassName="loading-overlay"
+        headerClassName=""
+        bareBody
+        busy
+        showCloseButton={false}
+      >
+        {/* Sin aria-busy: en una region viva difiere los anuncios hasta que el
+            atributo pasa a false, y aqui nunca pasa, de modo que el progreso
+            de la restauracion no se anunciaria. */}
+        <p id="backup-restore-overlay-message" aria-live="assertive">
+          {overlayMessage || 'No cierres esta ventana; al terminar volverás al inicio de sesión.'}
+        </p>
+      </Modal>
       <ConfirmDialog {...confirmDialogProps} />
     </section>
   );

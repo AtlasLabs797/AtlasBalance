@@ -2,6 +2,7 @@ using System.Globalization;
 using AtlasBalance.API.DTOs;
 using AtlasBalance.API.Services;
 using Microsoft.Extensions.Options;
+using Hangfire;
 
 namespace AtlasBalance.API.Jobs;
 
@@ -16,6 +17,8 @@ namespace AtlasBalance.API.Jobs;
 ///   recursos, pool saturado o carga anomala.
 /// - Comprobaciones de salud en rojo -> base de datos caida o disco lleno.
 /// </summary>
+[DisableConcurrentExecution(timeoutInSeconds: 240)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class HealthAlertJob
 {
     public static class Reglas

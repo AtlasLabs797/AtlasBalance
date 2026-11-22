@@ -25,7 +25,11 @@ public sealed class SmtpTestRateLimit
         var allowed = false;
         _state.AddOrUpdate(
             key,
-            _ => (1, now),
+            _ =>
+            {
+                allowed = true;
+                return (1, now);
+            },
             (_, current) =>
             {
                 if (now - current.WindowStart > Window)

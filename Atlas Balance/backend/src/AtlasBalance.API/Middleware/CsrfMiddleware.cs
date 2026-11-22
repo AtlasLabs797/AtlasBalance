@@ -62,11 +62,14 @@ public sealed class CsrfMiddleware
 
         if (RequiresCsrfValidation(context.Request))
         {
-            // S-NEW-1 (V-02-03): aceptar tanto el prefijo __Host- (produccion)
-            // como el nombre legado csrf_token (dev). Asi no rompemos dev
-            // local en HTTP plano.
-            var csrfCookie = context.Request.Cookies["__Host-atlas-csrf-token"]
-                ?? context.Request.Cookies["csrf_token"];
+            // S-NEW-1 (V-02-03): en produccion solo se acepta el prefijo
+            // __Host- (Secure, Path=/, sin Domain): la cookie legacy la puede
+            // fijar un subdominio comprometido o un atacante en la LAN y no
+            // puede servir como token valido. En Development se aceptan las
+            // dos, porque el frontend de Vite corre en HTTP plano.
+            var csrfCookie = _isDevelopment
+                ? context.Request.Cookies["__Host-atlas-csrf-token"] ?? context.Request.Cookies["csrf_token"]
+                : context.Request.Cookies["__Host-atlas-csrf-token"];
             var csrfHeader = context.Request.Headers["X-CSRF-Token"].FirstOrDefault();
 
             if (!csrfService.IsValid(csrfCookie, csrfHeader))

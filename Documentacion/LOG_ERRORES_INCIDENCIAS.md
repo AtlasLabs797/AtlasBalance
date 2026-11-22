@@ -1,4 +1,758 @@
-﻿# Log de errores e incidencias
+## 2026-11-22 - V-03.02 - Cierre de M-9 (deriva modelo/snapshot/esquema)
+
+### Deriva entre modelo EF, snapshot y esquema real (CORREGIDO)
+- **Causa:** migraciones SQL manuscritas (IF NOT EXISTS) crearon columnas, indices y FKs sin actualizar el snapshot; ademas `deleted_at` de REVISION_EXTRACTO_ESTADOS, IMPORTACION_LOTE_FILAS y EXTRACTOS_COLUMNAS_EXTRA se creo como `timestamp` sin zona. `dotnet ef migrations add` generaba migraciones sucias y `AppDbContext` tenia que ignorar `PendingModelChangesWarning`.
+- **Solucion:** migracion `20261122223119_CloseM9SnapshotDrift` con snapshot regenerado y SQL idempotente (detalle en `DOCUMENTACION_TECNICA.md`, seccion "V-03.02 - Cierre de M-9"). Para cambiar el tipo de una columna usada por policies RLS: leer las policies dependientes de `pg_depend`, guardarlas en una variable `jsonb`, retirarlas, cambiar el tipo y recrearlas. Para pasar `timestamp` a `timestamptz` se usa la zona de la sesion (`current_setting('TimeZone')`), no `'UTC'` fijo: asi se invierte como se escribieron los valores.
+- **Prevencion:** `SnapshotModelDriftTests` exige cero diferencias y el `Ignore` se ha quitado, asi que una deriva nueva rompe el test y `Migrate()`.
+
+### `obj/` del API con propietario de otro usuario (BLOQUEO DE ENTORNO)
+- **Sintoma:** `dotnet build` falla con `MSB3491 ... AssemblyInfoInputs.cache ... Access to the path is denied`.
+- **Causa:** `Atlas Balance/backend/src/AtlasBalance.API/obj` pertenece al usuario `CodexSandboxOffline` (otro agente).
+- **Solucion aplicada:** compilar con salida aparte sin tocar ACLs: variables de entorno `UseArtifactsOutput=true` y `ArtifactsPath=<ruta>`, tambien validas para `dotnet ef`. Para los tests, usa una ruta dentro del repo (p.ej. `.artifacts/<nombre>`, ignorada por Git): 14 tests localizan ficheros fuente subiendo carpetas y fallan si la salida esta fuera del repo. xUnit v3 necesita apphost: no uses `-p:UseAppHost=false` con `dotnet test`.
+
+### Password de `atlas_owner` en `appsettings.Development.json` no coincide (BLOQUEO DE ENTORNO)
+- **Sintoma:** `dotnet ef database update --connection <MigrationConnection>` falla con `28P01 password authentication failed for user "atlas_owner"`.
+- **Solucion aplicada:** generar el script con `dotnet ef migrations script <desde> <hasta>`, quitarle el BOM y aplicarlo dentro del contenedor (`docker exec -i atlas_balance_db psql -U atlas_owner ...`, autenticacion local). Pendiente: alinear la password del appsettings local.
+
+## 2026-11-22 - V-03.02 - Verificacion del buscador
+
+- `npm run test:unit` encontro permisos denegados al escribir en `.test-dist`; se compilo en un directorio alternativo y pasaron 345 pruebas.
+- El primer `npm run lint` encontro un directorio temporal desaparecido durante el recorrido; el segundo paso correctamente.
+
+## 2026-11-20 - V-03.02 - Pulido visual Lotes 3 y 4: incidencias
+
+### Editar un pais borraba su codigo ISO2 (CORREGIDO EN CODIGO)
+- **Causa:** `PaisesPage.tsx` enviaba `{ codigoIso2 }`, pero la API serializa en snake_case (`Program.cs`, `SnakeCaseLower`) y espera `codigo_iso2`. El campo llegaba nulo y se guardaba vacio. El fallo es anterior a estos lotes.
+- **Solucion:** se envia `codigo_iso2`. Comprobado en la app real: al guardar, el ISO2 se mantiene.
+- **Efecto en datos:** al renombrar "Espana", el primer guardado borro su "ES". Se restauro desde la app.
+
+### La Papelera lista elementos activos (PENDIENTE DE REINICIO)
+- **Causa:** el backend del puerto 5002 arranco el 16-nov, antes del soporte de `soloEliminados` (commit e0e8d88, 17-nov). Ignora el filtro y devuelve filas activas, sin fecha de borrado.
+- **Solucion:** reiniciar el backend. El codigo ya es correcto; queda cubierto por `PapeleraSoloEliminadosTests` (6/6).
+
+### `dotnet test --filter` no acota en este proyecto
+- **Causa:** xUnit v3 en modo MTP ignora `--filter` y arranca toda la suite.
+- **Rodeo:** ejecutar el binario de tests generado con `-class <Clase>`.
+
+## 2026-11-20 - V-03.02 - Pulido visual del frontend: incidencias encontradas (CORREGIDO EN CODIGO salvo donde se indica)
+
+### Esc dentro de un desplegable cerraba el modal entero
+- **Causa:** `useDialogFocus` escuchaba `keydown` en `window` y llamaba a `onEscape` sin mirar `event.defaultPrevented`. Combobox hacia `preventDefault()` pero el modal cerraba igual. Con dos modales abiertos, los dos procesaban Esc y Tab.
+- **Solucion:** se ignoran los eventos ya consumidos y hay una pila de modales en la que solo responde el de arriba.
+
+### Inputs montados unos sobre otros en rejillas
+- **Causa:** un `<input>` sin `width`/`min-width:0` dentro de `label{display:grid}` usa su ancho intrinseco (~20ch), que supera la pista de la rejilla. Afectaba al modal de titular (Tipo pisaba a Nombre) y a Conciliacion (Importe tapado).
+- **Solucion:** `width:100%; min-width:0` en los inputs de texto de `global.css`.
+
+### Captura `extractos-fecha-desde-abierta` siempre saltada
+- **Causa:** el spec comprobaba con `locator.count()`, que no espera, antes de que el DatePicker estuviera pintado.
+- **Solucion:** `.first().waitFor({ state: 'visible' })`.
+
+### EPERM en `frontend/test-results/` y `frontend/playwright-report/` (BLOQUEADO, con rodeo)
+- **Causa:** las carpetas pertenecen a otra cuenta de sandbox, el mismo patron que `.test-dist/`. Aparecio al lanzar varias ejecuciones de Playwright de subagentes en paralelo.
+- **Rodeo:** `npx playwright test ... --reporter=list --output=<carpeta temporal>`. Arreglo definitivo: que el propietario de la maquina restablezca los permisos o borre esas carpetas.
+
+### Finales de linea reescritos por los subagentes
+- **Causa:** varios ficheros pasaron entero de LF a CRLF o al reves al editarlos. Algunos ficheros ya tenian finales mezclados antes del lote.
+- **Solucion:** solo se devolvieron a LF los 8 ficheros que eran LF puro y pasaron a CRLF. Quedan cambiados y sin restaurar los que pasaron de CRLF o mezclado a LF (`CuentaDetailPage.tsx`, `DashboardTitularPage.tsx`, `entities.css`, `admin.css`, `auth.css`, `formatos-importacion.css`, `importacion.css`) y los mezclados que pasaron a CRLF. Con `core.autocrlf=true` git los normaliza y `git diff` solo muestra los cambios reales.
+
+## 2026-11-19 - V-03.02 - Regresiones introducidas por los lotes del informe de revision integral (CORREGIDO EN CODIGO)
+
+Las encontro la verificacion independiente (`VERIFICACION_CORRECCIONES_REVISION_INTEGRAL_2026-11-19.md`).
+
+### B-10 - La IA dejo de detectar duplicados del mismo dia
+- **Causa:** el LOTE 4 exigio proximidad temporal con `SonProximos(fechas.Distinct())`. Dos movimientos identicos con la misma fecha se reducian a una sola fecha y nunca eran "proximos".
+- **Solucion:** se cuentan elementos, no fechas distintas. Test con fecha identica.
+
+### S-17 - Con credenciales SMTP ya no se exigia STARTTLS
+- **Causa:** el LOTE 2 sustituyo `hasCredentials ? StartTls : StartTlsWhenAvailable` por un modo configurable con default `auto` (`StartTlsWhenAvailable` siempre). Si el servidor no anunciaba STARTTLS, la app se autenticaba y enviaba en claro.
+- **Solucion:** default y modo desconocido pasan a `required`. `auto` con credenciales exige STARTTLS.
+
+### S-25 - Los errores del navegador con stack largo se perdian
+- **Causa:** el LOTE 4 puso `[MaxLength]` en el DTO de telemetria. El cliente no recortaba, y el binding devolvia 400 justo con los errores mas utiles.
+- **Solucion:** se recorta en cliente y en servidor (siempre 204), con un tope de 32 KB por peticion.
+- **Hallazgo lateral:** el test antiguo «400» pasaba por el filtro de host (`AllowedHosts=localhost` frente a `127.0.0.1` en el fixture), no por la validacion.
+
+### B-2 - El antispam de avisos de tipos de cambio no funcionaba en PostgreSQL
+- **Causa:** buscaba el texto `"clave":"x"` en una columna `jsonb`, que PostgreSQL devuelve normalizada como `"clave": "x"`. En los tests en memoria pasaba lo contrario: suprimia los avisos para siempre.
+- **Solucion:** se compara la propiedad deserializada dentro de una ventana de 24 h. Regla general: nunca comparar texto sobre columnas `jsonb`.
+
+## 2026-11-18 - V-03.02 - LOTE 8 del informe de revision integral: D-1 a D-12, M-1, M-2, M-6, M-10 a M-15, M-17, R-9, T-1 y T-2 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 8. Solo estos IDs; ningun otro tocado. Rama `V-03.02`. Sin commit ni push.
+
+Decisiones del usuario (cuestionario respondido de forma explicita): **M-1** el servicio inalcanzable se borra; **M-15** los lanzadores se unifican en espanol y los ingleses quedan como alias, sin borrar nada; **M-17** los informes anteriores a V-03 se archivan y la bitacora se parte en dos ficheros; **T-1** los e2e de Playwright se ejecutan **solo en push a `main` y en el release**. **M-16** (los dos `.gitignore`) solo se propone, no se aplica.
+
+**Verificacion global del LOTE 8:** backend `AtlasBalance.API.Tests` **1282/1282** (suite completa, incluida la de PostgreSQL real con Testcontainers) y `AtlasBalance.Caching.Tests` **15/15**. Frontend: `npx tsc --noEmit` sin errores, `eslint src tests --max-warnings 0` sin errores, **332/332** pruebas unitarias y build de Vite correcto. Capturas: el arnes visual se amplia de 9 a **21 rutas** y de 2 a **3 anchuras** (1440 escritorio, **1024 tablet**, 390 movil), en claro y oscuro, con la API simulada (6/6 en verde, 134 PNG por pasada). Los comandos canonicos `npm run test:unit` y `npm run build` siguen rotos por el bloqueo historico de permisos de `frontend/.test-dist/` y `frontend/dist/` (otra cuenta de sandbox; ver la entrada de este mismo lote): las mismas comprobaciones pasaron con carpetas de salida nuevas.
+
+Ademas de los IDs del informe, el lote destapo seis defectos reales que no estaban en el informe y que quedan aqui registrados:
+
+### T-1 (defecto del arnes) - Los tres specs visuales fallaban: el mock de la API simulada estaba obsoleto
+
+- **Causa 1:** `e2e/visual/mockApi.ts` devolvia `columnas_restringidas: []` en `GET /api/extractos`. El backend usa `null` para "el administrador no restringe columnas" y una lista no nula como *whitelist*; el frontend la trata como whitelist, asi que con `[]` **excluia todas las columnas**: la fila se pintaba sin ninguna celda y `row.querySelector('.cell')` devolvia `null` (error `getComputedStyle: parameter 1 is not of type 'Element'`). La misma causa quitaba la columna de desglose.
+- **Causa 2:** el mock de `/conciliacion` y `/conciliacion/movimientos-esperados` devolvia un array suelto, pero la pagina espera `{ data, total, page, page_size, total_pages }`: cero filas y sin boton "Conciliar".
+- **Solucion:** `columnas_restringidas: null` y respuestas paginadas en el mock. Con eso los tres specs pasan (29 pasan, 1 queda saltado por un `test.fixme` preexistente) y T-1 deja de estar bloqueado por el arnes. No se toco `frontend/src/**`.
+
+### M-13 (defecto introducido por la propia limpieza) - La ampliacion `declare module 'axios'` se quedaba sin modulo que ampliar
+
+- **Causa:** al quitarle el `export` al tipo `RequestOptions` de `src/utils/errorToast.ts` (que solo se usaba dentro del fichero), se elimino tambien el `import type { AxiosRequestConfig } from 'axios'` que sostenia la ampliacion. Sin ese import, `axios` deja de estar en el programa y el compilador responde **TS2664: "Invalid module name in augmentation, module 'axios' cannot be found"** al compilar el programa aislado de los tests (`tsconfig.test.v2.json`).
+- **Solucion:** `import type {} from 'axios'` (import de tipo sin nombre: mete el modulo en el programa sin dependencia en tiempo de ejecucion, que es justo lo que exigia el comentario del propio fichero).
+
+### D-9 (defecto de accesibilidad) - El overlay de restauracion perdia `role="alertdialog"` y anunciaba el progreso con `aria-busy` en una region viva
+
+- **Causa:** al migrar el overlay de restauracion de `BackupsPage` al componente comun `<Modal>`, este impone `role="dialog"`, y el `aria-live="assertive"` con `aria-busy="true"` se traslado al `<p>` del mensaje. `aria-busy="true"` indica a la tecnologia de asistencia que difiera los cambios de ese elemento hasta que el atributo pase a `false`, y aqui nunca pasa: **el progreso de la restauracion no se anunciaba**.
+- **Solucion:** `aria-live="assertive"` sin `aria-busy` en el mensaje, con comentario que explica el motivo. El `role="alertdialog"` no se recupera: `<Modal>` es `role="dialog"` y forzarlo exigiria un componente propio; queda anotado como pendiente.
+
+### D-5 (defecto de maquetacion) - Un `<div>` reutilizaba la clase de cabecera y perdia 12 px de padding y su borde
+
+- **Causa:** `<div className="auditoria-header auditoria-actions-header">` en `AuditoriaPage.tsx` reutiliza la clase de la cabecera de la pagina. Al desaparecer la regla base `.auditoria-header` (la capa de parches) y no llevar `.page-header`, ese `div` perdia el `padding-bottom: var(--space-3)` y el `border-bottom`: **la tabla de Auditoria subia 13 px**.
+- **Por que no lo veian los comprobantes automaticos:** ni el comparador de triplets (media, selector, declaraciones) ni el resolutor de cascada por elemento lo detectan, porque comparan el CSS, no el DOM. Lo destapo la comparacion de capturas (15 % de pixeles con maxdelta 227 en la tabla de Auditoria).
+- **Solucion:** anadir `page-header` a ese `div`; la recaptura lo deja identico. **Regla que deja el incidente:** un selector de clase que se reutiliza en un elemento que no es la cabecera es un acoplamiento silencioso: al unificar clases hay que buscar los reutilos, no solo los elementos que la usan como cabecera.
+
+### D-5 (ajuste de cascada) - `.app-content th` perdia la ventaja al bajar a la capa global
+
+- **Causa:** la regla `.app-content th` vivia en la capa de parches, que se cargaba la ultima y por eso ganaba por orden de fuente a reglas de la misma especificidad (`.revision-table th`, `.import-validation-table th`). Al repartir esa capa, la regla baja a `global.css`, que se carga **antes** que las hojas de pagina, y perdia.
+- **Solucion:** el selector pasa a `.app-content table th` (0,1,2), que recupera la ventaja por especificidad en vez de por posicion. Con el cambio, el resolutor de cascada (25 unidades x 32 contextos, 78.869.024 comprobaciones) da **0 diferencias**.
+
+### R-9 (efecto secundario medido) - Repartir el CSS por ruta sube el peso total del bundle
+
+- **Causa:** 20 ficheros CSS comprimen peor que 1. El CSS inicial baja de 228.149 a 163.965 B (-23,3 % gzip), pero el **total** sube 9 KB gzip: R-9 **reparte** el CSS, no lo reduce. Gana quien no visite todas las rutas y pierde quien las recorra.
+- **Efecto colateral de la misma causa:** al dejar de ser global el orden de la cascada, **41 reglas** se quedaron congeladas en las hojas globales (las que al moverse invertian el orden con otra regla y cambiaban el valor final, por ejemplo `.backup-status-pill` con el shorthand `border` pisando el `border-color` del modificador `--ok`).
+- **Solucion/decision:** se acepta el reparto con las 41 reglas congeladas y queda documentado que para que R-9 compensara de verdad habria que reescribir las hojas mixtas por pantalla y prefijar cada regla con su contenedor de pantalla. El reparto no es reproducible con una herramienta en el repo: el generador (clasificador + resolutor) era temporal.
+
+### D-10 (incidente de trabajo) - Un `git checkout --` se llevo por delante trabajo en vuelo de la pagina de Auditoria
+
+- **Causa:** al ajustar a mano los niveles de encabezado, el orquestador ejecuto `git checkout -- src/pages/AuditoriaPage.tsx` para deshacer una edicion parcial de un script. Ese comando **restaura el fichero desde `HEAD` y borra TODO lo que no estuviera commiteado en ese fichero**: en `AuditoriaPage.tsx` se perdieron a la vez el esqueleto de carga (D-3), las clases compartidas de cabecera (D-5), el `<caption>` (D-10) y el `import` del CSS de ruta (R-9).
+- **Como se detecto:** la comparacion de capturas mostro un **38 % de pixeles distintos** en la pagina de Auditoria frente a la linea base, con el contenido desplazado: el `import` de `routes/auditoria.css` habia desaparecido y la pagina se dibujaba sin la rejilla, los filtros ni el separador de la barra de acciones.
+- **Solucion:** reponer a mano lo perdido (esqueleto, clases, `<caption>`, guarda `sinSignoPrevio`) y **volver a anadir el `import` de `routes/auditoria.css`**. La recaptura deja la pagina **identica a la linea base** (comparacion pixel a pixel sin diferencias atribuibles al CSS).
+- **Regla que deja el incidente:** en un arbol con trabajo sin commitear de varios agentes, `git checkout -- <fichero>` es un **borrado disfrazado**. Para deshacer una edicion parcial usa una copia del fichero o un `edit` puntual, nunca un checkout. Si aun asi hay que usarlo, comprueba antes `git status --porcelain -- <fichero>` y reponer todo lo que el fichero tenia modificado, no solo lo que estabas editando.
+
+### EPERM en `frontend/.test-dist/` y `frontend/dist/` - los comandos canonicos siguen sin poder ejecutarse (bloqueo historico del entorno)
+
+- **Sintoma:** `npm run test:unit` falla con `error TS5033: Could not write file ... EPERM` sobre 22 ficheros de `frontend/.test-dist/`, y `npm run build` falla al copiar en `frontend/dist/`. No es un fallo de codigo: el mismo codigo pasa con carpetas de salida nuevas.
+- **Causa (investigada a fondo en el LOTE 8, 18/11/2026):** `icacls` muestra que esas carpetas pertenecen a otra cuenta de sandbox y conceden a `BUILTIN\Usuarios` solo `(RX)`. Lo caracteristico es que **la carpeta SI admite ficheros nuevos** (una escritura de prueba dentro de `.test-dist/` y de `dist/` funciona) pero **los ficheros preexistentes no se pueden sobrescribir, renombrar ni borrar** (`Acceso denegado` en las tres operaciones). Por eso el error es al escribir sobre lo ya compilado, no al crear.
+- **Lo que NO funciona como via de escape:** `icacls /grant` (Acceso denegado: el usuario no tiene `WRITE_DAC`), `Move-Item` del directorio completo (Acceso denegado) y `mavis-trash` sobre el directorio (`DeleteDirectory` no es compatible con este sistema). Solo queda la carpeta de salida alternativa, que es la que ya usa el repo desde hace meses.
+- **Dato relevante para el release:** `Build-Release.ps1` **no depende de `frontend/dist`**: construye con `npm exec vite -- build --outDir <carpeta temporal del release> --emptyOutDir true` y copia desde ahi al `wwwroot` publicado. El unico flujo que si usa `frontend/dist` es la **sincronizacion local** de `frontend/dist` a `backend/src/.../wwwroot`, documentada en `AGENTS.md` §8, que es manual y opcional.
+- **Decision:** no se cambia la carpeta de salida canonica de `npm run build` ni de `npm run test:unit` en el repositorio. Redirigirlas seria romper el flujo local documentado (`frontend/dist` -> `wwwroot`) por un problema de permisos de esta maquina, que no es del repo. La verificacion se hace con `VITE_BUILD_OUT_DIR` (build) y `--outDir` + `--tsBuildInfoFile` (tests), que es exactamente lo que recomienda el propio `AGENTS.md` §8.
+- **Contexto:** es un bloqueo **historico y recurrente** de este entorno, no una consecuencia del LOTE 8: el `LOG_ERRORES_INCIDENCIAS.md` lo recoge desde el 2026-06-23 ("Build estandar bloqueada por `frontend/dist/assets`") y lo repiten los lotes 1, 2, 3, 5, 6 y 7 con la misma salida. `npm run lint` canonico si pasa en verde.
+
+## 2026-11-18 - V-03.02 - LOTE 6 del informe de revision integral: S-1, S-3, S-7, S-8, S-9, M-3 y D-13 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 6. Solo estos IDs; ningun otro tocado. Rama `V-03.02`. Sin commit ni push.
+
+Decisiones de producto: el cuestionario se respondio por **auto-seleccion de tiempo** (60 s por pregunta), asi que **ninguna esta confirmada por el usuario** y todas siguen siendo ajustables:
+- **S-1:** quien solo tiene permisos de escritura **no** ve saldos en el dashboard.
+- **S-2:** las columnas que fija el administrador son una **restriccion**: el servidor filtra y el usuario solo puede estrechar su vista.
+- **S-3:** **revertir un lote exige `puede_eliminar_lineas`** (es un borrado masivo).
+- **S-5:** el PUT de usuario pasa a ser **estricto**: cuerpo completo o 400 (no se anade PATCH).
+- **8.1 (endpoints sin llamada):** se busco cliente externo en todo el repositorio y **no hay ninguno**, pero **no se retiran los endpoints**: la respuesta fue automatica y borrarlos es irreversible.
+
+Metodo: el orquestador confirmo las premisas leyendo el codigo citado y repartio el trabajo en subagentes con ficheros disjuntos. Cada subagente escribio el test que falla antes del arreglo, el arreglo minimo y el test en verde.
+
+**Verificacion global del LOTE 6:** backend `AtlasBalance.API.Tests` **1292/1292** (suite completa, incluida la de PostgreSQL real con Testcontainers, 4 m 51 s) y `AtlasBalance.Caching.Tests` **15/15**. Frontend: `npx tsc --noEmit` sin errores, `eslint src tests --max-warnings 0` sin errores, `npm run lint` canonico en verde, **265/265** pruebas unitarias (los 40 ficheros de la lista canonica de `package.json`) y build de Vite correcto (4,12 s). Capturas Playwright de las pantallas nuevas con la API simulada: **54 PNG** en `.artifacts/l6-visual`. Los comandos canonicos `npm run test:unit` y `npm run build` siguen rotos por los permisos heredados de `.test-dist/` y `dist/` (otra cuenta de sandbox, M-10): las mismas comprobaciones pasaron con carpetas de salida nuevas.
+
+### S-1 - El dashboard concedia saldos con permisos de escritura y hacia caso omiso de "Ver dashboard" en los gerentes
+
+- **Sintoma:** `DashboardService` daba saldos y cuentas a quien solo tenia `puede_agregar_lineas`, `puede_editar_lineas`, `puede_eliminar_lineas` o `puede_importar`, sin `puede_ver_cuentas` (que extractos y cuentas si exigen). Para el rol GERENTE, ademas, la casilla `puede_ver_dashboard` se ignoraba: con cualquier permiso de escritura el gerente entraba al panel.
+- **Causa:** el helper `GrantsAccountDataAccess(...)` devolvia `true` con CUALQUIER flag (semantica "OR" sobre flags de lectura y escritura) y el filtro de permisos estaba bifurcado por rol: la rama de GERENTE no miraba `PuedeVerDashboard`.
+- **Solucion:** una sola regla para todo rol no ADMIN: `PuedeVerDashboard && PuedeVerCuentas` en la misma fila de permiso, aplicada al filtro de permisos, al acceso global (`DashboardScope.GlobalForManager`) y a la query de cuentas (`cuentaIdsList`). Se elimina `GrantsAccountDataAccess`. El bypass de ADMIN no se toca.
+- **Regresion:** `DashboardServicePermisosLecturaTests` (nuevo, 6 casos): rojo con 2 fallos (el empleado con solo `puede_importar` y el gerente con `puede_ver_cuentas` y sin `puede_ver_dashboard`) -> 6/6. Las tres clases de dashboard juntas: 20/20.
+- **Tests existentes ajustados (2):** `DashboardServiceTests.GetPrincipalAsync_Should_Allow_ManagerDashboard_When_GlobalDataPermission_Exists` no fijaba `PuedeVerDashboard` y pasaba **gracias al defecto**; y `GetTitularAsync_Should_Reject_Manager_Without_Access_To_Requested_Titular` necesitaba `PuedeVerCuentas` para que el 403 siguiera viniendo del titular bloqueado y no de una falta total de permisos.
+- **Efecto secundario que debe conocer el administrador:** un GERENTE o EMPLEADO con `puede_ver_cuentas = true` y `puede_ver_dashboard = false` **pierde el panel** (403). No hay migracion de datos que rellene la casilla: los permisos de gerente los asigna el administrador en la matriz y hay que revisarlos. El frontend ya era mas estricto que el backend, de modo que el backend era la excepcion.
+- **Limite:** los tests nuevos usan el provider InMemory (como `DashboardServiceTests`); el filtrado por alcance del dashboard no se ha probado contra PostgreSQL real.
+
+### S-3 - Revertir un lote de importacion no exigia "puede eliminar lineas"
+
+- **Sintoma:** `ImportacionService.RevertirLoteAsync` comprobaba el permiso con el modo `Aprobar`, cuyo predicado es `puede_aprobar_importaciones || puede_importar`. Revertir un lote borra (soft delete) todos sus extractos, y bastaba poder importar para deshacer una importacion ajena.
+- **Causa:** el enum privado `ImportacionPermissionMode` (Importar/Aprobar/Ver) no tenia un modo para "borrado masivo".
+- **Solucion:** las reglas de permiso por accion viven ahora en un unico sitio (`UserAccessService.PermissionPredicates`, ver S-9/M-3) y la reversion usa la accion `EliminarLineas` (`puede_eliminar_lineas`). El 404 (lote inexistente) y el 403 (sin permiso) siguen distinguibles y el bypass de ADMIN se mantiene. El mensaje nuevo es "No tienes permisos para eliminar lineas en esta cuenta".
+- **Regresion:** `PermisosLote6Tests` (nuevo): rojo con 3 fallos (entre ellos `RevertirLoteAsync` con solo `puede_importar` revertia de verdad el lote) -> 12/12. Los seeds de tres ficheros de test que reponen lotes dan ahora `puede_eliminar_lineas` (solo en los tests que revierten): codificaban el defecto.
+
+### S-7 - La exportacion CSV de la auditoria no dejaba rastro de quien la hacia
+
+- **Sintoma:** `AuditoriaController.ExportarCsv` (hasta 50.000 filas) materializaba las filas y devolvia el fichero sin escribir ninguna fila de auditoria. Se descarto el resto de vias: `AuditSaveChangesInterceptor` solo captura INSERT/UPDATE/DELETE de entidades (una lectura no genera fila), `SecurityAuditMiddleware` solo audita 403/401 y `pageSize` masivo (el export no lleva `pageSize`), y `ExportacionGenerada` pertenece al flujo de exportaciones a fichero.
+- **Causa:** el endpoint hermano de la misma clase (`Integridad`) si auditaba actor y resultado, y el de CSV se quedo sin ese paso.
+- **Solucion:** se audita con el patron existente (`IAuditService.LogAsync`): accion `AUDITORIA_EXPORTACION_CSV` (`Constants/AuditActions.cs`), entidad `"AUDITORIAS"` y detalles con `filas_exportadas` y los filtros aplicados. Se escribe DESPUES de materializar las filas, para que el CSV no se incluya a si mismo. El orquestador anadio ademas la accion a `SecurityEventLog.AccionesRelevantes`, que se habia quedado fuera del alcance del subagente, para que la extraccion tambien aparezca en el registro de seguridad.
+- **Regresion:** `AuditoriaControllerExportacionCsvAuditoriaTests` (nuevo): rojo con "Sequence contains no elements" (no existia la fila) -> en verde. Los tests previos de `AuditoriaController` siguen verdes.
+- **Limite:** el test usa InMemory; la escritura se apoya en el mismo `AuditService` que ya cubren los tests de append-only contra PostgreSQL real.
+
+### S-8 - "404 antes que 403": en CuentasController no habia defecto
+
+- **Comprobacion:** `CuentasController.ActualizarNotas` ya responde 404 solo cuando la cuenta no existe y **403** cuando existe pero el actor no tiene `CanAccess`/`CanEdit`: el escenario del informe no se reproduce. Se comprobo con tests, no solo leyendo. `Obtener` y `Resumen` comprueban permiso antes que existencia (403 uniforme). `Crear`, `Actualizar`, `Eliminar`, `Restaurar` y `RenovarPlazoFijo` son de ADMIN, asi que no existe el caso "existe pero sin permiso".
+- **Resultado:** **sin cambio de codigo de produccion** en `CuentasController`; se dejan tres tests que fijan el comportamiento correcto (403 sin permiso y la nota NO se modifica, 200 con permiso, 404 si no existe). `ExtractosController` si se revisa en el mismo lote.
+- **Riesgo residual (queda abierto):** con la regla "existe + sin permiso = 403, inexistente = 404", un actor sin permiso sigue distinguiendo "existe" de "no existe": el oraculo de existencia que describe el informe **sigue abierto por construccion**. `Obtener`/`Resumen` hacen lo contrario en el mismo fichero. Unificar ambos estilos es una decision de politica, no un fallo puntual.
+
+### S-9 y M-3 - Tres metodos de permisos muertos y tres reglas distintas para lo mismo
+
+- **Sintoma:** `CanApproveImportacionAsync`, `CanConciliarCuentaAsync` y `CanCerrarConciliacionAsync` de `UserAccessService` no tenian ningun llamador (solo la interfaz, la implementacion y dos fakes de test), y sus predicados **no coincidian** con los que de verdad se aplicaban: `CanConciliarCuentaAsync` admitia `puede_editar_lineas || puede_importar` y `CanCerrarConciliacionAsync` admitia `puede_conciliar`, mientras que `ConciliacionService` exigia `puede_conciliar` y `puede_cerrar_conciliacion` de forma estricta. Un cambio de politica de permisos tocaba tres sitios.
+- **Solucion:** una **fuente unica**: el enum `UserAccessAction` y un unico mapa `PermissionPredicates` en `UserAccessService` con el predicado de cada accion. `CanCuentaAsync(accion, ...)` es el unico chequeo booleano por cuenta y `GetCuentasAccesiblesAsync(accion, usuarioId)` es la version de conjunto (UNA query, sin N+1). `ConciliacionService` e `ImportacionService` dejan de reimplementar las reglas y consultan esa fuente; `ResolveAccessibleCuentas` desaparece de `ConciliacionService` y el enum privado `ImportacionPermissionMode` con `GrantsImportacionPermission` desaparece de `ImportacionService`. Se anade `GetScopeAsync(usuarioId, rol)` para los servicios que reciben esas dos piezas en vez de un `ClaimsPrincipal` (mismo bypass de ADMIN y mismo cache que la variante con principal).
+- **Regla que queda vigente (sin cambio observable):** conciliar = `puede_conciliar`; cerrar conciliacion = `puede_cerrar_conciliacion`; el alcance general de conciliacion = `puede_conciliar || puede_cerrar_conciliacion`; aprobar importacion = `puede_aprobar_importaciones || puede_importar`; revisar = `puede_revisar_lineas || puede_editar_lineas`.
+- **Regresion:** `PermisosLote6Tests` (nuevo, 12 tests, dos de ellos de delegacion con un espia que registra que accion consulta cada servicio) y `TestUserAccess.cs` (fabbrica de un `UserAccessService` real para los tests que construyen los servicios a mano). Rojo con 3 fallos -> 12/12. `*Conciliacion*` 13/13, `*Importacion*` 79/79, `*UserAccess*` 19/19.
+- **Duplicacion que NO se unifico (fuera del encargo):** `ImportacionService.GetContextoAsync` mantiene su propia query de "cuentas importables" (`puede_importar` + `Activa` + filtro de pais + atajo de acceso global). Unificarla cambiaria la forma de la SQL y materializaria ids de cuenta.
+
+### D-13 - Conciliacion y Revision mostraban acciones que el backend iba a rechazar
+
+- **Sintoma:** `canConciliarCuenta` existia en `permisosStore` pero **no lo consumia nadie** (tambien es el hallazgo M-6): las acciones de conciliacion y revision se veian para quien no tenia permiso y el backend respondia 403 con un toast.
+- **Solucion:** el store replica ahora los predicados EXACTOS del backend (`puede_conciliar` estricto, `puede_cerrar_conciliacion` estricto, `puede_revisar_lineas || puede_editar_lineas`) y las pantallas de Conciliacion y Revision ocultan las acciones que el backend deniega: crear movimiento esperado, generar sugerencias, conciliar, marcar excepcion, resolver y revisar. En Revision la puerta de acciones pasa de `canEditCuenta` a `canRevisarCuenta` (antes se ocultaban a quien solo tiene `puede_revisar_lineas`, que el backend si le deja revisar). El espejo de S-1 tambien vive aqui: `canViewDashboard` pasa a exigir `puede_ver_dashboard && puede_ver_cuentas` sin excepcion por rol.
+- **Alcance parcial deliberado:** `canConciliarCuenta` usa un matcher de alcance parcial (la dimension de cuenta siempre se exige; titular y pais solo cuando la pantalla los conoce, porque el contexto de conciliacion no expone `titular_id`): con el dato conocido la exigencia es exacta; sin el, el backend sigue siendo quien deniega con 403.
+- **Regresion:** `permisosConciliacionRevision.test.ts` (nuevo, 11 tests): rojo con 6 fallos -> 11/11; suite completa del frontend 237/237. `npx tsc --noEmit` y `npx eslint src tests --max-warnings 0` sin errores.
+- **Limites:** el proyecto no tiene entorno de React en los tests unitarios, asi que no hay test de render (la cobertura es la del store) y **no se ha hecho validacion visual**. `frontend/tests/permisosStore.test.ts` esta bloqueado por otro proceso ("Acceso denegado"), asi que los casos nuevos van en un fichero aparte. Ademas, el desplegable de cuentas de la pagina de Conciliacion se alimenta de `/importacion/contexto`, que exige `puede_importar`: quien solo puede conciliar lo ve vacio (desajuste preexistente del backend, fuera de este lote).
+
+### S-2 - La regla de columnas del administrador y la preferencia del usuario escribian en la misma celda
+
+- **Sintoma (premisa del informe corregida):** el informe habla de "columnas ocultas por el administrador", pero **no existe ese concepto**: hay dos *whitelists*, `columnas_visibles` (que columnas se ven) y `columnas_editables` (que columnas se pueden editar), y las dos vivian en `PREFERENCIAS_USUARIO_CUENTA`. Lo que el administrador guardaba al editar un usuario y lo que el usuario guardaba al mover sus columnas eran **la misma fila y la misma columna** (`UsuarioId` + `PaisId` + `TitularId` + `CuentaId`). De ahi los dos fallos: el `PUT /api/extractos/columnas-visibles` del usuario **pisaba la regla del administrador**, y el guardado de permisos del administrador (`RemoveRange` de la fila) **borraba la preferencia y el orden de columnas del usuario**. Ademas, la whitelist de visibles del administrador **no se aplicaba en ningun sitio**: el backend no filtraba nada y el helper del frontend `getColumnasVisibles` no tenia ningun consumidor.
+- **Causa:** la regla del administrador y la preferencia del usuario comparten soporte fisico porque la migracion `20260418173448_SplitPermisosPreferencias` movio las columnas de `PERMISOS_USUARIO` a `PREFERENCIAS_USUARIO_CUENTA` y las dos quedaron en la misma fila.
+- **Solucion:** separacion explicita con una columna nueva **`columnas_visibles_admin`** (jsonb, nullable) en `PREFERENCIAS_USUARIO_CUENTA` (migracion `20261118100000_AddColumnasVisiblesAdminPreferencias`, escrita a mano por la deriva previa entre modelo y snapshot, M-9): `ColumnasVisiblesAdmin` = regla del administrador, `ColumnasVisibles` + `OrdenColumnas` = preferencia del usuario, `ColumnasEditables` = regla de edicion (ya era solo del administrador). El conjunto efectivo es `admin ∩ usuario` (null = sin restriccion) y lo usan el filtro en servidor de `GET /api/extractos`, `GET /api/extractos/columnas-visibles` y `PUT /api/extractos/columnas-visibles` (que guarda la interseccion, de modo que lo guardado nunca puede ser mas ancho que la regla del administrador). `GET /api/extractos/columnas-visibles` devuelve ademas `columnas_restringidas` con la whitelist del administrador, para que el cliente no ofrezca columnas prohibidas. El guardado de permisos del administrador ya no borra la fila de preferencias: actualiza solo `ColumnasVisiblesAdmin` y `ColumnasEditables`.
+- **Precedencia de alcances:** la regla del administrador puede vivir en un alcance mas amplio (pais o titular) que la vista (cuenta). Se recorre una cadena de alcances de mas especifico a mas amplio (`(pais,titular,cuenta)` -> `(pais,titular)` -> `(titular)` -> `(pais)` -> global); las reglas del administrador se combinan por **interseccion** (son restricciones: una union podria ampliar la vista por encima de lo permitido en el alcance mas estrecho) y la preferencia del usuario gana por cascada (la mas especifica manda).
+- **LIMITE DEL CONTRATO (importante):** las columnas base **no-nullable** de la fila (`Fecha`, `Monto`, `Saldo`, `FilaNumero`, `CuentaNombre`, `TitularNombre`, `Divisa`, `Checked`, `Flagged`, `Desglose*`) **no se pueden ocultar** con el modelo actual: se omitiria el tipo del DTO y el frontend dejaria de pintarlos. Lo que si se hace: las columnas base **nullable** (`Concepto`, `Comentarios` y `BancoNombre`) llegan a `null`, y las columnas extra dinamicas y `columnas_disponibles` se filtran del todo. Consecuencia: con una whitelist del administrador `["fecha","monto"]` el usuario sigue viendo fecha, monto, saldo, cuenta, titular, divisa, marcado y desglose. Si el producto exige ocultarlas, hace falta un contrato nuevo (campos opcionales o una lista de columnas visibles por fila) y es otra decision.
+- **Regresion:** `ExtractosColumnasServidorTests` (nuevo, 9 casos): rojo con 7 fallos -> 9/9. `*Extractos*` completo: 46/46. Los tests de la papelera, el desempate de paginacion y el de volumen (50.000 filas) siguen verdes.
+- **Cambio de contrato en el cliente:** `GET /api/extractos/columnas-visibles` devuelve ahora el conjunto **efectivo** en `columnas_visibles` (antes la preferencia cruda del usuario). El frontend que lo consume se actualiza en el mismo lote.
+
+### S-5 - Un PUT de usuario con el cuerpo incompleto degradaba al usuario
+
+- **Sintoma:** `UpdateUsuarioRequest` traia valores por defecto destructivos: `Rol = EMPLEADO`, `Activo = false`, `PrimerLogin = false`, `PuedeUsarIa = false`, `Emails = []` y `Permisos = []`. Un `PUT` con el cuerpo parcial desactivaba al usuario, lo bajaba a EMPLEADO, le revocaba la IA, le borraba los emails de notificacion y **le reemplazaba la matriz de permisos entera** (el backend sustituye la matriz por lo que llega), con lo que se perdian los cuatro flags del LOTE 1.
+- **Causa:** el DTO no distinguia "no enviado" de "enviado con false". `CreateUsuarioRequest` tiene el mismo patron pero sus valores por defecto son sensatos, asi que ahi no hay defecto.
+- **Solucion:** los campos que deben distinguir "enviado" de "no enviado" pasan a ser **anulables** en el DTO (`RolUsuario?`, `bool?` para `Activo`/`PrimerLogin`/`PuedeUsarIa`, y `Emails`/`Permisos` nullable) y el controller valida la presencia con un helper (`CamposFaltantesActualizacion`) y responde **400** con la lista de lo que falta: `{"error":"Faltan campos obligatorios en la actualizacion del usuario: rol, activo."}`. `Email` y `NombreCompleto` siguen con `[Required]` (400 del model validation) y `PasswordNueva` sigue siendo opcional. `CreateUsuarioRequest` no se toca. El unico cliente real (`UsuarioModal`) ya manda el cuerpo completo, asi que la aplicacion no se rompe; no hay ningun otro llamador del PUT en el repositorio.
+- **Regresion:** `UsuariosPermisosYCamposObligatoriosTests` (nuevo, 12 casos): rojo con 11 fallos (los cinco de S-5 y los cinco de S-2) -> en verde. `*Usuarios*` completo: 37/37.
+- **Tests existentes ajustados (3):** tres peticiones `UpdateUsuarioRequest` de `UsuariosControllerTests` (revocacion de sesion por reset de password, desactivacion del ultimo admin y autodemocion) se les anadio `PuedeUsarIa = false`: sin eso el 400 por campo ausente habria enmascarado el comportamiento que esos tests comprueban.
+- **Nota:** un cliente antiguo que mandara `"activo": null` explicito recibe ahora 400 (antes se aplicaba `false`): es el comportamiento estricto buscado.
+
+### M-5 - ExtractosController reimplementaba el alcance de UserAccessService
+
+- **Sintoma:** el controller tenia sus propios `GetAllowedAccountIds`, `CanView`, `CanViewTitular`, `GrantsAccountAccess` y `QueryVisibleAccounts`, con la misma semantica que `UserAccessService` pero duplicada (y sin cache de scope).
+- **Condicion del encargo:** el informe pide hacerlo "solo si los tests de autorizacion existentes cubren los casos". **Se comprobo que si**: `ExtractosControllerTests.cs` cubre admin, acceso global, permiso solo-dashboard que debe devolver vacio, filtrado por pais, titular sin acceso, filas borradas, permisos de edicion por columna y permisos de desglose. Como la condicion se cumple, se hizo.
+- **Solucion:** `ExtractosController` inyecta `IUserAccessService` y su alcance sale de `GetScopeAsync` + `ApplyCuentaScope` (+ `ApplyPaisScope` para el filtro por pais); `CanView` pasa a `CanAccessCuentaAsync` y `CanViewTitular` a `CanAccessTitularAsync`. Se eliminan la reimplementacion y sus cuatro helpers privados.
+- **Regresion:** los ~28 tests de `ExtractosControllerTests` (la red de seguridad de M-5) en verde, y `*Extractos*` 46/46.
+- **Efectos secundarios (documentados):** (a) el alcance de extractos pasa a salir de la **cache** de `UserAccessService` (TTL 45 s en produccion), de modo que un cambio de permisos tarda hasta ese TTL en reflejarse; (b) para ADMIN, `CanAccessCuentaAsync` no comprueba que la cuenta exista, asi que el administrador puede auditar y ver el desglose de extractos de cuentas en la papelera.
+
+### S-8 en ExtractosController - 404 donde debia ser 403
+
+- **Endpoints con el defecto (corregidos, 7):** `Actualizar`, `GuardarDesglose`, `ToggleCheck`, `ToggleFlag`, `Eliminar` y `Restaurar` (el extracto existia y la cuenta estaba borrada -> 404 "Cuenta no encontrada") y `GetAuditCelda` (extracto en la papelera para un actor no admin -> 404). Ahora devuelven **403**; el 404 queda solo para "no existe".
+- **Endpoints revisados sin defecto (dejados):** `Crear` (la cuenta no existe -> 404 correcto), `GetCuentaResumen` (el desajuste de pais sigue en 404: es filtro de vista, no permiso, y hay un test que lo fija), `GetCuentasTitular` (titular inexistente -> 404; sin acceso ya era 403), `GetDesglose` (ya era 403) y `GET`/`PUT columnas-visibles` (ya era 403 sin acceso).
+- **Regresion:** `ExtractosControllerTests` 28/28. **Un test existente cambiado de expectativa:** `GetAuditCelda_Should_Not_Return_Audit_For_Deleted_Extracto_To_NonAdmin` esperaba `NotFound` y ahora espera `Forbid`: codificaba el defecto.
+
+### R-3 y seccion 9 - El contrato de la API (paginacion y ordenacion)
+
+- **Sintoma:** `GET /api/importacion/lotes/{id}/filas` devolvia un array plano con hasta 50.000 filas; `GET /api/conciliacion` y `GET /api/conciliacion/movimientos-esperados` devolvian un array plano recortado en 500 filas **sin avisar**; paises, auditoria, lotes, comisiones y seguros no admitian `sortBy`/`sortDir`; y en cuentas, titulares y formatos un `sortBy` desconocido caia siempre en el mismo sentido, ignorando `sortDir`.
+- **Causa:** esos listados no usaban el `PaginatedResponse<T>` que ya existe en `DTOs/UsuariosDtos.cs` (el JSON sale en snake_case: `data`, `total`, `page`, `page_size`, `total_pages`) y sus helpers de ordenacion tenian el caso por defecto escrito sin mirar `desc`.
+- **Solucion:** `GET lotes/{id}/filas`, `GET /conciliacion` y `GET /conciliacion/movimientos-esperados` devuelven el contrato paginado con el **total real** (el recorte de 500 filas desaparece: el cliente pide paginas) y admiten `?sortBy`/`?sortDir`; se anade ordenacion a paises, auditoria, lotes, comisiones y seguros; y el caso por defecto de cuentas, titulares, formatos y usuarios respeta el sentido pedido. Desempate estable por clave primaria en todos ellos (patron B-15).
+- **Correccion del orquestador sobre el trabajo del subagente:** la primera implementacion de la revision resolvia la ordenacion **trayendo todas las paginas del servicio al controller y ordenando en memoria** (peticiones de 200 en 200 hasta el total). Con miles de filas de revision eso son varias consultas y todos los objetos en memoria en cada peticion: una regresion de rendimiento. La ordenacion se ha trasladado a `RevisionService` (`ApplyRevisionSorting`), que la resuelve **en SQL**, y el controller pasa `sortBy`/`sortDir` en `RevisionQueryRequest`. Al hacerlo aparecieron tres fallos (el orden por defecto se habia invertido a ascendente y dos tests median el controller con un servicio simulado): el defecto por defecto se corrigio para que, sin `sortDir`, se conserve el orden historico (mas reciente primero) y los tests se adaptaron para comprobar que el controller **reenvia** los parametros al servicio, con dos tests nuevos contra el **servicio real**.
+- **Regresion:** `ContratoApiPaginacionTests` (nuevo): rojo con 5 fallos -> en verde (16 casos, mas 2 nuevos contra el servicio real). `*Conciliacion*` + `*Importacion*` 92/92 y 216/216 en las areas tocadas.
+- **Tests existentes ajustados:** `ImportacionServiceTests` y `PermisosLote6Tests` leian el contrato anterior (array) de `ListarLoteFilasAsync` y `ListarMovimientosEsperadosAsync`.
+- **Frontend:** `ConciliacionPage` consume ya la forma paginada (`data`, `total`, `total_pages`) con paginador y `PageSizeSelect`, reutilizando el patron de Extractos y del detalle de cuenta. El cambio de forma **rompe clientes**: `GET /api/conciliacion` y `GET /api/conciliacion/movimientos-esperados` ya no devuelven un array.
+- **Limitacion del entorno:** no hay test contra PostgreSQL de estas ordenaciones (todo lo verificado es con el provider InMemory).
+
+### 8.1 - Faltaban dos pantallas
+
+- **`GET`/`DELETE /api/auth/mfa/trusted-devices`:** el endpoint existia pero no habia ninguna interfaz: el usuario no podia ver ni revocar los equipos a los que habia dado permiso para no repetir el codigo MFA. Nueva pantalla `DispositivosMfaPage` en la ruta `/seguridad/dispositivos-mfa`, con entrada de menu "Dispositivos MFA" (grupo Sistema, **sin** `adminOnly`: cada usuario ve los suyos). Muestra dispositivo, IP, fecha de alta, ultimo uso y hasta cuando es valida la confianza, marca "Este dispositivo" y permite revocar uno o el actual, con confirmacion.
+- **`POST /api/importacion/lotes/{id}/revertir`:** el endpoint existia y el backend lo protegia (desde este mismo lote, con `puede_eliminar_lineas`), pero no habia ninguna interfaz. Se anade el boton "Revertir" en el historial de lotes de la pantalla de Importacion, con dialogo de confirmacion que explica que se borran los extractos del lote, que sus conciliaciones pasan a "excepcion" y que la importacion se puede volver a hacer. El boton **solo aparece** si el usuario puede eliminar lineas en esa cuenta (el backend responde 403 en caso contrario).
+- **Regresion:** `dispositivosMfaYRevertirLote.test.ts` (nuevo, 17 casos) con la logica pura en `utils/dispositivosMfa.ts` y `utils/revertirLote.ts`; `permisosConciliacionRevision.test.ts` (nuevo, 11 casos). Suite completa del frontend: **265/265**.
+- **Capturas:** generadas con Playwright y la API simulada (`frontend/e2e/visual/`): 54 PNG en `.artifacts/l6-visual`, incluidas la pantalla de dispositivos MFA, el historial de importacion con el boton "Revertir" y los dos dialogos de confirmacion, en tema claro y oscuro y a 1440 px y 390 px.
+- **Limites:** el proyecto no tiene entorno de React en los tests unitarios, asi que **no hay test de render**: la cobertura es la de los helpers y del store. Falta el dialogo de "revocar este dispositivo", los estados vacio y de error de la pantalla MFA y los toasts posteriores a la accion.
+
+### Endpoints sin llamada (seccion 8.1) - NO retirados
+
+- Se busco en todo el repositorio (frontend, `scripts/`, integracion OpenClaw, `Documentacion/`) y **no hay ninguna referencia** a `importacion/validar`, `importacion/confirmar`, `cuentas/{id}/resumen`, `usuarios/{id}/permisos`, `usuarios/{id}/permisos/cuenta/{cuentaId}`, `usuarios/{id}/emails`, `sistema/version-actual`, `sistema/metricas` ni `revision/settings`.
+- **No se retiran.** La pregunta se respondio por auto-seleccion de tiempo y borrarlos es irreversible: mientras el usuario no lo confirme, quedan como API reservada. Si se confirma el retiro, los ficheros a tocar son `ImportacionController` (los dos endpoints de validacion/confirmacion antiguos), `CuentasController` (`resumen`), `UsuariosController` (los tres endpoints de permisos y emails), `SistemaController` (`version-actual` y `metricas`) y `RevisionController` (`settings`).
+
+## 2026-11-17 - V-03.02 - LOTE 7 del informe de revision integral: F-2, F-4, F-5, F-6, F-7, F-8, F-9, F-10, R-4, R-5, R-6, R-7, R-8 y B-16 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 7. Solo estos IDs; ningun otro tocado. Sin commit ni push. Trabajo por subagentes con ficheros disjuntos y revision del orquestador sobre cada diff. Decisiones de producto fijadas antes de implementar: F-7 se resuelve con concurrencia limitada en el cliente (no endpoint de lote) y el limite de F-8 es que el backend no admite null en esos campos, de modo que vaciar conserva el ultimo valor valido.
+
+### F-2 - La papelera pedia 500 filas y filtraba en cliente: los eliminados antiguos no se restauraban
+
+- **Sintoma:** la papelera noedia la cuenta y el backend contaba vivas y eliminadas a la vez, de modo que la ventana de 500 (200 en titulares, cuentas y usuarios) se llenaba con filas vivas y los eliminados mas antiguos nunca entraban: no aparecian y no se podian restaurar. Los importes de los extractos se pintaban siempre en EUR. Ademas, si el usuario cambiaba de pestana o de pagina mientras la peticion estaba en vuelo, la respuesta vieja podia llegar la primera y pisar la nueva (o al reves), dejando filas de otra pestana y un estado de carga incoherente.
+- **Causa:** `PapeleraPage.tsx` pedia `incluirEliminados=true, page:1, pageSize:500` y filtraba por `deleted_at` en cliente; el `CountAsync` del backend se hacia antes de cualquier filtro de eliminados. El listado de extractos ya devolvia la divisa (`ExtractoListItemResponse.Divisa`), pero la pagina no la usaba: `formatCurrency(row.monto, 'EUR')`. Para el orden, `load()` escribia el estado sin comprobar que su respuesta siguiera siendo la ultima.
+- **Solucion:** los cuatro listados paginados (`Titulares`, `Cuentas`, `Extractos`, `Usuarios`) aceptan `soloEliminados`, que se aplica ANTES de contar y paginar y reutiliza el `IgnoreQueryFilters()` de `incluirEliminados`, con la misma proteccion de ADMIN. La papelera pide la pagina real (50 por pagina), pinta la paginacion y usa la divisa de la fila. El filtro en cliente desaparece. Para el orden de respuestas, `utils/peticionSecuencial.ts` numera cada peticion: `load()` abre una secuencia y solo escribe filas, total, error y estado de carga si su respuesta sigue siendo la vigente; una respuesta vieja se descarta entera.
+- **Limite preexistente que NO se ha tocado:** `ExtractosController.Listar` filtra por `GetAllowedAccountIds`, que excluye las cuentas eliminadas: los extractos de una cuenta **ya borrada** no salen en la papelera.
+- **Regresion:** `PapeleraSoloEliminadosTests` (backend, 5 tests) y `papeleraSoloEliminados.test.ts` (frontend, 5 tests): 5/5 en rojo antes -> 5/5 en verde. `papeleraRespuestasFueraDeOrden.test.ts` (frontend, 6 tests): 3 de 6 en rojo antes (filas, error y estado de carga escribidos sin guarda de vigencia) -> 6/6 en verde.
+
+### F-4 - Un toast por cada error, tambien en los sondeos con la API caida a proposito
+
+- **Sintoma:** durante una actualizacion del sistema o un backup, el backend esta caido a proposito y el interceptor pintaba un toast de error cada 2,5 s, encima de los errores que ya pinta cada pagina. Ademas los bucles de sondeo seguian consultando despues de desmontar la pagina.
+- **Causa:** `services/api.ts` pintaba toast en toda rama con `status !== 401`; no existia forma de marcar una peticion como "no avises". `ConfiguracionPage.updateNow` y `BackupsPage.pollBackupOperation` hacian `GET` en bucle con `setTimeout(2500)` sin ningun control de montaje.
+- **Solucion:** `utils/errorToast.ts` decide el toast de una peticion (`none` | `network` | `server` | `rate-limit`) y admite la opcion por peticion `skipErrorToast`; los sondeos la usan. `utils/pollLifecycle.ts` da a los bucles un ciclo de vida con `active`, `wait(ms)` y `stop()`: al desmontar se limpian el timer y la espera pendiente, y no se actualiza estado de un componente desmontado. Los toasts de sesion caducada (419/440), de 429 y el de red de una peticion normal se mantienen intactos.
+- **Regresion:** `errorToast.test.ts` (9 tests de la decision de toast) y `sondeosSinToast.test.ts` (3 tests de source sobre los dos sondeos): 9 de 21 tests nuevos en rojo antes -> 21/21 en verde.
+
+### F-5 - El banner de alertas reaparecia al cambiar de pais
+
+- **Sintoma:** al cambiar de pais, el banner de alertas de saldo bajo volvia a aparecer aunque el usuario ya lo hubiera ocultado.
+- **Causa:** el hook `useAlertasActivasQuery` hacia `const alertas = query.data ?? []` y, con la lista vacia, llamaba a `resetBanner()`, que borraba el descarte. Al cambiar de pais la clave de consulta cambia y `query.data` pasa a `undefined` mientras carga: el descarte se borraba en cada recarga. Ademas habia cuatro escritores del estado del banner (el hook, `resetBanner`, `loadAlertasActivas` y `clear`).
+- **Solucion:** el store es el unico escritor. `syncAlertas(alertas, { loading, error })` es la unica entrada del contenido: mientras no hay datos no se toca el descarte; con datos, el descarte se ancla a la HUELLA del contenido (`alerta_id:cuenta_id` ordenados) que el usuario oculto, guardada en `sessionStorage`. El hook solo pasa lo que devuelve la consulta. El descarte se respeta hasta que el contenido cambie de verdad.
+- **Nota de alcance:** `setAlertasActivas` sigue existiendo como segundo camino latente (preexistente y sin uso) y se deja como estaba; `clear()` (logout, 401 o cambio de usuario) si limpia el descarte, que es lo correcto.
+- **Regresion:** `alertasBannerDismissal.test.ts` (6 tests sobre el hook y el store reales): 4 de 6 en rojo antes -> 6/6 en verde.
+
+### F-6 - Salir de la nota de alerta guardaba aunque no cambiara nada
+
+- **Sintoma:** entrar y salir del campo de nota de alerta sin escribir lanzaba un PATCH `/extractos/{id}/flag` con el mismo valor.
+- **Causa:** el `onBlur` del input llamaba siempre a `onToggleFlag(row, row.flagged, note)`, sin comparar la nota con el valor que traia el servidor (`row.flagged_nota`).
+- **Solucion:** helper `notaAlertaCambiada(valorServidor, notaEditada)`; el PATCH solo sale si el texto cambio. La comparacion es contra el valor conocido del servidor, de modo que no se pierde ningun cambio ajeno: si el guardado falla, `row.flagged_nota` sigue siendo el viejo y el siguiente blur reintenta.
+- **Regresion:** `notaAlerta.test.ts` (4 tests): 1 fallo antes -> 4/4.
+
+### F-7 - Borrado y marcado en lote: una peticion por fila, en serie y sin transaccion
+
+- **Sintoma:** al borrar o marcar en lote los movimientos de una cuenta se hacia una peticion por fila, en serie. El borrado se detenia en el primer error y el marcado abortaba el resto.
+- **Causa:** dos bucles `for` con `await api.delete(...)` y `await api.patch(...)` dentro, uno por fila.
+- **Solucion:** helper `utils/concurrencia.ts` (`ejecutarEnLote(operaciones, limite = 4)`): pool de cuatro peticiones simultaneas, ejecuta TODAS las operaciones, no corta el lote ante un fallo y devuelve por operacion indice, exito y error. La pagina actualiza el estado solo con las filas que si se movieron y avisa de las que fallaron ("Se eliminaron N de M movimientos. Fallaron K."). **Decision de producto:** concurrencia limitada en el cliente, sin endpoint de lote en el backend (la opcion se fijo antes de implementar; sigue siendo ajustable).
+- **Regresion:** `loteConcurrencia.test.ts` (8 tests: 6 del helper y 2 de source sobre la pagina): 11 de 15 en rojo antes -> 13/13 en verde.
+
+### F-8 - Los campos numericos de Configuracion no se podian vaciar
+
+- **Sintoma:** al borrar el contenido de un campo numerico de Configuracion, la pagina convertia el valor a 0 (`Number(x) || 0`) y acababa guardando un cero silencioso.
+- **Causa:** once inputs usaban `Number(valor) || valorPorDefecto`, con lo que un campo vacio se convertia en 0 (puerto SMTP, `requests_por_minuto`, `requests_por_hora`, `requests_por_dia`, `requests_globales_por_dia`, `porcentaje_aviso_presupuesto`, `max_input_tokens`, `max_output_tokens`, `max_context_rows`, horas de cooldown y hora UTC).
+- **Solucion:** helper `utils/numberInput.ts` (`parseOptionalNumberInput`: `''` -> `null`, nunca 0; `'0'` -> 0 valido) y componente `NumberField` en la pagina. El campo queda vacio y, si esta vacio, se conserva el ultimo valor valido de la configuracion, de modo que el `PUT /configuracion` no manda un 0 silencioso.
+- **Limite real (no resuelto, por diseno del contrato):** los DTO del backend usan `int` no nullable (`IaDtos.cs`, `ConfiguracionDtos.cs`), asi que mandar `null` daria 400 y "vacio" no es representable en la API. Por eso vaciar conserva el ultimo valor en vez de dejarlo sin definir.
+- **Regresion:** `configuracionCamposNumericos.test.ts` (5 tests): 2 de 21 en rojo antes -> verde.
+
+### F-9 - Si fallaba el guardado de una celda, se perdia lo escrito
+
+- **Sintoma:** al guardar una celda editable y fallar la peticion, el texto introducido desaparecia y el campo cerraba en modo lectura. El aviso de error existia en el componente, pero no se veia nunca, porque la celda seguia en modo edicion.
+- **Causa:** el `catch` hacia `setDraft(value)` (el valor del servidor) y dejaba `isEditing = true`; ademas el siguiente blur cerraba el editor sin guardar, sin dejar opcion de reintentar.
+- **Solucion:** helper `utils/editableCellSave.ts` (`applyEditableCellSaveResult(estado, 'saved' | 'failed')`): en `'failed'` NUNCA escribe el borrador, de modo que la invariante "el fallo no sustituye lo escrito" es estructural. La celda sigue abierta con lo escrito y muestra el aviso de error; se reintenta con Enter o blur y se descarta con Escape.
+- **Regresion:** `editableCellSave.test.ts` (6 tests): 4 de 6 en rojo antes -> 6/6 en verde.
+
+### F-10 - Sospecha descartada: la clave de idempotencia de la confirmacion no se regeneraba
+
+- **Sintoma sospechado:** abrir otro lote desde el historial y confirmar reutilizaba la clave de idempotencia de la confirmacion anterior.
+- **Analisis:** el backend acota el replay idempotente al propio lote (`lote.ConfirmacionIdempotencyKey` y `ConfirmacionResponseJson` de ese lote, `ImportacionService.cs`), y el indice unico de creacion es `(UsuarioCreadorId, IdempotencyKey)`. **La sospecha, tal como estaba redactada, no se reproduce**: confirmar un lote distinto con la misma clave NO da 409 ni rechaza la confirmacion legitima.
+- **Defecto real encontrado en el mismo camino:** al recargar el contexto de la pagina de importacion (cambio de pais o cuenta preseleccionada) se fijaba la cuenta objetivo del POST de creacion SIN regenerar la clave de creacion. Con la misma clave y otra cuenta, el backend responde 409 "La clave de idempotencia ya se uso con otro contenido" y la validacion del usuario falla.
+- **Solucion:** la clave de confirmacion se regenera al validar un lote y al abrir uno del historial (cada lote confirmado usa su propia clave; el reintento del mismo lote conserva la suya, asi que el replay idempotente sigue funcionando) y la clave de creacion se regenera cuando cambia la cuenta objetivo.
+- **Regresion:** `importacionIdempotencia.test.ts` (6 tests): 5 de 6 en rojo antes -> 6/6 en verde.
+
+### R-4 - El detalle de cuenta invalidaba las consultas que tenia activas
+
+- **Sintoma:** al cambiar de pagina o de periodo en el detalle de cuenta se hacia una peticion duplicada: la pagina invalidaba la consulta que ella misma estaba usando.
+- **Causa:** un efecto llamaba a `loadCuentaData()` y esa funcion invalidaba `queryKeys.extractos.cuentaResumen` y `queryKeys.extractos.list` con los mismos parametros que la consulta activa.
+- **Solucion:** el efecto automatico de recarga se elimina; en su lugar solo se limpian los avisos con las mismas dependencias. `loadCuentaData` se conserva para las recargas explicitas (celda guardada, fila insertada, evento de importacion), donde si debe refrescar.
+- **Efecto secundario asumido:** al cambiar de pagina o periodo ya no se refresca la consulta cuya clave no cambia; el dato se repide por `staleTime` o al enfocar la ventana. No medido en la app real.
+- **Regresion:** `cuentaDetailInvalidacion.test.ts` (3 tests de source): en rojo antes -> 13/13 en verde con el resto del area.
+
+### R-5 - Los permisos se evaluaban tres veces por celda y en cada render
+
+- **Sintoma:** unas 1.600 evaluaciones de permisos por render en la tabla de extractos, y cada cambio de foco re-renderiza la tabla entera.
+- **Causa:** tres llamadas `canEditCell(...)` por celda, y cada llamada recalcula `canEditCuenta()` y `getColumnasEditables()`.
+- **Solucion:** cache por fila y columna (`utils/canEditCellCache.ts`) creada en un `useMemo` con dependencia `[canEditCell]`: se recalcula si cambia la funcion de permisos o el objeto fila, de modo que no queda obsoleta.
+- **Limite:** la mejora es inferida del conteo de evaluaciones, no medida con un profiler.
+- **Regresion:** `canEditCellCache.test.ts` (5 tests): 2 fallos antes -> 5/5.
+
+### R-6 - Busquedas sin debounce: una peticion por tecla
+
+- **Sintoma:** al escribir en los buscadores de Formatos, Paises, Cuentas, Usuarios y en el campo "Modelo" de Configuracion se lanzaba una peticion por tecla.
+- **Causa:** el estado de busqueda alimentaba directamente los `params` de la consulta y las dependencias del efecto que la recarga.
+- **Realidad verificada:** Paises y Cuentas YA usaban `useDebouncedValue` (commit `882f721`, anterior al informe). El defecto existia en Formatos, Usuarios y el campo "Modelo" de Configuracion.
+- **Solucion:** se reutiliza el hook existente `hooks/useDebouncedValue.ts` (300 ms) en las tres paginas y en el campo "Modelo"; el input sigue atado al estado bruto, asi que el filtro visible es inmediato y solo la peticion se difiere. En Usuarios, la queryKey tambien pasa por el valor diferido, para no crear una entrada de cache por tecla.
+- **Regresion:** `busquedaDebounce.test.ts` (6 tests, 5 en rojo antes) y `configuracionDebounceModelo.test.ts` (4 tests, 4 en rojo antes) -> todo en verde.
+
+### R-7 - N+1 en los resumenes de titulares e insercion de 50.000 filas en un unico SaveChanges
+
+- **Sintoma (a):** `GetCuentasTitular` y `GetTitularesResumen` llamaban a `BuildSummary` dentro de un bucle por cuenta, y cada llamada lanzaba 5 consultas (pais, ultimo movimiento, suma de ingresos, suma de egresos, ultima modificacion), mas las de plazo fijo y de alcance.
+- **Sintoma (b):** la creacion del lote insertaba hasta 50.000 filas de `IMPORTACION_LOTE_FILAS` en un unico `SaveChangesAsync`, y la confirmacion insertaba hasta 50.000 `EXTRACTOS` (mas sus columnas extra) en otro unico `SaveChangesAsync`. Todo caia en una sola transaccion: 50.000 bloqueos de fila retenidos, WAL de 50.000 filas y, si una sola fila fallaba, rollback masivo. La ruta directa de confirmacion no tenia transaccion explicita.
+- **Solucion (a):** `BuildSummariesAsync` sustituye a `BuildSummary`: agrega en un solo grupo de consultas (maximo de `fila_numero` por cuenta, fecha y saldo de ese movimiento, importes del periodo agrupados por cuenta y dia, ultima modificacion por cuenta, paises y plazos fijos) y reparte por cuenta en memoria. El JSON es identico.
+- **Medicion (PostgreSQL real, con interceptor de comandos):** titular con 1 cuenta, de 8 SELECT a 9; titular con 4 cuentas, de 23 a 9. De ~5 por cuenta a constante.
+- **Solucion (b):** `TamanoBloqueInsercion = 1.000`. La cabecera del lote se guarda sola y las filas van en bloques de 1.000 con su propio `SaveChangesAsync` y desenganche del ChangeTracker; los extractos y sus columnas extra, y los estados de las filas del lote, se escriben tambien por bloques de 1.000. **Todos los bloques van dentro de la misma transaccion**: si uno falla se revierte todo, sin dejar un lote a medias. La idempotencia se mantiene (el indice unico sigue decidiendo la carrera y el perdedor recarga el lote del ganador) y los mensajes 409 al usuario son los mismos.
+- **Coste que conviene conocer:** los importes del periodo se calculan con cubos diarios (cuenta x dias de la ventana) que vuelven a la app, en vez de un `SUM` por cuenta en servidor: con periodo de 1 mes son unas cuenta x 31 filas y con 24 meses, cuenta x 730. A cambio, el numero de viajes es constante.
+- **Regresion:** `ExtractosResumenConsultasTests` (2 tests, con PostgreSQL real): 1 fallo antes ("Expected consultasConCincoCuentas to be less than or equal to 11 ... but found 23") -> 2/2. `ImportacionR7Tests` (3 tests, con interceptor que cuenta filas por `SaveChanges`): 2 fallos antes ("...but found 1: {5100}") -> 3/3.
+
+### R-8 - /ia/config se consultaba cada 30 s en todas las pestanas
+
+- **Sintoma:** cada pestana autenticada consultaba `/api/ia/config` cada 30 segundos aunque el resultado casi nunca cambiase (la configuracion global de IA solo se muta en `PUT /api/configuracion`), y la disponibilidad de la IA tenia tres fuentes de verdad.
+- **Causa:** `useIaConfigQuery` usaba `refetchInterval: 30_000`; `iaAvailabilityStore.load()` hacia su propio GET con su propio TTL (sin ningun llamante vivo) y `aiChatStore.ensureConfig()` hacia otro GET al montar el chat.
+- **Solucion:** la cache de TanStack Query pasa a ser la unica fuente de verdad para la disponibilidad: `staleTime` de 5 minutos en vez de sondeo, `refetchOnWindowFocus` para repreguntar al volver a la pestana, y refresco INMEDIATO cuando alguien guarda la configuracion global (un interceptor de respuesta detecta el `PUT /configuracion` correcto y dispara la invalidacion). La regla de disponibilidad vive en un sitio (`utils/iaConfigSource.ts`).
+- **Efecto (medido por calculo, no con navegador):** de 2 peticiones por minuto y pestana a 1 al montar y como mucho 1 cada 5 minutos; con 8 usuarios y 2 pestanas, de unas 32 por minuto a unas 3,2 en el peor caso.
+- **Consecuencia aceptada:** un cambio de configuracion hecho en otra sesion o navegador llega ahora al volver a la pestana con la cache caducada (hasta 5 minutos) o al recargar, no en 30 segundos.
+- **Pendiente que NO se ha tocado:** `iaAvailabilityStore.load()` (sin llamante) y `aiChatStore.ensureConfig()` (una peticion al montar el chat) siguen siendo copias de la configuracion. No se han tocado por no meter cambios de comportamiento ajenos al ID.
+- **Regresion:** `iaConfigSondeo.test.ts` (8 tests): 4 de 8 en rojo antes -> 8/8.
+
+### B-16 - "Hoy" calculado en UTC
+
+- **Sintoma:** entre las 00:00 y las 02:00 en Espana la fecha "de hoy" en UTC es la del dia anterior: la fila nueva de extractos y el calculo de dias hasta el vencimiento se quedaban un dia atras.
+- **Realidad verificada:** el helper compartido **no existia**: "hoy" estaba duplicado como funcion local en `ConciliacionPage.tsx` e `ImportacionPage.tsx`, y la fecha por defecto de `ExtractoTable` usaba `new Date().toISOString().slice(0, 10)` (UTC). El calculo de dias de `CuentaDetailPage` ya usaba componentes de fecha locales.
+- **Solucion:** helper unico `utils/hoy.ts` (`hoy()`), usado por `ExtractoTable`, `CuentaDetailPage`, `ConciliacionPage` e `ImportacionPage`; las dos copias locales se eliminan.
+- **Regresion:** `hoy.test.ts` (5 tests, con `TZ=Europe/Madrid`), `cuentaDetailHoy.test.ts` (2 tests) e `importacionIdempotencia.test.ts` (parte de B-16).
+
+## 2026-11-16 - V-03.02 - LOTE 2 del informe de revision integral: A-2, S-10, S-11, S-13, S-14, S-15, S-16, S-17, S-18 y F-1 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 2. Solo estos IDs; ningun otro tocado. Sin commit ni push. Trabajo por subagentes con ficheros disjuntos, con revision del orquestador sobre cada diff. Decisiones de producto fijadas con el usuario antes de implementar: el bloqueo solo impide logins nuevos; vida maxima de sesion de 30 dias; el modo TLS del SMTP es explicito y admite envios sin cifrar; ventana de gracia con IP coincidente para el refresh concurrente.
+
+### A-2 - Bloqueo de cuenta indefinido y sin salida
+
+- **Sintoma:** `FailedLoginAttempts` solo volvia a 0 con un login correcto. Pasados los 30 minutos de bloqueo el contador seguia en 5, de modo que un unico fallo nuevo volvia a bloquear la cuenta: quien knew un email podia dejar al usuario fuera con una peticion cada 30 minutos. Ademas no existia ninguna accion de desbloqueo para el administrador, y el bloqueo cortaba las sesiones que ya estaban abiertas.
+- **Causa:** el reinicio del contador solo estaba en la rama de login correcto. Las tres ramas que cuentan un fallo (login con contrasena incorrecta, verificacion MFA con codigo incorrecto y cambio de contrasena con la actual incorrecta) partirian del valor acumulado, que tras el vencimiento del bloqueo seguia siendo el maximo. El contador se incrementaba ademas con lectura-modificacion-escritura sobre la entidad trackeada, sin atomicidad: una rafaga paralela perdia incrementos y no llegaba al bloqueo. Y el bloqueo se aplicaba tambien a las sesiones abiertas (`UserStateMiddleware` rechazaba la peticion y `RefreshTokenAsync` respondia 423).
+- **Solucion:** (a) cuando el bloqueo ya caduco, el contador vuelve a 0 antes de contar el fallo nuevo, en las tres ramas; (b) el incremento en BD es atomico (`ExecuteUpdate` con un `CASE` que reinicia a 0 si el bloqueo caduco y suma 1 en el mismo UPDATE) y la entidad trackeada se recarga, de modo que una rafaga paralela no pierde incrementos ni un `SaveChanges` posterior reescribe el valor viejo; (c) el bloqueo deja de cortar las sesiones abiertas: se retiran el rechazo por `LockedUntil` del `UserStateMiddleware` y el 423 del `RefreshTokenAsync`, y siguen rechazados el login nuevo y la verificacion MFA mientras dure el bloqueo; (d) nuevo `POST /api/usuarios/{id}/desbloquear` (solo ADMIN) que pone el contador a 0, limpia `locked_until` y deja auditoria `ACCOUNT_UNLOCKED`; el listado expone `bloqueado_hasta` e `intentos_fallidos`, y la pagina de Usuarios muestra el estado y el boton "Desbloquear" con confirmacion.
+- **Regla operativa:** un bloqueo por intentos fallidos protege el LOGIN, no la sesion. Si además se quiere cortar la sesion de un usuario bloqueado, tiene que ser una accion explicita del administrador, no un efecto colateral del contador.
+- **Regresion:** `AuthLot2Tests` (nuevo, 15 tests) y `AuthLot2PostgresTests` (nuevo, 2 tests contra PostgreSQL real). 10 fallos antes del arreglo ("Expected value to be 1 ... but found 6", "Expected nextCalled to be True ... but found False") a 15/15 y 2/2 en verde. El test de concurrencia demuestra que 8 intentos paralelos dejan el contador en 8 y no en 1.
+- **Verificacion:** suite completa `AtlasBalance.API.Tests` 1170/1170 y `AtlasBalance.Caching.Tests` 15/15, sin fallos.
+
+### S-10 - El alta de MFA se podia sobrescribir con un desafio obsoleto
+
+- **Sintoma:** la rama `SetupRequired` de `VerifyMfaAsync` guardaba el secreto MFA sin comprobar que el usuario siguiera sin MFA. Con la contrasena inicial y un desafio abierto, quien llegase despues de la victima podia fijar su propio autenticador.
+- **Causa:** `challenge.SetupRequired` se calcula en el login, pero entre el login y la verificacion el usuario puede haber habilitado MFA por otra via. La rama no contrastaba el estado actual del usuario antes de escribir `MfaSecret`.
+- **Solucion:** antes de guardar, se comprueba que el usuario sigue sin MFA (`MfaEnabled` falso o secreto vacio). Si ya lo tiene, se invalida el desafio (`RemoveMfaChallenge`) y se responde 401 con el mismo mensaje que el resto de ramas, sin tocar el secreto.
+- **Regresion:** `VerifyMfa_Should_Not_Overwrite_An_Existing_Mfa_Secret`: rojo ("Expected a <AuthException> to be thrown, but no exception was thrown") a verde.
+- **Limite que conviene conocer:** completar el alta de MFA no rota el `SecurityStamp`, asi que las demas sesiones del usuario siguen vivas. Queda fuera de este lote.
+
+### S-11 - Carrera en el limite de login y spray sin acotar contra cuentas reales
+
+- **Sintoma:** el throttle se consultaba antes de bcrypt y el contador se incrementaba despues, sin concurrencia: una rafaga paralela evaluaba mas contrasenas de las permitidas y el contador no llegaba al bloqueo. Ademas el limite por IP solo se consultaba cuando el usuario NO existia, de modo que un spray contra cuentas que si existen no estaba acotado.
+- **Causa:** lectura-modificacion-escritura sobre la entidad `Usuario` trackeada, con el valor leido antes del bcrypt. La rama de throttle por IP estaba unicamente en el camino de "usuario no encontrado".
+- **Solucion:** incremento atomico en BD con el reinicio a 0 cuando el bloqueo caduco dentro del mismo UPDATE, y recarga de la entidad trackeada. El limite por IP se aplica tambien a cuentas existentes, con umbral PROPIO y configurable (`LoginMaxFailuresPerIpExistingUser`, 20 por defecto) y contador de cache separado (`auth:login-failures-client-existing`), que se limpia en un login correcto.
+- **Por que un umbral propio y no el mismo que el de cuentas inexistentes:** la aplicacion es on-premise y detras de un proxy inverso toda la oficina comparte IP. Con el umbral de cuentas inexistentes (7), un error de tecleo en bloque dejaria fuera a usuarios legitimos. El limite por (IP,email) = 3 sigue siendo la red que protege cada cuenta individual. El contrato previo ("un login valido funciona aunque la IP haya llegado al limite") se conserva, con contador separado.
+- **Regresion:** `Login_Should_Return_429_When_The_Ip_Exceeds_The_Existing_User_Limit` (rojo: "expected ... 429, but found 401") y el test de concurrencia contra PostgreSQL real (rojo: "Expected value to be 8 ... but found 1"), ambos en verde. El test existente `Login_Should_Allow_Valid_Credentials_When_Client_Wide_Failure_Limit_Was_Reached` sigue en verde sin tocarlo.
+
+### S-13 - La sesion no tenia vida maxima
+
+- **Sintoma:** cada rotacion del refresh token creaba uno nuevo con 7 dias de vida, asi que la sesion se mantenia viva indefinidamente, y la garantia MFA heredada (`MfaVerifiedAt`) tampoco caduca nunca.
+- **Causa:** el reloj de la sesion lo marcaba cada rotacion, no el inicio de la sesion. No existia ningun ancla.
+- **Solucion:** nueva columna nullable `sesion_ini_en` en `REFRESH_TOKENS` (migracion `20261116210000_AddSesionIniEnRefreshToken`), que se fija al abrir la sesion (login, verificacion MFA y cambio de contrasena) y se hereda en cada rotacion. Al renovar, si la sesion supera `JwtSettings:MaxSessionDays` (30 por defecto), se revocan sus refresh tokens, se audita `SESSION_EXPIRED` y se responde 401: el usuario vuelve a iniciar sesion con MFA. Las sesiones heredadas (columna a null) se anclan al `CreadoEn` de su token, de modo que el tope tambien se les aplica.
+- **Regresion:** `RefreshToken_Should_Fail_When_The_Session_Expired` (rojo: "Expected a <AuthException> to be thrown, but no exception was thrown") y `RefreshToken_Should_Keep_The_Session_Anchor_And_Id_When_Rotating` (rojo: "Expected nullable date and time to have a value, but found <null>"), ambos en verde.
+- **Aviso tecnico:** la migracion se escribio A MANO. `dotnet ef migrations add` genera una migracion sucia con unos 20 cambios ajenos (columnas `deleted_at`, `xmin`, FKs) por la deriva previa entre modelo y snapshot, y ademas no incluia la columna nueva. Esa deriva sigue pendiente de arreglo: el siguiente `migrations add` seguira generando basura.
+
+### S-14 - Cookies legacy aceptadas en produccion
+
+- **Sintoma:** en produccion las cookies de sesion se emiten con prefijo `__Host-` (Secure, Path=/, sin Domain), pero el backend seguia aceptando los nombres legacy (`access_token`, `csrf_token`), que un subdominio comprometido o un atacante en la LAN puede fijar. Ademas, al aceptar solo la cookie con prefijo, una cookie `csrf_token` legacy que sobreviviera en el navegador hacia que el frontend mandara en `X-CSRF-Token` un valor que no coincide con la cookie que valida el backend: 403 en cada peticion que cambia datos.
+- **Causa:** el fallback al nombre legacy estaba escrito sin mirar el entorno, en los tres puntos de lectura (`Program.cs` en `OnMessageReceived`, `AuthController.ReadCookie` y `CsrfMiddleware`), y el frontend leia la PRIMERA cookie CSRF que encontraba en `document.cookie`.
+- **Solucion:** en produccion se lee solo la cookie `__Host-`; en Development se aceptan las dos (el frontend de Vite corre en HTTP plano). El borrado de cookies al cerrar sesion sigue limpiando los dos nombres, que es correcto: es limpieza, no autenticacion. En el frontend, `getCsrfTokenFromCookie` prefiere siempre `__Host-atlas-csrf-token` y solo cae a la legacy si no existe.
+- **Regresion:** `CsrfMiddlewareTests` (rojo: "Expected context.Response.StatusCode to be 403, but found 200") y `AuthControllerTests` (rojo: "Expected authService.RefreshToken to be empty, but found \"legacy\"") a verde. Tres tests existentes de CSRF que usaban la cookie legacy en entorno Production pasan a usar la cookie con prefijo.
+- **Aviso operativo:** al desplegar, las sesiones con cookies legacy dejan de valer (hay que volver a iniciar sesion) y las cookies legacy del navegador tardan 7 dias en caducar. El frontend ya no las usa.
+
+### S-15 - Dos pestanas que refrescan a la vez cerraban todas las sesiones
+
+- **Sintoma:** si dos pestanas presentaban el mismo refresh token a la vez (la respuesta de la primera todavia no se habia aplicado en el navegador), la segunda se detectaba como reutilizacion y se revocaban TODAS las sesiones del usuario, con rotacion del `SecurityStamp`.
+- **Causa:** `RefreshTokenAsync` trataba cualquier token ya rotado como posible robo, sin distinguir el reintento benigno de una peticion concurrente.
+- **Solucion:** ventana de gracia configurable (`RefreshReuseGraceSeconds`, 30 s por defecto). Un reuso se considera benigno solo si se cumple TODO: (1) la revocacion es reciente, dentro de la ventana; (2) el token de reemplazo existe y sigue vivo, es decir, nadie lo ha usado todavia; (3) la IP de la peticion coincide con la del token emitido. En ese caso se revoca el reemplazo, se emite un token nuevo de la MISMA sesion (mismo `SessionId`, mismo ancla, mismo `MfaVerifiedAt`) y NO se rota el `SecurityStamp` ni se revocan las demas sesiones; queda auditoria `REFRESH_TOKEN_REUSE_BENIGN`, distinta de la de robo para que no se confundan. Fuera de la ventana, el comportamiento anti-robo queda intacto.
+- **Por que la IP:** el token robado y el reintento legitimo son indistinguibles por tiempo y por estado; la IP es la unica senal que separa "otra pestana del mismo navegador" de "otro equipo". Un token robado desde otra IP sigue fuera de la ventana.
+- **Regresion:** `RefreshToken_Should_Issue_A_New_Token_When_The_Rotated_Token_Is_Reused_Inside_The_Grace_Window` (rojo: "AuthException : Refresh token inválido o expirado") a verde, mas un test nuevo de reuso FUERA de la ventana que sigue revocando todas las sesiones. El test existente `RefreshToken_Should_Revoke_Active_Sessions_When_Rotated_Token_Is_Reused` se conserva con la ventana a 0 (una linea), porque codificaba el contrato anti-robo con la presentacion inmediata.
+- **Nota de contrato:** el log de 2026-08-05 dejo constancia de que la ventana de gracia NO se aplicaba a proposito, porque contradecía el contrato de revocacion inmediata ante reuso. Aqui se aplica con las condiciones justas: el robo desde otra IP o fuera de los 30 segundos sigue cerrando todas las sesiones.
+
+### S-16 - Un cliente anonimo llenaba AUDITORIAS con 401
+
+- **Sintoma:** la deduplicacion de `SecurityAuditMiddleware` incluia la ruta, de modo que un escaner que probaba rutas distintas generaba una fila de auditoria por ruta y podia llenar la tabla.
+- **Causa:** la clave de deduplicacion era `secaudit:{tipo}:{usuario}:{ip}:{ruta}`.
+- **Solucion:** la ruta sale de la clave. Se deduplica por tipo de accion, IP y usuario dentro de la ventana (60 s por defecto). La ventana y el `Size = 1` explicito se conservan (el `IMemoryCache` de la app tiene `SizeLimit`).
+- **Regresion:** `Should_Deduplicate_Across_Different_Resources_For_The_Same_User_And_Ip` (rojo: "Expected (db.Auditorias.CountAsync()) to be 1, but found 3") a verde. El test existente `Should_Not_Deduplicate_Across_Different_Resources` se reescribio: antes exigia 3 filas y el comportamiento pedido es 1.
+- **Coste que conviene conocer:** dos rechazos legitimos del mismo usuario e IP en rutas distintas dentro de la ventana se registran una sola vez. La tabla de auditoria deja de distinguir "barrido de rutas" de "rechazo repetido".
+
+### S-17 - El cifrado del SMTP se deducía de si habia credenciales
+
+- **Sintoma:** sin credenciales, `EmailService` usaba `StartTlsWhenAvailable`: si el servidor no anunciaba STARTTLS, la alerta con saldos salia en claro sin que nadie lo hubiera pedido ni lo supiera.
+- **Causa:** la decision estaba codificada en el codigo (`hasCredentials ? StartTls : StartTlsWhenAvailable`), no en la configuracion.
+- **Solucion:** modo TLS explicito y configurable en la tabla `CONFIGURACIONES`, clave `smtp_tls_mode`, con tres valores: `required` (STARTTLS obligatorio; si el servidor no lo ofrece, el envio falla), `auto` (STARTTLS si el servidor lo ofrece; si no, se envia sin cifrar) y `none` (sin cifrar, pedido explicito del operador, porque hay relays que no admiten TLS). El puerto 465 sigue siendo SMTPS con TLS implicito. La heuristica por credenciales desaparece. Cuando el mensaje sale sin cifrar se escribe un `LogWarning` con host, puerto y modo (nunca contrasena ni cuerpo del mensaje). El valor por defecto es `auto`, que equivale al comportamiento anterior, de modo que una base ya desplegada no cambia hasta que el administrador elija otra cosa.
+- **Superficie:** semilla (`SeedData`), DTO de respuesta y de peticion (`TlsMode`), validacion en `ConfiguracionController` (400 con mensaje claro si el valor no es uno de los tres) y selector en Configuracion. El `TlsMode` de la peticion es opcional y vacio significa "no especificado": un cliente que aun no conoce el campo no resetea a "auto" un "none" elegido por el administrador.
+- **Regresion:** `SmtpTlsModeTests` (nuevo, 17 casos de la tabla puerto/modo a `SecureSocketOptions`) en verde.
+- **Limite que conviene conocer:** el warning de "envio sin cifrar" depende de `client.Capabilities`, que solo se puede comprobar conectando a un servidor real. No se ha verificado contra un SMTP real.
+
+### S-18 - Las respuestas de la API no se marcaban como no cacheables
+
+- **Sintoma:** las respuestas de `/api/*` no llevaban `Cache-Control`, de modo que un proxy o un navegador podia guardar en cache datos de negocio (saldos, extractos).
+- **Causa:** el middleware de cabeceras de seguridad de `Program.cs` fijaba CSP, `X-Frame-Options`, `Referrer-Policy` y otros, pero no la politica de cache.
+- **Solucion:** nueva clase `Middleware/SecurityResponseHeaders` con `ApplyCacheControl(HttpContext)`, que aplica `Cache-Control: no-store` solo a rutas `/api` y sin pisar un `Cache-Control` ya puesto por el controlador. Los estaticos de `wwwroot` conservan su politica actual (el html nunca se cachea, los assets con hash si).
+- **Regresion:** `SecurityLot2Tests` (3 casos: ruta de API, fichero estatico y cabecera ya presente) en verde.
+
+### F-1 - Cualquier error al renovar el token cerraba la sesion
+
+- **Sintoma:** si la renovacion del token fallaba por lo que fuera (red caida, 500 del backend, 429 por limite de peticiones, timeout), el frontend borraba la sesion local y mandaba al usuario a `/login`, y el fallo se propagaba a las demas pestanas, que tambien cerraban su sesion. Un backend que se caia un momento dejaba a todos fuera.
+- **Causa:** el `catch` del interceptor de `api.ts` hacia `clearSessionState()` + redireccion sin mirar que habia fallado, y el coordinador de refresh publicaba un outcome `failed` ante cualquier error, lo que disparaba `notifyFailure()` en el resto de pestanas.
+- **Solucion:** helper puro `isSessionInvalidatingError(error)` (en `src/utils/sessionErrors.ts`, sin dependencias para que se pueda compilar aislado en los tests) que devuelve true SOLO con un 401 o 403 numerico. El interceptor de `api.ts` mantiene el cierre de sesion para 401/403 y, en el resto de casos, rechaza la peticion con un aviso acorde ("No se pudo renovar la sesion. Revisa la conexion e intentalo de nuevo.") sin limpiar estado ni redirigir. El coordinador anade un tercer outcome, `transient_error`, que se difunde a las demas pestanas como fallo NO invalidante: la pestana que espera recibe un error normal y no cierra su sesion. El fail-closed de los entornos sin `BroadcastChannel` ni `localStorage` y la ventana de coordinacion de 5 s / lease de 10 s quedan intactos.
+- **Regresion:** `tests/sessionErrorHandling.test.ts` (nuevo, 3 tests) y ajuste de una linea en `tests/sessionRefreshCoordinator.test.ts`, que simulaba el fallo con un error sin status y exigia `SessionRefreshFailure`: ese caso codificaba el defecto, asi que el error simulado lleva ahora `response.status: 401`, que es el caso que realmente invalida la sesion.
+- **Efecto colateral positivo:** el error local "La respuesta de refresh pertenece a una sesion anterior" (un refresh que llega de una sesion ya cerrada) cae en la rama transitoria y ya no desloguea al usuario que acababa de iniciar sesion.
+
+### Limitaciones del entorno (no son fallos del codigo corregido)
+
+- `dotnet test -c Release` canonico no se puede ejecutar: una API de desarrollo viva (PID 17816) bloquea `bin\Release\net10.0\AtlasBalance.API.dll`. La suite se ejecuto con `--artifacts-path` propio.
+- Con `--artifacts-path`, `SerilogHttpClientLoggingTests` fallaba con `DirectoryNotFoundException` porque buscaba la carpeta de fuentes subiendo desde el binario de test y no la encontraba: el test se queda SIN VALIDAR los tres ficheros de configuracion, que es justo lo que protege. Se cambio su localizador por `TestSourceLocator`, que si resuelve en ese caso, y se anadio `AppsettingsValidezTests` (JSON valido y claves nuevas presentes en los tres ficheros).
+- `npm run test:unit` y `npm run build` canonicos fallan con EPERM por permisos heredados de otra cuenta de sandbox en `.test-dist/` y `dist/`. Los ficheros de esas carpetas no se pueden mover a la papelera ("La funcion no es compatible con este sistema"), asi que el bloqueo persiste: las mismas comprobaciones pasaron con carpetas de salida nuevas (`.test-dist-l2`, `.dist-l2`). `npm run lint` ya pasa en verde tras ignorar en eslint y en git las carpetas `.test-dist-*` y `dist-*`.
+
+### Defectos introducidos durante el trabajo y corregidos en la revision
+
+- Al editar `appsettings.json` y sus dos plantillas se perdio el BOM UTF-8, y en las plantillas se perdio una coma: `"RefreshReuseGraceSeconds": 30` sin coma dejaba el JSON invalido, y las plantillas son las que usa el instalador para generar la configuracion de produccion. No lo detecto ningun test: el unico que las leia no encontraba los ficheros con `--artifacts-path`. Corregido (BOM y comas restaurados, finales de linea CRLF de las plantillas conservados) y con `AppsettingsValidezTests` como red.
+- La cookie CSRF: al aceptar en produccion solo la cookie `__Host-`, el frontend podia seguir leyendo la legacy y mandar un `X-CSRF-Token` que no cuadra con la cookie que valida el backend (403 en cada mutacion). Corregido en `App.tsx` prefiriendo siempre la cookie con prefijo.
+# Log de errores e incidencias
+
+## 2026-11-16 - V-03.02 - LOTE 3 del informe de revision integral: A-3, A-4, J-1, J-2, J-3, J-4, J-5, J-6, R-1 y S-19 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 3. Solo estos IDs; ningun otro tocado. Sin commit ni push. Trabajo por subagentes con ficheros disjuntos, con revision del orquestador sobre cada diff.
+
+### A-3 - Un backup en PENDING detenia los backups automaticos para siempre
+
+- **Sintoma:** si el proceso se paraba a mitad de un backup, la fila se quedaba en `PENDING` para siempre. `BackupSchedulerJob` omite el backup automatico mientras exista CUALQUIER fila `PENDING`, y nada las recuperaba: los backups automaticos se detenian sin avisar. No existia ninguna alerta de "sin backup correcto desde hace N dias".
+- **Causa:** `BackupService.CreateBackupAsync` guardaba el estado `FAILED` con el `cancellationToken` de la peticion, que ya venia cancelado cuando el proceso se apagaba o hacia timeout: ese `SaveChangesAsync` fallaba y la fila conservaba el `PENDING` inicial. El planificador solo miraba `AnyAsync(x => x.Estado == PENDING)` y no habia ninguna via de recuperacion.
+- **Solucion:** los tres puntos que registran el estado de un backup (`BackupService.cs`) guardan con `CancellationToken.None`: el fallo del volcado, el guardado del `SUCCESS` y el `catch` general. En `BackupSchedulerJob` se abandonan antes de nada los `PENDING` con mas de 2 horas (nota "Backup abandonado: el proceso se detuvo a mitad"), de modo que solo un `PENDING` reciente bloquea el backup automatico. Se anade `CheckLastSuccessfulBackupAsync`: si el backup automatico esta activo y el ultimo backup correcto (`SUCCESS` y no borrado) es mas viejo que el umbral derivado de la frecuencia configurada, crea una notificacion de admin de tipo `BACKUP` y un `LogWarning`. Umbrales: HOURLY 1 dia, DAILY 2, WEEKLY 8, MONTHLY 32 (decidido por el usuario: el umbral se deriva de la frecuencia, no es fijo, porque la frecuencia por defecto es semanal y un umbral de 2 dias habria avisado siempre). Si no hay ningun backup correcto registrado avisa igualmente. Anti-spam: no repite la notificacion mientras exista otra de tipo `BACKUP` dentro del propio umbral. Si `backup_auto_enabled` esta a false no se avisa (el administrador lo desactivo a proposito).
+- **Regresion:** `BackupSchedulerJobTests` (nuevo, 8 tests) y 5 casos nuevos en `BackupServiceTests`: 11 fallos antes del arreglo (fila que quedaba en `PENDING`, `PENDING` abandonado que no se abandonaba, aviso que no se creaba, aviso repetido, atributos de Hangfire ausentes) a verde.
+- **Verificacion:** `BackupServiceTests`, `BackupSchedulerJobTests`, `BackupDumpNamingTests`, `BackupServiceOwnerResolutionTests` y `BackupScheduleTests` en verde (23/23) y el bloque completo de backups y exportaciones en verde (48/48) con el filtro nativo del runner (`--filter-class`).
+
+### A-4 - Dos backups automaticos del mismo dia escribian en el mismo fichero
+
+- **Sintoma:** los backups automaticos se nombraban `backup_yyyy-MM-dd.dump` y la frecuencia admite entre 1 y 168 horas, asi que varios backups automaticos del mismo dia escribian en el MISMO fichero: el segundo volcado, si fallaba a medias, destruia el dump bueno mientras la fila de la copia anterior seguia en `SUCCESS`. Ademas el volcado escribia directamente en la ruta final, asi que una muerte a mitad dejaba un dump corrupto en disco.
+- **Causa:** `BackupService.CreateBackupAsync` elegia el nombre sin hora en el automatico y `RunPgDumpAsync` volcaba sobre la ruta final (`-f backupPath`), sin fichero temporal ni renombrado.
+- **Solucion:** el volcado va a `<ruta final>.tmp` (mismo directorio, para que el renombrado sea atomico) y se publica con `File.Move(..., overwrite: true)` solo si termina bien. `Backup.RutaArchivo` guarda SIEMPRE la ruta final: es la que usan la retencion (`IsAllowedBackupFile` exige extension `.dump` bajo la raiz de `backup_path`) y la subida a Google Drive, que cifra ese fichero y sube `backup_..._HHmmss.dump.enc`. En el camino de error se borra el `.tmp` (best effort) para no dejar un volcado con datos personales a medias. El nombre pasa a ser `backup_{yyyy-MM-dd_HHmmss}.dump` tanto en automatico como en manual. No habia ningun consumidor del patron antiguo en el repo: `scripts/restore-backup.ps1` solo exige extension `.dump` y `GoogleDriveBackupService` solo concatena `.enc`.
+- **Costura de pruebas:** `BackupService` conserva su constructor publico de 5 argumentos (el que ve el contenedor de DI, asi que `Program.cs` no cambia) y anade un constructor `internal` de 6 con un delegate `Func<string, CancellationToken, Task<(bool, string?)>>` que sustituye al volcado real. Hay un test que monta un `ServiceProvider` real y comprueba que el servicio se sigue resolviendo.
+- **Regresion:** `BackupDumpNamingTests` (nuevo, 2 tests) y 3 casos nuevos en `BackupServiceTests` (volcado fallido sin fichero final ni `.tmp` residual, volcado correcto con `SUCCESS` y tamano correcto, y entrada en la retencion con el nombre nuevo): 5 fallos antes del arreglo a verde.
+- **Fuga que el propio A-04 abria (detectada en la revision posterior del lote):** al escribir el volcado en un temporal, un proceso que muere a mitad deja un `<nombre>.dump.tmp` en el directorio de backups con datos personales dentro. La retencion no lo puede tocar, porque solo borra ficheros con extension `.dump`: antes de A-4 un volcado a medias acababa en un `.dump` que la retencion si eliminaba; con A-4, ese temporal se quedaria en disco para siempre. `ApplyRetentionAsync` limpia ahora los `*.tmp` con mas de 2 h (el timeout de `pg_dump` son 30 minutos, asi que uno mas viejo no puede ser de un volcado en curso). Test: `ApplyRetentionAsync_Should_Delete_Orphan_Temporary_Dumps_But_Keep_Recent_Ones`, que falla sin la limpieza y pasa con ella.
+- **Verificacion:** ver la nota de A-3 (mismo bloque).
+
+### J-1 - Ningun job tenia bloqueo concurrente ni reintento, y las alertas dejaban huecos
+
+- **Sintoma (atributos):** ningun job de Hangfire tenia `DisableConcurrentExecution` ni `AutomaticRetry` y hay 2 workers: un backup largo mas una exportacion mensual retrasaban las alertas de seguridad. Ademas, el reintento automatico del backup automatico no habria servido de nada: `BackupSchedulerJob` guarda `backup_auto_last_started_utc` ANTES de volcar, de modo que en el reintento `BackupSchedule.IsDue` devolvia `false` y no se hacia nada.
+- **Sintoma (huecos):** `SecurityAlertService` evaluaba siempre la ventana fija `[ahora - VentanaMinutos, ahora]` (5 minutos por defecto) con el job programado cada 5 minutos. Si el job se retrasaba (backup largo, exportacion, reinicio), el tramo intermedio no se miraba nunca y sus eventos no disparaban ninguna alerta.
+- **Causa:** atributos ausentes en todos los jobs; ventana calculada siempre desde `ahora` sin memoria de la pasada anterior.
+- **Solucion:** `[DisableConcurrentExecution]` y `[AutomaticRetry(Attempts = 3, DelaysInSeconds = 60/300/900)]` en los jobs de backup (3600 s, por el timeout interno de 30 minutos de `pg_dump`), exportacion mensual (1800 s), limpiezas (900 s) y alertas de seguridad (600 s). El reintento del backup se vuelve real: si la ejecucion anterior quedo en `backup_auto_last_result = "STARTED"`, se abandonan los `PENDING` AUTOMATICOS de esa ejecucion y se relanza el volcado (los manuales en curso no se tocan). En `SecurityAlertService` la evaluacion arranca en la marca de la ultima evaluacion correcta, guardada en `CONFIGURACIONES.security_alerts_last_evaluated_utc`: sin marca previa, o con el reloj desfasado, se usa la ventana nominal; con un retraso mayor que 10 ventanas, la marca se recorta a la ventana nominal para no barrer de golpe una ventana enorme. La marca solo avanza si la evaluacion termina bien: si el despacho falla, la siguiente pasada repite el mismo rango. La linea base de la regla 6 se mide sobre ventanas del MISMO tamano que el rango evaluado, porque comparar 45 minutos de errores contra una media por ventana de 5 disparaba la alerta siempre.
+- **Regresion:** `JobConcurrencyAttributesTests` (nuevo) y 3 casos nuevos en `SecurityAlertServiceTests`: 13 fallos antes del arreglo (atributos ausentes, marca no guardada, hueco no evaluado, marca que avanza con la evaluacion fallida) a 25/25 en verde.
+- **Verificacion:** 25/25 en las clases de atributos y de alertas, y 14/14 en las clases que usan PostgreSQL real (`RowLevelSecurityRetentionJobsTests`, `AuditoriaAppendOnlyPostgresTests`).
+- **Limite que conviene conocer:** `DisableConcurrentExecution` serializa instancias del MISMO job, no jobs distintos: un backup y una exportacion siguen pudiendo ocupar los dos workers a la vez. Lo que evita perder avisos es la ventana continua y el reintento.
+- **Otro limite, por honestidad:** en `BackupOperationJob` (backup manual e importacion desde Drive) el `AutomaticRetry` no llega a activarse porque el job captura su propia excepcion y marca la operacion como `FAILED` sin relanzarla; ademas, una reejecucion no haria nada, porque el metodo vuelve si la operacion ya esta en `SUCCESS` o `FAILED`. El bloqueo concurrente si es efectivo. En `BackupSchedulerJob`, `BackupWeeklyJob`, `ExportMensualJob` y los jobs de limpieza y de alertas, la excepcion se propaga y el reintento si funciona. `BackupWeeklyJob` esta además fuera de la programacion actual (`Program.cs` hace `RemoveIfExists("backup-weekly")`): el calendario efectivo lo marca `BackupSchedulerJob`, que corre cada 15 minutos y decide con `IsDue`.
+
+### J-2 - La exportacion mensual se tragaba todos los errores
+
+- **Sintoma:** si la exportacion mensual fallaba para todas las cuentas, el job terminaba "en verde" y nadie se enteraba: no habia ni una linea de log.
+- **Causa:** `ExportacionService.ExportarMensualAsync` envolvia cada `ExportarCuentaAsync` en un `catch { }` vacio, con el comentario "Intentionally continue to avoid aborting whole monthly batch", y el servicio no recibia ningun `ILogger`.
+- **Solucion:** el servicio recibe `ILogger<ExportacionService>` (el contenedor de DI lo resuelve sin tocar `Program.cs`, y hay un test propio que monta el `ServiceProvider`). Cada cuenta fallida se registra con `LogWarning` incluyendo el id de cuenta, el tipo de excepcion y el mensaje saneado con `LogScrubber` (nunca datos sensibles); al final del lote se registra un `LogInformation` con el numero de exportaciones correctas y el numero de fallos. Una cancelacion se propaga en vez de contabilizarse como fallo de cuenta. El fallo de una cuenta sigue sin abortar el lote.
+- **Regresion:** dos tests nuevos en `ExportacionServiceTests` (aviso con el id de la cuenta fallida y recuento de fallos; `ChangeTracker` sin extractos rastreados entre cuentas) mas un test de resolucion por DI: 2 fallos antes del arreglo a 13/13 en verde.
+
+### J-3 - El aviso de "proximo a vencer" no se reintentaba y solo un plazo del grupo avisaba al admin
+
+- **Sintoma:** si el email del aviso de "proximo a vencer" fallaba el dia del cambio de estado, ese plazo se quedaba sin avisar hasta vencer: el aviso no se reintentaba nunca. Ademas, de todos los plazos de un mismo titular y estado, solo uno generaba notificacion de admin.
+- **Causa:** `debeNotificar` exigia `estadoCambio`, y `FechaUltimaNotificacion` solo se actualiza cuando la notificacion de admin Y el email se completaron: al dia siguiente el estado ya era `PROXIMO_VENCER`, `estadoCambio` era `false` y la condicion nunca volvia a cumplirse. En el bucle de grupos, solo `grupo.First()` (el representante) llamaba a `TryAddAdminNotificationAsync`.
+- **Solucion:** se reintenta el aviso mientras el plazo siga en `PROXIMO_VENCER` y `FechaUltimaNotificacion` siga a null, sin repetir el mismo dia. Y se crea una notificacion de admin POR CADA plazo del grupo (el metodo ya deduplica por cuenta + estado + vencimiento, asi que no duplica); el digest de email sigue siendo uno por grupo y la marca `FechaUltimaNotificacion` solo se escribe si se crearon todas las notificaciones del grupo y se envio el digest.
+- **No se mezclo con A-9:** la consulta `Contains` sobre `DetallesJson` (jsonb) de `TryAddAdminNotificationAsync` sigue sin tocar; es el ID A-9, de otro lote, y en PostgreSQL seguira dando `42883` hasta que se arregle.
+- **Regresion:** tres tests nuevos en `PlazoFijoServiceTests` (reintento al dia siguiente con el email funcionando, no repetir si el aviso salio, y una notificacion de admin por plazo): 2 fallos antes del arreglo ("Expected date to be <2026-04-26>, but found <null>" y "Expected notificaciones to contain 2 item(s), but found 1") a 7/7 en verde.
+
+### J-4 - La limpieza de exportaciones marcaba la fila aunque el fichero se quedara en disco
+
+- **Sintoma:** si el borrado del fichero fisico fallaba (fichero bloqueado, permisos, antivirus), la fila se marcaba igualmente como borrada y el `.xlsx` con datos personales se quedaba en disco para siempre, sin que nadie supiera que seguia ahi. Ademas, el job borraba cualquier ruta guardada en `RutaArchivo` sin comprobar que estuviera bajo la raiz de exportaciones configurada.
+- **Causa:** en `PurgeExportacionesAsync` el `try`/`catch` del borrado solo logueaba el fallo y, a continuacion, la fila se marcaba SIEMPRE con `DeletedAt`. No habia ninguna comprobacion de que la ruta estuviera bajo `export_path`.
+- **Solucion:** antes de borrar se valida que la ruta esta bajo la raiz configurada en `export_path` (mismo valor por defecto que usa `ExportacionService.ResolveSafeDirectory`: `C:\atlas-balance\exports`), con `Path.GetFullPath` y comparacion contra la raiz con el separador final, igual que hace `BackupService.IsAllowedBackupFile` para los backups: asi un directorio con prefijo similar (`exports-mal`, `exports2`) NO se trata como hijo de la raiz. Si la ruta no esta permitida, no se borra el fichero, no se marca la fila y se registra un warning con "ruta fuera de la raiz permitida". Si el borrado falla, la fila QUEDA VIVA para el siguiente intento. Una fila sin ruta no tiene fichero que purgar y si se puede marcar.
+- **Regresion:** cuatro tests nuevos en `LimpiezaExportacionesJobTests` (fichero bloqueado: la fila no se marca y el fichero sigue existiendo; fichero dentro de la raiz: se borra y se marca; fichero fuera de la raiz: no se borra, no se marca y se avisa; y una teoria con las rutas limites de la comprobacion). 3 fallos antes del arreglo a verde.
+- **Nota de alcance:** `PurgeContenidoOriginalAsync`, que vacia el `ContenidoOriginal` de los lotes de importacion, no se toca: no forma parte de J-4.
+
+### J-5 - La limpieza de refresh tokens no veia los tokens de los usuarios borrados
+
+- **Sintoma:** los refresh tokens de un usuario con soft delete seguian vivos hasta su expiracion natural, aunque el usuario ya no existiera: el job no los veia.
+- **Causa:** `AppDbContext` declara un filtro global sobre `RefreshToken` (`entity.HasQueryFilter(e => e.Usuario != null && e.Usuario.DeletedAt == null)`, `AppDbContext.cs:106`). El job consultaba la tabla SIN `IgnoreQueryFilters()`, asi que los tokens de los usuarios borrados quedaban invisibles; y la consulta solo purga por caducidad o por revocacion antigua, criterios que un token vivo de un usuario borrado no cumple.
+- **Solucion:** el job carga los ids de los usuarios con soft delete ignorando el filtro global (`GetUsuariosBorradosIdsAsync`) y purga tambien los tokens de esos usuarios con independencia de su caducidad. La seleccion queda extraida a `BuildPurgeQuery`, que es lo que permite testearla: el proveedor InMemory de EF no soporta `ExecuteDeleteAsync`, asi que el test comprueba QUE filas seleccionaria la purga, no que se borren. El borrado en bloque contra PostgreSQL queda fuera de la cobertura de este test.
+- **Regresion:** cinco tests nuevos en `LimpiezaRefreshTokensJobTests` (token vivo de usuario borrado: se selecciona; token vivo de usuario activo: no se selecciona; token caducado de usuario activo: se selecciona; y el filtro global que oculta al usuario borrado). En verde.
+- **Verificado ademas contra PostgreSQL real (revision posterior del lote):** el test de InMemory solo comprobaba que filas SELECCIONARIA la purga, porque el proveedor InMemory no soporta `ExecuteDeleteAsync`. Eso dejaba abierta la duda de si el borrado en bloque respeta de verdad el `IgnoreQueryFilters` y el criterio de usuario borrado. Se anadio un test contra PostgreSQL 16 real con RLS FORCE y el rol de runtime (`RowLevelSecurityRetentionJobsTests`), que comprueba que los tokens desaparecen DE VERDAD. Con el codigo anterior a J-5 ese test falla ("Expected ... to be 0L because el usuario tiene soft delete: su token no puede seguir vivo, but found 1L") y con el arreglo pasa: el token del usuario con soft delete se borra, el caducado tambien y el vivo del usuario activo se respeta. El `ExecuteDelete` de EF Core 10 SI respeta el `IgnoreQueryFilters`.
+
+### J-6 - La auto-actualizacion podia dispararse en horario laboral
+
+- **Sintoma:** con el servidor apagado a la hora configurada y arrancado a media mañana, la actualizacion automatica se aplicaba en pleno horario de trabajo: la app se reiniciaba con los usuarios delante.
+- **Causa:** `AutoUpdateJob` tenia una hora UTC MINIMA (`app_update_auto_hour_utc`, por defecto 3), no una ventana: el job corre cada hora y solo comprobaba "no he comprobado hoy" y "la hora actual es >= la hora minima". Con el servidor levantado a las 11:00, la condicion se cumplia y la actualizacion salia.
+- **Solucion:** el job solo actua dentro de una ventana de madrugada en HORA LOCAL DEL SERVIDOR, configurable con dos claves nuevas de `CONFIGURACIONES`: `app_update_auto_window_start_local` (por defecto "01:00") y `app_update_auto_window_end_local` (por defecto "05:00"). Fuera de la ventana el job no hace nada y no escribe nada (ni `app_update_auto_last_checked_utc` ni `app_update_auto_last_result`), de modo que la actualizacion se APLAZA al dia siguiente en lugar de ejecutarse en horario laboral. La comprobacion de "ya comprobado hoy" pasa a comparar el dia LOCAL (la marca se sigue guardando como instante UTC). La clave `app_update_auto_hour_utc` no se borra: queda sustituida por la ventana, documentado en el codigo.
+- **Regresion:** cuatro tests nuevos en `AutoUpdateJobTests` (fuera de la ventana no se llama al servicio de actualizacion; dentro de la ventana si; ventana configurable 03:00-04:00 comprobada a las 02:30 y a las 03:30; y valores por defecto con la clave ausente o invalida). 5 fallos antes del arreglo (el clave: "Expected service.CheckCalls to be 0, but found 1" a las 11:00 hora local) a 7/7 en verde. Los tres tests existentes se adaptaron porque su reloj estaba en UTC fijo y bajo la nueva semantica caia fuera de ventana.
+- **Pendiente de frontend (fuera de este lote):** el campo "Hora UTC" de la pantalla de Configuracion sigue escribiendo `app_update_auto_hour_utc`, que ya no tiene efecto; la ventana nueva no es editable desde la interfaz. Hay que sustituir ese campo por los dos de ventana o retirarlo.
+
+### R-1 - La exportacion mensual arrastraba todo en memoria y media 50.000 filas
+
+- **Sintoma:** la exportacion mensual cargaba todos los extractos sin `AsNoTracking`, reutilizaba el mismo `DbContext` para todas las cuentas (el grafo de cambios iba creciendo) y ajustaba el ancho de las columnas recorriendo las 50.000 filas.
+- **Causa:** consultas de extractos y de columnas extra sin `AsNoTracking`, sin limpieza del `ChangeTracker` entre cuentas, y `worksheet.Columns().AdjustToContents()` sin rango.
+- **Solucion:** `AsNoTracking()` en ambas consultas; `ChangeTracker.Clear()` entre cuentas, SOLO en `ExportarMensualAsync` (el camino manual comparte `DbContext` con el controlador y no debe tocar lo que la peticion tenga rastreado, y la fila de `EXPORTACIONES` ya esta guardada antes de volver); y `AdjustToContents(1, min(filas, 200))`, que conserva el formato y el contenido del XLSX y deja de recorrer media tabla.
+- **Regresion:** tres tests nuevos en `ExportacionServiceTests` (contenido del XLSX intacto con columna extra, formato de fecha e importe, y anchos; `ChangeTracker` limpio entre cuentas): 2 fallos antes del arreglo a 13/13 en verde.
+- **Nota de alcance:** el ancho se calcula sobre las primeras 200 filas, asi que una celda con texto muy largo mas alla de esa fila puede verse recortada en pantalla. El valor de la celda no se toca.
+
+### S-19 - El cifrado de backups autenticaba cada bloque pero no el numero de bloques
+
+- **Sintoma:** un `.enc` truncado en un limite exacto de bloque descifraba SIN ERROR y dejaba un volcado incompleto (o vacio) sin dar ningun aviso. Cada bloque estaba autenticado por su tag AES-GCM, pero el numero de bloques no lo estaba: el bucle de descifrado terminaba simplemente al llegar al final del fichero.
+- **Causa:** `BackupEncryptionService.DecryptAsync` recorria los bloques con `while (source.Position < source.Length)` y daba la descifrada por buena al terminar. El formato no contenia ninguna referencia al numero de bloques, asi que no habia nada que contrastar.
+- **Solucion (formato V3):** los ficheros nuevos usan el magic `ATLASBKP3` con una cabecera de magic (9 bytes) + nonce base (12) + numero de bloques (4 bytes, big-endian). El numero de bloques no se conoce mientras se cifra, asi que se deja un marcador y se parchea al final con `Seek`. Para que ese numero este AUTENTICADO y no solo informativo, el ULTIMO bloque se cifra con un AAD que incluye el numero de bloques (`MagicV3 || numeroBloques`) mientras que los demas usan `MagicV3`; al descifrar se lee el numero de la cabecera, se sabe cual es el ultimo y con que AAD se valida. Un recorte cambia el numero y, con el, el AAD del bloque que pasa a ser el ultimo: su tag no valida y el descifrado se rechaza. Editar el numero en la cabecera tampoco cuela, por el mismo motivo. Ademas se rechazan los bytes sobrantes al final y un origen de 0 bytes (un volcado vacio no es un volcado).
+- **Compatibilidad hacia atras (condicion del encargo):** los formatos `ATLASBKP1` (V1, nonce legado) y `ATLASBKP2` (V2) quedan BYTE A BYTE IDENTICOS: mismo magic, mismo AAD, mismo derivador de nonce y mismo bucle de descifrado. Los backups ya existentes se siguen restaurando igual. LIMITE CONOCIDO: un `.enc` V1/V2 truncado en un limite de bloque sigue descifrando "bien" y dando un volcado incompleto; no se puede corregir sin dejar de descifrar los backups antiguos.
+- **Regresion:** ocho tests en `BackupEncryptionServiceTests` (los dos preexistentes intactos mas truncamiento en limite de bloque, compatibilidad V2, compatibilidad V1, ida y vuelta byte a byte, manipulacion del numero de bloques en la cabecera y origen vacio rechazado). El test que reproduce el defecto fallaba con "Expected a <System.InvalidOperationException> to be thrown, but no exception was thrown". 8/8 en verde y 35/35 en la regresion de las clases `*Backup*`.
+- **Pendiente:** no se ha probado contra ficheros `.enc` reales de produccion, solo con ficheros sintetizados. Conviene descifrar una copia ya subida a Google Drive con el codigo nuevo antes de dar por buena la restauracion. Nota de formato: los magics son de 9 bytes (`ATLASBKP1`, `ATLASBKP2`, `ATLASBKP3`), no de 8.
+
+## 2026-11-16 - V-03.02 - LOTE 4 del informe de revision integral: A-5, A-6, B-10, B-11, B-16, S-4, S-6, S-22, S-23, S-24, S-25 y R-2 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 4 (12 IDs). Ningun otro ID tocado. Sin commit ni push.
+
+Decisiones del usuario antes de implementar: vigencia maxima de token de integracion **365 dias** (S-23); quitar `vencimientos` y `auditoria` de los scopes **por defecto** (S-24); cuando un filtro no se puede aplicar en esa herramienta, la IA **rechaza la pregunta con un motivo claro** (A-6).
+
+Dos premisas del informe quedaron corregidas al releer el codigo: el rechazo por scope del middleware **no** escribe notificacion de administrador (solo fila de auditoria), y el defecto real de `Rotar` con scopes vacios era la **cadena vacia** (`""`), no `"[]"`.
+
+### A-5 - El planificador semantico de IA llamaba a OpenRouter sin ZDR
+
+- **Sintoma:** la llamada principal al proveedor anadia `provider: { zdr: true, data_collection: "deny" }`; la llamada del planificador semantico no. El inventario de datos personales afirmaba una proteccion que el codigo no aplicaba a una de las dos salidas.
+- **Causa:** el bloque de privacidad estaba duplicado: `AtlasAiService.BuildProviderRequest` lo construia en un metodo privado (`OpenRouterPrivacyProvider`) y el payload del planificador semantico no lo tenia.
+- **Solucion:** `AiConfiguration.OpenRouterPrivacyProvider(provider, runtimeModel)` es ahora el unico constructor del bloque y lo usan las dos llamadas. Mantiene la excepcion de los modelos gratuitos (`openrouter/free` y `*:free`): esos endpoints no garantizan rutas compatibles con ZDR y OpenRouter respondia 404 (ver la entrada de 2026-09-21 en este log), asi que para ellos el bloque se omite.
+- **Regresion:** `IaPrivacidadYContadoresTests` comprueba el cuerpo HTTP realmente enviado: el planificador ahora lleva el bloque, el modelo gratuito no lo lleva y OpenAI no lo lleva.
+
+### A-6 - La IA ignoraba el filtro por concepto y los importes minimo y maximo
+
+- **Sintoma:** "¿Cuanto he gastado en seguros?" devolvia el total de todos los gastos, sin aviso. Totales, ranking, tendencia y ultimo movimiento ignoraban `Filtros.Concepto`, `Filtros.ImporteMinimo` y `Filtros.ImporteMaximo`; solo la busqueda los aplicaba (y con signo, lo que hacia que "gastos entre 100 y 500" no encontrase nunca un gasto, porque los gastos se guardan en negativo).
+- **Causa:** dos. Los filtros no se aplicaban en las consultas de las herramientas. Y nada rellenaba los importes: la lista blanca de `filtros` del planificador semantico era solo `divisas|concepto|periodo` y ningun patron local los fijaba.
+- **Solucion:** el concepto (coincidencia "contains" insensible a mayusculas, el mismo patron que ya usaba la busqueda) y los importes se aplican en **todas** las herramientas que operan sobre movimientos: ultimo movimiento, totales, ranking, tendencia, revision de items, busqueda y comparacion de periodos. Los importes se comparan contra la **magnitud** (`Math.Abs(Monto)`): en Atlas Balance los gastos se guardan en negativo y el usuario piensa en magnitudes. El planificador semantico ya acepta `importe_minimo` e `importe_maximo`. Cuando el plan trae un filtro que la herramienta **no puede aplicar** (por ejemplo `concepto` en saldos o en movimientos pendientes), la herramienta rechaza con un motivo que el chat muestra al usuario en vez de devolver una cifra sin filtrar.
+- **Regresion:** `FinancialToolsFiltrosTests` (8 tests) pasa de 8/8 fallos a 8/8.
+
+### B-10 - Agregados que mezclaban divisas, duplicados recurrentes y seguimientos sin filtros
+
+- **Sintoma (i):** la comparacion de periodos sumaba EUR y USD en el mismo total (`group e by 1`) y comparaba ese total mixto entre periodos. (ii) El ranking tomaba el top N global sobre filas de distinta divisa: comparaba "gastos" de una cuenta en USD contra otra en EUR. (iii) `DUPLICADO_PROBABLE` agrupaba por cuenta, concepto e importe sin mirar la fecha, asi que una prima de seguro mensual legitima se marcaba como duplicado. (iv) Un seguimiento ("¿y el mes anterior?") perdia el concepto, las cuentas y los titulares: devolvia la cifra de todos los movimientos. (v) La busqueda semantica nunca rellenaba `TerminoBusqueda`, asi que un plan `Search` con `filtros.concepto` se quedaba en "Aclarar: falta el termino".
+- **Causa:** el snapshot agrupaba por una constante en vez de por divisa; el `Take` global del ranking no tenia en cuenta la divisa; el detector de duplicados no miraba la fecha; `ConversationContext` no guardaba el concepto y el seguimiento solo restauraba periodo y divisas; y `ParsePlanFromJson` no rellenaba `TerminoBusqueda`.
+- **Solucion:** los snapshots se agrupan **por divisa** (`ComparisonSnapshot` gana `Divisa`) y la comparacion rechaza con motivo si los periodos abarcan varias divisas sin que el plan fije una. El ranking aplica el top N **dentro de cada divisa**. El duplicado probable exige proximidad en el tiempo (`AnomalyDuplicateMaxDays = 3`, constante publica pineada por el test). `ConversationContext` guarda `UltimoConcepto` y las cuentas y titulares (como GUID en texto) y el seguimiento los restaura; `AtlasAiService` rellena el campo al actualizar la memoria. Para `Search`, `filtros.concepto` pasa a ser el termino de busqueda.
+- **Regresion:** `FinancialToolsDivisaTests`, `ConversationContextFiltrosTests` y `FinancialToolsFiltrosTests`: 22 tests del area, 18 fallos antes -> 0.
+
+### B-11 - El timeout del planificador escapaba como 500 y los contadores perdian incrementos
+
+- **Sintoma (a):** un timeout del proveedor en el planificador semantico devolvia HTTP 500 "Error interno del servidor" y la llamada ya facturada no se contabilizaba. (b) Con varias peticiones concurrentes del mismo usuario, los contadores de coste y de peticiones perdiaban incrementos: el total acababa por debajo de la suma real.
+- **Causa:** (a) `IntentPlanner` capturaba `catch (Exception ex) when (ex is not OperationCanceledException)`, pero el timeout del `HttpClient` lanza `TaskCanceledException`, que **deriva** de `OperationCanceledException`: el filtro no se cumplia y la excepcion subia hasta el middleware. Al abortarse se perdia `SemanticCallAttempted = true`. (b) `UpdateUsageCountersAsync` hacia read-modify-write sobre filas de `CONFIGURACION` y sobre `IaUsoUsuario` sin transaccion, sin bloqueo de fila ni token de concurrencia.
+- **Solucion:** (a) `IntentPlanner` captura `TimeoutException` y `TaskCanceledException` que no venga del cancela del llamante, y devuelve un rechazo controlado ("El proveedor no respondio a tiempo. Reintenta en unos segundos.") con `SemanticCallAttempted = true`; si el cancela es del llamante, la excepcion se propaga. (b) La seccion critica de los contadores va bajo un `SemaphoreSlim`. Es correcto para la instalacion on-premise de una sola instancia; con varias habria que pasar a `ExecuteUpdate` o `SELECT ... FOR UPDATE`.
+- **Regresion:** `IntentPlannerTimeoutTests` y `IaContadoresConcurrenciaTests` (PostgreSQL real, ocho `AskAsync` en paralelo con contextos separados): los contadores acaban exactamente en 8 antes de perderse.
+
+### B-16 - "Hoy" en UTC y el ano 2026 escrito a mano
+
+- **Sintoma:** entre las 00:00 y la 01:00 (invierno) o las 02:00 (verano) de la zona operativa, el dia UTC es el anterior: el corte de mes de los contadores, el "hoy" del contexto y el detector de resumen anual razonaban sobre el dia equivocado. Ademas, el bloque de resumen anual solo saltaba si la pregunta citaba el ano 2026.
+- **Causa:** cuatro usos de `DateTime.UtcNow` en `AtlasAiService` (corte de mes de los contadores, limites, anchor del planificador y fecha del contexto) y el literal `"2026"` en el detector de resumen anual. En la revision posterior al cierre del lote se detectaron mas usos en las herramientas del planificador (`FinancialToolsService`: saldos, tendencia, anomalias) y en el ancla del plan (`PlanExecutor`), que razonaban sobre el dia UTC.
+- **Solucion:** nuevo helper `FechasOperativas` (zona `Europe/Madrid`, con caida a la zona local del servidor) con `AhoraLocal`, `HoyLocal` e `InicioDeMes`. "Hoy" y el corte de mes de los contadores pasan a la fecha operativa; el detector anual usa el anio calculado. Los limites de minuto y hora se siguen comparando en UTC porque cuentan filas de auditoria, que tienen timestamp UTC; solo el corte de dia pasa a local. El helper se aplica despues tambien a las herramientas del planificador y al ancla del plan.
+- **Regresion:** `IaFechasOperativasTests` (6 tests): el resumen anual sale con el anio en curso, no queda ningun anio literal en el codigo, el servicio usa la fecha operativa y las herramientas del planificador y el ejecutor tampoco recurren al dia UTC.
+
+### S-4 - `/api/ia/config` expunia presupuesto y coste global a cualquier usuario
+
+- **Sintoma:** cualquier usuario autenticado podia leer en `GET /api/ia/config` el presupuesto mensual y total de la instalacion, el coste estimado del mes y del total, y los limites globales de peticiones. El endpoint `/api/ia/modelos` si comprobaba el permiso `PuedeUsarIa`; `config` no.
+- **Causa:** `IaController.Config` solo comprobaba que hubiera sesion y `BuildConfigResponse` rellenaba siempre los campos globales.
+- **Solucion:** `BuildConfigResponse` recibe `scope.IsAdmin` y, para quien no es ADMIN, pone a `null` los campos globales: la politica de nulls de la API los **omite** del JSON (no se ponen a 0, que seria informacion falsa). Se siguen exponiendo su propio uso (presupuesto y coste del usuario, peticiones y tokens del mes) y si puede usar la IA. Para ADMIN la respuesta no cambia. El frontend (`types/index.ts`) marca esas propiedades como opcionales.
+- **Regresion:** `IaConfigPermisosTests` sobre el JSON serializado con la misma politica que la API: ADMIN los ve, el resto no ve ninguna propiedad global.
+
+### S-6 - Las respuestas locales del planificador no se auditaban ni contaban
+
+- **Sintoma:** repetir "cual es mi saldo" no agotaba los limites de IA y no dejaba rastro: las respuestas del planificador local se devolvian antes de cualquier control de limites y sin fila de auditoria.
+- **Causa:** `AskAsync` devolvia la respuesta local (`TryAnswerPlannedAsync`) antes de `EnsureRequestLimitsAsync` (que solo se llamaba en la ruta de proveedor y en la determinista), y la auditoria solo se escribia si habia llamada facturable.
+- **Solucion:** las cuatro respuestas locales (ayuda de documentacion, aclaracion, fallo de ejecucion del plan y respuesta del plan) pasan por `ResponderLocalAsync`, que comprueba los limites, incrementa el contador del usuario y escribe la fila de auditoria con `origen = "local"` usando `IaAuditEventFactory` (el mismo esquema que la ruta de proveedor: sin la pregunta ni la respuesta). Si el planificador semantico si se llamo, sus limites ya se aplicaron y no se vuelve a contar.
+- **Regresion:** `IaRespuestasLocalesAuditoriaTests` (4 tests): fila con `origen = "local"`, sin prompt ni PII, contador incrementado y limite por minuto respetado.
+
+### S-22 - Rate limit despues del scope y una notificacion de admin por rechazo
+
+- **Sintoma:** el limite de 100 req/min se aplicaba despues del chequeo de scope (el sondeo de rutas fuera de scope no consumia cuota) y cada rechazo por limite escribia una notificacion de administrador mas una fila de auditoria: un token mal configurado inundaba `NOTIFICACIONES_ADMIN`.
+- **Causa:** orden de las comprobaciones en `IntegrationAuthMiddleware` y `AddAdminNotification` dentro del camino 429.
+- **Solucion:** el rate limit se aplica **antes** del scope; la notificacion de administrador se emite **una vez por token y ventana** (bandera en `IMemoryCache` con clave `integration_rate_limit_notified:{tokenId:N}:{yyyyMMddHHmm}`); la fila de auditoria por rechazo se mantiene (es el rastro append-only) y su escritura va en try/catch para que un fallo de base de datos no convierta un 403/429 en 500.
+- **Regresion:** `IntegrationRateLimitScopeTests` (3 tests): el scope no consume cuota, dos rechazos en la misma ventana dan una notificacion y dos auditorias, y un fallo de escritura mantiene el 403/429.
+
+### S-23 - El PUT renovaba la caducidad y "Rotar" resucitaba tokens revocados
+
+- **Sintoma (a):** un PUT que solo cambiaba el nombre renovaba la caducidad a 90 dias. (b) "Rotar" emitia un token nuevo y activo a partir de un token revocado. (c) No habia tope de vigencia ni se rechazaban caducidades pasadas. Ademas, rotar un token sin scopes (cadena vacia en `EndpointScopesJson`) le concedia **todos** los scopes por defecto.
+- **Causa:** `IntegracionesController.Actualizar` asignaba siempre `token.FechaExpiracion = expiration`, y `IntegrationTokenService.ResolveExpiration` devolvia "ahora + 90 dias" cuando no llegaba fecha. `Rotar` buscaba el token solo por id, sin mirar `Estado`, y caia a `DefaultOpenClawScopes` cuando los scopes venian vacios.
+- **Solucion:** el PUT conserva la caducidad existente si el request no trae fecha (null = "no cambiar"); `ResolveExpiration` rechaza fechas pasadas y fechas a mas de **365 dias** (decision del usuario) y el controller traduce el error a 400; `Rotar` rechaza con 400 los tokens no activos o ya caducados **sin emitir nada**, y hereda los scopes tal cual (una cadena vacia se hereda como vacia, nunca como "todos"). La caducidad del token rotado se hereda de la del anterior salvo que el request traiga otra.
+- **Regresion:** `IntegrationTokenExpiryTests` (9 tests) pasa de 9/9 fallos a 9/9.
+
+### S-24 - Scopes por defecto que no hacen nada
+
+- **Sintoma:** todo token nuevo recibia por defecto el scope `vencimientos` (que no tiene ningun endpoint: no abre nada) y el scope `auditoria` (que devuelve el valor anterior y el nuevo de las celdas modificadas).
+- **Causa:** la lista `DefaultOpenClawScopes` de `IntegracionesController` incluia los dos.
+- **Solucion:** `DefaultOpenClawScopes` pasa a ser `titulares, saldos, extractos, evolucion, alertas`. `vencimientos` deja de ser concedible (no tiene endpoint) y `auditoria` sigue siendo concedible de forma explicita, ya no por defecto. Afecta **solo a los tokens que se creen a partir de ahora**: los existentes no se tocan.
+- **Regresion:** `IntegrationDefaultScopesTests` (4 tests): los defaults no contienen los dos scopes, siguen siendo subconjunto de los conocidos y `vencimientos` ya no se concede.
+
+### S-25 - Telemetria anonima sin MaxLength y log a nivel Error
+
+- **Sintoma:** el DTO de errores del frontend no tenia `MaxLength`, asi que un cuerpo enorme se deserializaba entero en memoria antes de recortarlo; y cada error de render del frontend entraba en el pipeline de logs como `Error`.
+- **Causa:** `DTOs/TelemetriaDtos.cs` sin anotaciones de longitud y `TelemetriaController` con `_logger.LogError`.
+- **Solucion:** `[MaxLength]` en el DTO (mensaje 500, stack y component stack 4000, path 200, timestamp 40), de modo que el binding rechaza los cuerpos sobredimensionados antes de que el controlador los procese, y el log pasa a `Warning`: un error de render del cliente no es un error del servidor.
+- **Regresion:** `TelemetriaControllerTests` (2 tests): un stack de 5000 caracteres devuelve 400 y no se registra, y una peticion normal se registra como `Warning`.
+
+### R-2 - La configuracion y el mapa de seudonimos se cargaban dos veces por pregunta
+
+- **Sintoma:** cada pregunta consultaba dos veces la tabla `CONFIGURACION` (una en `AskAsync` y otra en el planificador semantico) y, cuando el planificador rechazaba el plan, el mapa de seudonimos se construia dos veces (tres consultas cada vez).
+- **Causa:** el planificador volvia a cargar la configuracion por su cuenta y el mapa se construia en la factoria perezosa del planificador y otra vez en la ruta principal.
+- **Solucion:** la configuracion se toma de un snapshot cacheado **por instancia del `DbContext` scoped** (`AiConfigSnapshot`), que no puede quedar obsoleto dentro de la misma peticion y no exige tocar el registro de DI; y el mapa de seudonimos se construye una sola vez por peticion con un `Lazy<Task<AiPseudonymMap>>` compartido entre la factoria del planificador y la ruta principal.
+- **Regresion:** `IaReutilizacionContextoTests` con PostgreSQL real y un interceptor que cuenta los SELECT: una carga de configuracion y una construccion del mapa por pregunta.
+
+### Verificacion del LOTE 4
+
+- **Backend:** `AtlasBalance.API.Tests` **60/60** en las catorce clases nuevas de este lote (los trece ficheros nuevos; `IaPrivacidadYContadoresTests.cs` contiene ademas `IaContadoresConcurrenciaTests`), **217/217** en las suites previas de IA y planificador y **131/131** en las previas de integraciones, telemetria y DTOs. Suite completa del arbol en **1169 tests con 0 fallos** (durante la aplicacion del lote daba 7 fallos de trabajo en vuelo de otra sesion sobre este mismo arbol, ya resueltos). PostgreSQL real via Testcontainers en los tests de contadores, reutilizacion de contexto y duplicados. Sin llamadas reales a OpenAI, OpenRouter ni MiniMax.
+- **Frontend:** `tsc --noEmit` sin errores, `eslint src tests` sin errores, 129/129 pruebas unitarias y build de Vite correcto. Sin validacion visual en navegador.
+- Sin commit ni push, sin cambio de version y sin tocar los ficheros de los demas lotes.
+
+## 2026-11-16 - V-03.02 - LOTE 1 del informe de revision integral: A-1, A-7, A-8, B-12 y F-3 (CORREGIDO EN CODIGO)
+
+Origen: `INFORME_REVISION_INTEGRAL_2026-11-16.md`, LOTE 1 (A-1, A-7, A-8, B-12, F-3). Ningun otro ID tocado. Sin commit ni push.
+
+### A-1 - Guardar un usuario revocaba cuatro permisos
+
+- **Sintoma:** al editar un usuario y guardar, `puede_revisar_lineas`, `puede_aprobar_importaciones`, `puede_conciliar` y `puede_cerrar_conciliacion` quedaban en `false` aunque estuvieran concedidos, y la interfaz no permitia concederlos.
+- **Causa:** `frontend/src/components/usuarios/UsuarioModal.tsx` manejaba solo seis flags en la fila del formulario, en el mapeo de carga de la API, en el payload y en la comprobacion de fila vacia. El backend (`SavePermisoUsuarioRequest`, `UsuariosController.cs:317-320`) **reemplaza la matriz entera** con lo que llega, asi que los cuatro flags no enviados valian `false` en cada guardado. El `as never` no era el problema: el DTO si los tiene.
+- **Solucion:** la construccion del payload, el mapeo de la fila de API y la deteccion de fila vacia se movieron a codigo puro en `frontend/src/utils/permisosFormUtils.ts` (`mapPermisoApiRow`, `buildPermisosPayload`, `permisoHasFlags`, `isPermisoRowBlank`) y el componente los usa. Los cuatro flags se anaden a la fila, al inicializador, a la carga, al payload y a la interfaz (checkbox por flag con las clases existentes).
+- **Regresion:** `tests/permisosFormUtils.test.ts` pasa de 4 fallos (payload sin los cuatro flags, fila con solo `puede_conciliar` descartada por el filtro, `mapPermisoApiRow` sin leerlos, `isPermisoRowBlank` marcandola como vacia) a 25/25.
+- **Verificacion:** `AtlasBalance.API.Tests` 1002/1002, `AtlasBalance.Caching.Tests` 15/15, `eslint src tests` y `tsc --noEmit` sin errores, 123/123 pruebas unitarias del frontend. Sin validacion visual en navegador.
+
+### A-7 - Validar una importacion mostraba un error falso
+
+- **Sintoma:** al validar un lote de importacion se mostraba "No se pudo validar la importacion" aunque la validacion fuera correcta.
+- **Causa:** `frontend/src/pages/ImportacionPage.tsx:529` llamaba `invalidate('catalogo' as never)`. `useInvalidateAfterMutation` indexa `mutationInvalidation[kind]`, y en `frontend/src/queries/invalidation.ts` no existe ninguna clave `catalogo` (solo el prefijo interno): la funcion era `undefined` y la llamada lanzaba `TypeError`, que el `catch` de la pagina convertia en mensaje de error.
+- **Solucion:** nueva clave real `importacionLoteCrear` en `mutationInvalidation`, que invalida el prefijo `catalogo` (que es lo que cambia al crear un lote: catalogos e historial, no los agregados), y uso `invalidate('importacionLoteCrear')` sin cast.
+- **Regresion:** `tests/invalidation.test.ts` pasa de 3 fallos a 5/5 (la clave debe existir, debe invalidar `catalogo` y la pagina no debe usar `as never`).
+
+### A-8 - Configuracion perdia lo escrito sin guardar
+
+- **Sintoma:** cualquier accion menor de Configuracion (guardar una tasa, sincronizar, crear o actualizar una divisa, revocar/rotar/borrar un token, establecer la divisa por defecto) recargaba la pagina entera.
+- **Causa:** todas llamaban a `load()`, que activa `setLoading(true)` (esqueleto de pagina completa), pide cinco endpoints en paralelo y vuelca todo el estado: lo escrito sin guardar en otra seccion se pisaba.
+- **Solucion:** `frontend/src/pages/ConfiguracionPage.tsx` tiene ahora un recargador por seccion (`loadConfiguracion`, `loadTiposCambio`, `loadDivisas`, `loadTokens`, `loadCatalogos`). `load()` los compone y sigue siendo la carga inicial, con esqueleto. Cada accion menor llama solo a su seccion y ninguna activa el `loading` global. `guardarDivisaPorDefecto` recarga divisas y no configuracion: `GET /configuracion` no expone la divisa base (solo `es_base` en `GET /divisas`), y recargar configuracion tiraria lo escrito sin guardar, que es justo el bug.
+- **Regresion:** `tests/configuracionSecciones.test.ts` (comprobacion estatica sobre el AST del componente, sin DOM) pasa de 5 fallos a 7/7.
+
+### B-12 - La primera prueba SMTP de cada usuario devolvia 429
+
+- **Sintoma:** el primer envio de prueba de SMTP de cada usuario se rechazaba siempre con 429, aunque el limite de 5 por minuto no estuviera agotado.
+- **Causa:** `backend/src/AtlasBalance.API/Services/SmtpTestRateLimit.cs`, rama de alta de `AddOrUpdate` (`_ => (1, now)`): no asignaba `allowed = true`, que se quedaba en `false` y se devolvia como resultado. El llamador (`ConfiguracionController.cs:314`) trata `false` como 429. Las ramas de actualizacion si marcaban el flag.
+- **Solucion:** la rama de alta marca `allowed = true` antes de devolver `(1, now)`. Limite (5 por minuto y usuario), ventana y demas ramas sin tocar.
+- **Regresion:** `tests/AtlasBalance.API.Tests/SmtpTestRateLimitTests.cs` (xUnit + FluentAssertions) pasa de 3 fallos (`expected true, got false`) a 4/4: primer intento permitido, cinco permitidos y el sexto bloqueado, otro usuario permitido, `userId` nulo permitido.
+- **Observacion que queda abierta (no corregida, fuera de LOTE 1):** `ConcurrentDictionary.AddOrUpdate` puede invocar el delegado mas de una vez bajo concurrencia, con lo que un mismo usuario podria esquivar el limite en un caso limite (cinco peticiones simultaneas en la misma ventana). Correccion posible con `TryGetValue` + `TryUpdate` en bucle.
+
+### F-3 - Importes de auditoria vacios por comparar con `!== null`
+
+- **Sintoma:** en Auditoria y en el historial de una celda, un importe sin valor anterior o nuevo aparecia en blanco en lugar del texto "Sin valor" o "-".
+- **Causa:** el backend serializa con `WhenWritingNull` (`Program.cs:339-340`), asi que los `null` no llegan al navegador: el campo llega `undefined`. El frontend comparaba con `!== null` y `undefined !== null` es `true`, de modo que pintaba el componente de importe con un valor inexistente. Mismo tipo de fallo que el de permisos de octubre de 2026.
+- **Solucion:** `!= null` en `frontend/src/pages/AuditoriaPage.tsx` y `frontend/src/components/extractos/AuditCellModal.tsx`, y `valor_anterior`/`valor_nuevo` como opcionales (`string | null` opcional) en `AuditCellEntry`, `Auditoria` y `AuditoriaListItem` de `frontend/src/types/index.ts`.
+- **Regresion:** `tests/auditoriaValores.test.ts` pasa de 3 fallos (los tres tipos obligatorios y las comparaciones con `!== null`) a 4/4. El resultado en pantalla se comprobo leyendo el JSX final: con el campo ausente la celda muestra "Sin valor" (Auditoria) o "-" (AuditCellModal) y no un importe.
+
+### Bloqueos de entorno (no son fallos del codigo corregido)
+
+- `npm run lint`, `npm run test:unit` y `npm run build` canonicos fallan en esta maquina con `EPERM`: las carpetas `.test-dist/`, `.test-dist-v2/` y `dist/` contienen ficheros de otra cuenta de sandbox con permisos que este usuario no tiene (el mismo problema ya anotado el 2026-11-16 en este log y como M-10 del informe). Las mismas comprobaciones pasaron usando carpetas de salida nuevas: `eslint src tests` 0 errores, `tsc --noEmit` 0 errores, 123/123 pruebas unitarias y build de Vite correcto.
+- `dotnet test -c Release` canonico falla porque una API de desarrollo viva (PID 17816) bloquea `bin/Release/net10.0/AtlasBalance.API.dll`. La suite se ejecutio con `--artifacts-path` propio: 1002/1002 y 15/15. El filtro `--filter` de VSTest se ignora con Microsoft.Testing.Platform (MTP0001); el filtro efectivo es `-class`/`-method` del runner.
+
+## 2026-11-16 - V-03.02 - La API no arrancaba por ausencia de `wwwroot` (RESUELTO EN DESARROLLO)
+
+- **Sintoma:** `Start-Dev.ps1` compila bien y luego la API muere nada mas arrancar: `System.IO.DirectoryNotFoundException: ...\backend\src\AtlasBalance.API\wwwroot\` en `StaticWebAssetsLoader.UseStaticWebAssetsCore`, con `Application started` nunca alcanzado. El healthcheck falla y `Start-Dev.ps1` aborta antes de levantar el frontend.
+- **Causa:** `backend/src/AtlasBalance.API/wwwroot` es una carpeta generada, no versionada (`.gitignore` ignora `wwwroot/index.html`, `wwwroot/assets/`, `wwwroot/fonts/`, `wwwroot/logos/`). En un checkout limpio, o tras una limpieza de artefactos, la carpeta no existe; el SDK web genera igualmente el manifiesto de static web assets apuntando a `<contentRoot>/wwwroot`, y Kestrel revienta al construir el `PhysicalFileProvider`.
+- **Solucion aplicada en desarrollo:** se creo `backend/src/AtlasBalance.API/wwwroot/index.html` como placeholder (redirige a `http://localhost:5173/`). El contenido real lo pone `npm run build` + `Build-Release.ps1`. El path esta en `.gitignore`, asi que no ensucia el repo.
+- **Verificacion:** `GET /api/health` -> 200 `{"status":"healthy"}`; Hangfire arranca contra PostgreSQL; `POST /api/auth/login` con `{}` -> 400 de validacion (ruta viva).
+- **Mejora pendiente:** el arranque de dev no deberia depender de que exista una carpeta generada. Opciones: que `Start-BackendDev.ps1` cree `wwwroot` vacia si falta, o que `Program.cs` no registre static web assets en `Development`. Queda abierto.
+- **Relacionado:** `Start-Dev.ps1` lanza el frontend con `Start-Process powershell -NoExit` **sin** redirigir stdout/stderr, asi que el hijo hereda los handles del shell padre y la tarea que lo invoca se queda viva indefinidamente. `Start-LocalDev.ps1` si redirige a `logs/dev`, pero requiere `.dotnet` y PostgreSQL portatil (`tools/pgsql`) en el workspace.
+
+## 2026-11-16 - V-03.02 - Incidencias durante la correccion del informe Impeccable (CORREGIDO)
+
+- **`TokenCreatedModal.tsx` roto por un subagente:** al migrarlo a `Modal` se perdieron el `useEffect` de autocierre a 60 s, `copyToken`, `masked` y el `return null` sin token (tsc: `')' expected`). Causa: reescritura de cabecera del archivo en vez de Edit puntual. Corregido restaurando el bloque desde `HEAD`. Leccion: los briefs de subagentes exigen Edit puntual y el orquestador corre tsc/lint tras cada lote.
+- **`Start-LocalDev.ps1` no arranca:** falta `.dotnet` y el PostgreSQL portatil (`tools/pgsql`) en el workspace; no hay credenciales de prueba. Se uso un arnes Playwright con API mockeada (`frontend/e2e/visual`).
+- **Playwright pide Chromium 1234 y hay 1248:** `capture.spec.ts` fija `executablePath` al headless shell mas reciente (`VISUAL_CHROMIUM` lo fuerza).
+- **`node --test` fallaba con el `outDir` en el scratchpad:** el JS compilado fuera del workspace no resuelve `node_modules`/alias. Usar un `outDir` dentro de `frontend` (p. ej. `.test-dist-tmp`) y borrarlo despues.
+- **Doble confirmacion al revocar/eliminar token (previo a esta version, CORREGIDO):** `TokenList.tsx` abre su `ConfirmDialog` y `ConfiguracionPage.revokeToken`/`deleteToken` pedian otra confirmacion con los mismos ids. Detectado por `e2e/visual/states.spec.ts` (test 1f). Se elimino la confirmacion duplicada de la pagina.
+- **Falsa afirmacion de irreversibilidad:** el primer F9 dejaba `ConfirmDialog` sin `tone` como irreversible, y 7 usos directos (enviar a papelera) habrian mostrado "no se puede deshacer". Default cambiado a `normal` y niveles declarados explicitamente.
+- **Informe F1 inicial equivocado:** el boton primario oscuro usa texto casi negro (no blanco); contrastes reales 4,43 / 6,00 / 3,36. Corregido en el informe y en `themes.css`.
+
+## 2026-11-16 - V-03.02 - Correccion de campos de importe y pestanas (CORREGIDO EN CODIGO)
+
+- **Tasas y importes con coma:** los campos `type="number"` no admiten coma de forma fiable y los estados se leian con `Number()`. Se migraron a texto con `inputMode="decimal"` y `parseStrictDecimal`.
+- **Error evitado durante la correccion:** usar `parseEuropeanNumber` en esos campos habria convertido `1.085` (tasa EUR/USD) en `1085` (un punto con tres decimales se interpreta como millar). Por eso se creo `parseStrictDecimal`. Lo detecto la revision del advisor; los tests nuevos lo fijan.
+- **Latente, sin tocar:** `parseEuropeanNumber('0.001')` devuelve `1` y `('0.920')` devuelve `920` (parte entera 0 con tres decimales tratada como millar). Afecta a extractos e importacion; alinear con el parser de backend (`ImportacionService`) antes de cambiarlo.
+- **Pestanas de Configuracion:** desde `/configuracion/paises`, un clic en otra pestana cambiaba el panel pero `Paises` seguia activa. `activateTab` navega ahora a `/configuracion` (con `replace`).
+- **Bloqueo del entorno:** `npm run test:unit` falla con `EPERM` al escribir en `.test-dist` (carpeta antigua con permisos heredados). Se verifico con otro `outDir`; el script canonico queda pendiente de limpiar esa carpeta.
+- **Foco:** el agente que aplico el cambio dejo 9 reglas de `layout/*.css` que anulaban el outline con `outline: none`; corregidas en la revision.
+
+## 2026-10-05 - V-03.02 - 500 en login de desarrollo por clave Data Protection ausente (RESUELTO EN DESARROLLO)
+
+- **Sintoma:** el navegador muestra `Error interno del servidor` al enviar el login; `/api/health` sigue respondiendo 200.
+- **Causa confirmada:** `AuthService.LoginAsync` llega a `CreateMfaChallenge`, pero `DataProtectionSecretProtector.UnprotectFromStorage` no puede descifrar el secreto TOTP almacenado: la clave requerida no está en `backend/src/AtlasBalance.API/.dataprotection-keys`. Ese anillo solo contiene la clave generada por el arranque actual. En ese momento, la cuenta tenía MFA habilitado y el secreto cifrado.
+- **No relacionado:** el log también contiene `42883: jsonb ~~ jsonb` de un job de Hangfire; no es la excepción del login.
+- **Corrección aplicada en desarrollo:** tras autorización expresa, se desactivó MFA y se eliminó únicamente el secreto TOTP irrecuperable del administrador local de desarrollo. Debe volver a configurarse al entrar. La instalación real no se tocó.
+- **Alcance:** diagnóstico limitado al entorno de desarrollo; no se ejecutaron operaciones sobre la instalación real.
+
+## 2026-10-05 - V-03.02 - Falso Sin acceso con dimensiones vacias (CORREGIDO EN CODIGO)
+
+- **Causa:** API omite ids nullable con `WhenWritingNull`, mientras el store
+  solo reconocia `=== null` como dimension sin restriccion. El mismo problema
+  convertia reglas de columnas omitidas en una lista sin columnas.
+- **Solucion:** `permisosStore.setPermisos` normaliza ids y reglas de columnas
+  omitidos a `null`. Conserva ids concretos, listas explicitas y acciones;
+  no concede lectura sin `Ver cuentas` ni acceso con una matriz vacia.
+- **Regresion:** `tests/permisosStore.test.ts` ejecuta store/Zustand reales con
+  auth aislado. Antes: 11 fallos/16 casos; despues: 16/16 OK. Casos global,
+  pais, titular, interseccion, cuenta, gerente/empleado, sin lectura, reemplazo
+  de sesion, varias filas, columnas y ADMIN.
+- **Verificacion:** `npm.cmd run test:unit` 92/92; lint y build OK. Vite
+  mantiene el aviso preexistente sobre `__dirname`.
+- **Pendiente:** despliegue y sesion del gerente afectado. Sin cambios de datos
+  ni backend/RLS. Diagnostico: `DIAGNOSTICO_PERMISOS_CUENTAS_2026-10-05.md`.
 
 ## 2026-09-26 - V-03.01 - Tests de anomalias que fallaban segun el dia del mes (CORREGIDO)
 
@@ -180,7 +934,7 @@
 
 ## 2026-09-25 - V-03.01 - Correcciones de la revision 2026-09-24 (CORREGIDO)
 
-Grupo de 9 hallazgos de `Documentacion/INFORME_REVISION_2026-09-24.md`, cerrado el
+Grupo de 9 hallazgos de `Documentacion/Archivo/INFORME_REVISION_2026-09-24.md`, cerrado el
 mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 ### #1 (ALTO) - Escalada Watchdog->SYSTEM en el actualizador elevado
@@ -1922,7 +2676,7 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 ## 2026-07-27 - V-02.07 - Cache del scope de usuario cierra CONC-028 (CERRADO)
 
-- **Contexto:** `AUDITORIA_CONCURRENCIA_2026-07-10.md` marco
+- **Contexto:** `Archivo/AUDITORIA_CONCURRENCIA_2026-07-10.md` marco
   CONC-028 (severidad MED) sobre `UserAccessService.GetScopeAsync`:
   la query `Cuentas.Any(c => ... PermisosUsuario.Any(p => ...))`
   corria en cada endpoint autenticado (`CuentasController`,
@@ -2019,7 +2773,7 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 ## 2026-07-27 - V-02.07 - Cache de tipos de cambio con race benigno CONC-027 (CERRADO)
 
 - **Contexto:** la auditoria de concurrencia 2026-07-10
-  (`AUDITORIA_CONCURRENCIA_2026-07-10.md:302`, severidad LOW)
+  (`Archivo/AUDITORIA_CONCURRENCIA_2026-07-10.md:302`, severidad LOW)
   documentaba que `TiposCambioService.GetRateCatalogAsync` podia
   repoblar la cache con datos viejos si `InvalidateCache` se ejecutaba
   entre la query a `TIPOS_CAMBIO` y el `_cache.Set` posterior.
@@ -4647,7 +5401,7 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 
 ## 2026-07-10 - V-02-05 - Cierre de hallazgos CRITICAL y HIGH del audit pre-internet (PARCIAL)
 
-- Contexto: auditoria completa (`Documentacion/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`)
+- Contexto: auditoria completa (`Documentacion/Archivo/AUDITORIA_SEGURIDAD_BUGS_PRE_INTERNET_2026-07-10.md`)
   identifico 3 CRITICAL y 11 HIGH que bloquean la exposicion a internet. V-02-05
   arranca para cerrar la Fase 0.
 - Errores: los 3 CRITICAL estaban todos presentes en V-02-04 (no se habian
@@ -5628,3 +6382,137 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 - **Verificación:** lint focalizado OK; suite frontend configurada `61/61`;
   regresiones de storage/cambio de usuario/generación async `3/3`; no se
   modificaron `services/api.ts`, `package.json` ni `tsconfig*`.
+
+## 2026-11-16 - V-03.02 - EPERM en `node_modules`, `dist` y `.test-dist` del frontend
+
+- **Sintoma:** `npm audit fix --dry-run` fallaba al borrar `node_modules\.package-lock.json`; `vite build` a `dist` y `tsc -p tsconfig.test.v2.json` a `.test-dist` daban `EPERM`.
+- **Causa probable:** ficheros creados por otra cuenta de sandbox con ACL que impide borrarlos/sobrescribirlos. No hay proceso de Node reteniendolos.
+- **Solucion aplicada:** se movio `node_modules` a `node_modules.blocked-20261116` (patron ya ignorado por git; no se pudo borrar) y se reinstalo con `npm ci`. Builds y tests con otro directorio de salida (`--outDir .tmp-build`, `.test-dist-v2`), borrados al terminar.
+- **Pendiente:** borrar `node_modules.blocked-20261116`, `dist` y `.test-dist` con una cuenta que tenga permisos.
+
+## 2026-11-16 - V-03.02 - Escaner de secretos con git en subcarpetas
+
+- **Riesgo detectado en revision:** `git rev-parse --is-inside-work-tree` es verdadero en subcarpetas del repo ignoradas por git; usar `git ls-files` ahi escanearia 0 ficheros y pasaria en falso.
+- **Solucion:** `Get-AtlasGitFiles` solo se usa si `-Root` es la raiz del repo (`--show-toplevel`); si no, recorrido completo. Comprobado: subcarpeta ignorada no activa el universo git. Falta un fixture dedicado en `Test-AtlasSecrets.Tests.ps1`.
+
+## 2026-11-16 - V-03.02 - Lint incluye artefactos previos de pruebas
+
+- `npm run lint` encuentra 29 errores en `frontend/.test-dist-v2`, carpeta generada preexistente. `npx eslint src --max-warnings 0` pasa. No se elimino la carpeta; queda pendiente corregir el alcance del lint o limpiar el artefacto cuando corresponda.
+
+## 2026-11-16 - Lint incluye salida alternativa de tests
+
+`npm run lint` incluye los JS generados en `.test-dist-v2` y falla; ESLint excluyendo esa carpeta pasa. La carpeta ya existia y no se elimino. Modern Web Guidance no estaba en la cache local (`ENOTCACHED`); no se aplicaron sus guias.
+
+## 2026-11-16 - V-03.02 - Guardados simultaneos de columnas
+
+- Los PUT simultaneos de orden o visibilidad podian completarse fuera de orden y sobrescribir el cambio mas reciente. Se deshabilitan los controles durante el guardado y se usa una guarda sincrona en ambas vistas. Playwright con respuestas demoradas y persistencia simulada: 2/2.
+
+## 2026-11-16 - Comprobacion de permisos del buscador
+
+`dotnet test --filter` fue ignorado por Microsoft Testing Platform; se interrumpio y se ejecuto el runner xUnit directamente con `-class`: 19 pruebas correctas. `UseAppHost=false` es incompatible con este proyecto xUnit v3. La herramienta de navegador no pudo identificar la URL con seguridad y detuvo la comprobacion visual.
+
+## 2026-11-16 - V-03.02 - Healthcheck local con host equivocado
+
+- Durante la validacion, el primer reinicio consulto `127.0.0.1:5002/api/health` y trato la API iniciada como no disponible. El servicio respondio por `localhost:5002`; tras corregir la comprobacion y reiniciar, API y proxy frontend devuelven HTTP 200. No se cambio el codigo de la aplicacion.
+- La suite completa de backend no termino en cinco minutos y se interrumpio; prueba PostgreSQL dirigida 1/1. El control de Chrome devolvio `GetCursorPos` acceso denegado tras el reinicio, por lo que la validacion autenticada completa sigue pendiente.
+
+## 2026-11-17 - V-03.02 - A-9: el job de vencimientos de plazo fijo falla con 42883 (`jsonb ~~ jsonb`)
+
+- **Sintoma:** el job de vencimientos reintentaba siempre con PostgreSQL `42883: operator does not exist: jsonb ~~ jsonb`, desde `PlazoFijoService.TryAddAdminNotificationAsync`. La comprobacion de "ya existe la notificacion" fallaba antes incluso de intentar enviar el aviso.
+- **Causa:** `DetallesJson` esta mapeado como `jsonb` y la consulta usaba `Contains` de string, que EF traduce a la operacion LIKE (`jsonb ~~ jsonb`), que PostgreSQL no define.
+- **Solucion:** `EF.Functions.JsonContains(x.DetallesJson, duplicadoJson)`, que traduce a `detalles_json @> @duplicadoJson` (contencion jsonb por clave/valor: cuenta, estado y fecha de vencimiento en un solo objeto). Como el provider InMemory de EF no traduce `JsonContains`, hay una rama equivalente sobre el JSON materializado para los tests unitarios.
+- **Verificacion:** test contra PostgreSQL real (Testcontainers) en rojo con el 42883 y en verde con el arreglo; SQL generado comprobado sin apariciones de `~~`. `PlazoFijoServiceTests` mas el test nuevo: 9/9. El reintento del aviso tras fallo de SMTP (J-3) queda intacto.
+
+## 2026-11-17 - V-03.02 - B-1: una cuenta sin tipo de cambio aporta 0 al total sin avisar
+
+- **Sintoma:** el dashboard y el `total_convertido` de la integracion OpenClaw sumaban 0 para las cuentas cuya divisa no tiene tipo de cambio, sin decir nada: el total salia mas bajo del real y el usuario no tenia forma de saber por que.
+- **Causa:** `DashboardService` hacia `saldo * tasa` con `tasa = 0` cuando no habia tasa, y `IntegrationOpenClawController` sumaba `monto ?? 0` sobre el resultado de `BulkConvertAsync`.
+- **Solucion:** el total no cambia; lo que se anade es la lista de divisas que se quedaron fuera (`divisas_sin_tipo_cambio` en la integracion, `divisas_sin_tipo_cambio` en las respuestas del dashboard) y el aviso en la interfaz: "El total no incluye GBP y USD. No hay tipo de cambio para esas divisas." La integracion solo lista las divisas de las cuentas visibles para su token.
+- **Verificacion:** `DashboardDivisasSinTipoCambioTests` 5/5 (rojo: la lista venia vacia), `DashboardServiceTests` 9/9, `IntegrationOpenClawControllerTests` 12/12, `IntegrationOpenClawScopeCoverageTests` 3/3, `IntegrationDefaultScopesTests` 4/4. Frontend: helper puro con test propio y suite completa 134/134.
+
+## 2026-11-17 - V-03.02 - B-3 y B-4: tras revertir un lote no se podia reimportar, y la reversion no era atomica
+
+- **Sintoma (B-3):** al reimportar un lote revertido, la deduplicacion por huella contaba las filas con soft delete y las daba por duplicadas; ademas el indice unico de huella no filtraba `deleted_at`, de modo que la base de datos rechazaba la insercion aunque el servicio lo intentara.
+- **Causa (B-3):** la consulta de huellas existentes usaba `IgnoreQueryFilters`, y el indice `ix_extractos_cuenta_id_importacion_fingerprint` era unico sin filtro de `deleted_at`.
+- **Sintoma (B-4):** `RevertirLoteAsync` borraba los extractos fuera de transaccion y guardaba el lote despues (a mitad de camino quedaban extractos borrados y el lote sin revertir), no tomaba ningun lock (dos reversiones concurrentes de la misma cuenta se pisaban), no validaba el estado del lote (se podia revertir un lote no confirmado) y dejaba las conciliaciones de los extractos borrados como estaban.
+- **Solucion (B-3):** la deduplicacion ya no ignora el filtro de soft delete y el indice de huella es unico parcial (`WHERE deleted_at IS NULL AND importacion_fingerprint IS NOT NULL`), con migracion escrita a mano e idempotente (`20261117120000_IndicesParcialesHuellaYConciliacion`).
+- **Solucion (B-4):** todo el borrado y el guardado del lote van en una transaccion con `pg_advisory_xact_lock` por cuenta, el estado del lote se relee con el lock tomado y solo se revierte un lote `confirmado` (si no, 409 de dominio), y las conciliaciones de los extractos borrados pasan a estado `excepcion` (visible y accionable) con su movimiento esperado de vuelta a `pendiente`. Las conciliaciones ya resueltas se dejan intactas.
+- **Verificacion:** `ImportacionLote5Tests` 9/9 (5 fallos en rojo con el codigo original) y `ImportacionLote5PostgresTests` 2/2 contra PostgreSQL real (2/2 en rojo antes): reimportacion tras revertir y atomicidad de la reversion con rollback. Regresion dirigida con `ImportacionServiceTests`: 63/63.
+
+## 2026-11-17 - V-03.02 - B-5 y B-6: la conciliacion proponia importes que no cuadran y se podia conciliar dos veces
+
+- **Sintoma (B-5):** el score de una sugerencia penalizaba el importe con un tope de 15 puntos, y como el filtro es `Score >= 70`, un movimiento esperado de 50 € se proponia contra un extracto de 900 € si el resto del score era bueno.
+- **Causa (B-5):** la tolerancia de importe ya se calculaba (`amountTolerance`) pero no se usaba como tope duro: solo como penalizacion.
+- **Sintoma (B-6):** un mismo extracto podia quedar conciliado dos veces, `SetEstadoAsync` aceptaba cualquier transicion de estado y `FirstAsync` sobre el movimiento esperado lanzaba `InvalidOperationException` (500) si el movimiento ya no existia.
+- **Solucion (B-5):** si la diferencia de importe supera la tolerancia del movimiento, el score se pone a 0 y el extracto no se propone. La tolerancia sigue viniendo de `CONFIGURACION` y no se toca.
+- **Solucion (B-6):** al pasar a `conciliada` se comprueba que el extracto no este ya conciliado (409 si lo esta), las transiciones se validan contra un conjunto minimo coherente con el CHECK de la tabla (`sugerida -> conciliada | excepcion | resuelta`, `excepcion -> conciliada | resuelta`, `conciliada -> excepcion | resuelta`, `resuelta` terminal) y el movimiento que no existe devuelve 404 en lugar de 500. El indice unico parcial sobre `CONCILIACIONES(extracto_id)` cierra la puerta en la base de datos; la migracion purga de forma idempotente y no destructiva las conciliaciones duplicadas que ya existieran.
+- **Verificacion:** `ConciliacionLote5Tests` 7/7 (6 fallos en rojo antes) y `ConciliacionExtractoUnicoTests` 2/2 contra PostgreSQL real: el indice salta con 23505. La transicion `excepcion -> conciliada` se mantiene porque la pantalla ofrece el boton "Conciliar" en toda fila que no este conciliada; la interfaz deja de ofrecer "Conciliar" y "Excepcion" en las filas resueltas.
+
+## 2026-11-17 - V-03.02 - B-8: el lock de alerta de saldo se liberaba antes de tiempo
+
+- **Sintoma:** dos importaciones simultaneas de la misma cuenta envian las dos el email de saldo bajo.
+- **Causa:** `pg_advisory_xact_lock` es un lock DE TRANSACCION, pero la sentencia se ejecutaba en autocommit (no habia transaccion explicita), asi que el lock se liberaba al terminar la sentencia y las dos evaluaciones pasaban el filtro de cooldown.
+- **Solucion:** la zona critica (lock, lectura del cooldown, escritura del cooldown, commit) va dentro de una transaccion explicita; si el llamante ya tiene una transaccion abierta (camino de importacion) se reutiliza la suya. El envio del email y la auditoria quedan FUERA de la transaccion, para que un SMTP lento no retenga el lock.
+- **Verificacion:** test de concurrencia contra PostgreSQL real (Testcontainers) que en rojo contaba 2 envios y en verde cuenta 1; tres ejecuciones seguidas sin intermitencias (el test usa un interceptor que bloquea la escritura hasta que las dos hilos han leido, sin esperas arbitrarias). `AlertaServiceTests` mas el test nuevo: 8/8.
+
+## 2026-11-17 - V-03.02 - B-9 y B-13: saldo anterior con filas borradas e importes "0,500" leidos como 500
+
+- **Sintoma (B-9):** el saldo anterior de un movimiento de plazo fijo se calculaba incluyendo extractos con soft delete, de modo que partia de un saldo que ya no era el vigente.
+- **Causa (B-9):** la consulta del ultimo extracto usaba `IgnoreQueryFilters`. El `maxFila` contiguo si debe incluir las filas borradas (para no reutilizar su numero de fila), y ese no se toco.
+- **Sintoma (B-13):** "0,500" se interpretaba como 500: la heuristica de miles miraba solo que la parte decimal tuviera tres digitos, sin mirar que la parte entera valiera 0.
+- **Solucion:** el saldo anterior se calcula solo sobre extractos vivos; y la heuristica descarta el tratarlo como miles cuando la parte entera es 0, de modo que "0,500" es 0,5 y "1,500" o "12,345" conservan el comportamiento anterior. El frontend aplica la misma regla en `utils/formatters.ts`.
+- **Verificacion:** `ImportacionLote5Tests` 9/9 (rojo: "0,500" devolvia 500 y el saldo anterior daba 999 en vez de 100). Frontend: test propio de formatters en rojo y en verde, con la suite del frontend completa en verde.
+
+## 2026-11-17 - V-03.02 - B-2: la sincronizacion pisaba las tasas manuales y sus fallos no dejaban aviso
+
+- **Sintoma:** cada sincronizacion (cada 12 h) sobreescribia las tasas que el usuario habia fijado a mano, y un fallo de la sincronizacion solo quedaba en un `LogWarning`: nadie se enteraba.
+- **Causa:** el bucle de actualizacion asignaba `entity.Tasa = rate` y `entity.Fuente = FuenteTipoCambio.API` sin mirar cual era la fuente anterior; y los caminos de error (respuesta HTTP no exitosa, payload sin tasas, excepcion) solo escribian en el log y devolvian un `SyncTiposCambioResult` con `Success = false`.
+- **Solucion:** las tasas con `Fuente = MANUAL` se omiten (no se tocan ni la tasa, ni la fuente, ni la fecha) y se deja aviso al administrador con las divisas afectadas. Los fallos de sincronizacion generan tambien aviso en `NOTIFICACIONES_ADMIN` (no solo log). El anti-spam es por clave: si ya existe un aviso con la misma clave no se repite, de modo que un fallo cada hora no llena la tabla. La respuesta de la sincronizacion dice cuantas tasas manuales se han omitido (`manual_omitidas`) y la pantalla de Configuracion lo indica.
+- **Verificacion:** `TiposCambioManualTests` (nuevo) 5/5: en rojo con 5 fallos (la tasa manual se pisaba y no habia aviso) y en verde con el arreglo. `TiposCambioServiceTests` sin regresiones.
+
+## 2026-11-17 - V-03.02 - B-17 (parcial): el orden de las filas pegadas no se avisa y el saldo actual puede ser el mas antiguo
+
+- **Sintoma:** Atlas Balance numera las filas de abajo arriba al confirmar, de modo que la linea superior del bloque pegado es la ultima del lote (el `fila_numero` mas alto) y de ahi sale el "saldo actual". Si el banco exporta del mas antiguo al mas reciente, el saldo actual que muestra el dashboard es el de la fila mas antigua, sin que nada avise.
+- **Causa:** el criterio del saldo actual (`DashboardService`: fila con mayor `FilaNumero`) es deliberado (V-02-04, "saldo ahora" frente al "snapshot a fecha de corte") y la importacion no comprobaba el orden real del fichero. La documentacion de la app lo dice ("La linea superior queda como la ultima del lote") pero la pantalla de importacion no dice nada al usuario.
+- **Solucion aplicada (LOTE 5, 2026-11-17):** la validacion **detecta** el orden por las **fechas** (no por heuristicas de saldo, para no tener falsos positivos) y avisa cuando el fichero viene del mas antiguo al mas reciente: el aviso sale en `ImportacionValidarResponse.Advertencias` y se ve en la pantalla de importacion antes de confirmar. Solo avisa si hay al menos dos fechas distintas y suben de forma estricta al bajar por el bloque; con una sola fecha, fechas repetidas o fechas mezcladas no dice nada. **El criterio del saldo actual NO se cambia**: invertira la numeracion de `fila_numero` alteraria el significado de esa columna en todos los datos existentes, y depende del orden en que exportan los bancos, que es una decision del usuario.
+- **Verificacion:** `ImportacionLote5Tests`: en rojo con el detector desactivado (1 de 12 fallos) y 12/12 en verde. La deteccion se comprueba con las tres formas de fichero: mas antiguo a mas reciente (avisa), mas reciente a mas antiguo (no avisa) y una sola fecha (no avisa).
+- **Pendiente:** el usuario tiene que confirmar en que orden exportan los bancos que usa. La base de demostracion esta vacia y las paginas publicas de BBVA, Sabadell y Banquinter describen COMO descargar los movimientos pero no fijan el orden de las filas.
+
+## 2026-11-17 - V-03.02 - La confirmacion de un lote de importacion devolvia siempre 409 contra PostgreSQL real
+
+- **Sintoma:** `POST /api/importacion/lotes/{id}/confirmar` (el camino que usa el frontend) respondia siempre `409 "El lote esta siendo procesado por otra operacion"` y no importaba nada. Con el proveedor InMemory de los tests no se reproducia, y el camino legacy `POST /api/importacion/confirmar` (que no toma ese lock) si funcionaba.
+- **Causa comprobada:** `TryAcquireAdvisoryXactLockAsync` leia `pg_try_advisory_xact_lock(...)` con `SqlQueryRaw<int>`, pero la funcion devuelve un **boolean**. Npgsql lanza `InvalidCastException: Reading as 'System.Int32' is not supported for fields having DataTypeName 'boolean'`, el `catch` hace fail-closed y devuelve `false` como si otro proceso tuviera el lock.
+- **Solucion:** leer el resultado como `SqlQueryRaw<bool>`. Era una linea, pero sin ella el camino de reimportar un lote revertido (B-3) era inservible: el indice de huella estaba bien, pero el usuario no podia confirmar el lote nuevo.
+- **Verificacion:** sonda contra PostgreSQL real que ejecutaba la sentencia y capturaba la excepcion (rojo: `InvalidCastException`), mas un test de extremo a extremo por el camino real de la API: crear lote, confirmar, revertir y confirmar un lote nuevo con el mismo contenido. En rojo sin el arreglo (1 de 3 fallos) y en verde con el (3/3).
+
+## 2026-11-17 - V-03.02 - B-7, B-14 y B-15: errores de contrato en extractos, cuentas y paginacion
+
+- **B-7:** `PUT /api/extractos/{id}` evaluaba las alertas de saldo sin proteccion, mientras `Crear` si la tenia: un fallo de la evaluacion convertia en 500 una actualizacion que ya se habia guardado. Ahora el `PUT` usa el mismo try/catch que `Crear` (re-lanza `OperationCanceledException` y registra el resto como warning).
+- **B-14:** `CuentasController.Actualizar` asignaba la nueva divisa sin mirar si la cuenta ya tenia extractos. Como los extractos no guardan divisa propia, el cambio reinterpretaba todos los importes en otra moneda. Ahora, si la divisa cambia y la cuenta tiene extractos vivos (los no borrados), se responde 409: "La cuenta tiene extractos: no se puede cambiar su divisa. Crea una cuenta nueva o elimina los extractos de esta cuenta antes de cambiarla." Los extractos en papelera no bloquean.
+- **B-15:** los listados paginados no tenian desempate por clave primaria, de modo que dos filas con el mismo valor de orden podian caer en paginas distintas o desaparecer entre peticiones. Se anade `ThenBy` por clave primaria en extractos, auditoria, revision y lotes, despues del campo pedido por el usuario, sin cambiar el contrato de la API.
+- **Verificacion:** `ExtractosAlertaPostTests` (nuevo) en rojo (la excepcion se propagaba) y en verde; `CuentasDivisaConExtractosTests` (nuevo) 4/4 (rojo: devolvia 200 y cambiaba la divisa) con `CuentasControllerTests` 20/20; `PaginacionDesempateTests` (nuevo) 4/4 en rojo y en verde, con la regresion de las cuatro clases de controller en 54/54.
+
+## 2026-11-17 - V-03.02 - M-9 (parcial): el snapshot de EF ya tiene `xmin` en `PLAZOS_FIJOS`, pero la deriva restante es de esquema
+
+- **Sintoma:** el snapshot de EF no tenia el mapeo de `xmin` de `PLAZOS_FIJOS` (4 de 5 tablas), y por eso `AppDbContext.OnConfiguring` ignora `RelationalEventId.PendingModelChangesWarning`.
+- **Causa:** las migraciones de V-02 se escribieron a mano con SQL `IF NOT EXISTS` y nunca actualizaron el snapshot.
+- **Solucion aplicada:** el bloque de `xmin` de `PLAZOS_FIJOS` se escribio a mano en el snapshot, con el mismo estilo que las otras cuatro tablas.
+- **Lo que NO se pudo cerrar:** la deriva no es solo del snapshot. Comparando el modelo con el snapshot con el metodo que usa EF por dentro (`IMigrationsAssembly.ModelSnapshot.Model` + `IDesignTimeModel.Model` + `IModelRuntimeInitializer` + `IMigrationsModelDiffer`) salen 27 diferencias, y la base real difiere del modelo en el esquema (`deleted_at` como `timestamp without time zone` en tres tablas donde el modelo pide `timestamp with time zone`, 3 indices `*_deleted_by_id` y 4 FK `deleted_by_id` que faltan, mas diferencias de filtro en tres indices unicos y de nombre en una FK). Cerrarlo exige una migracion de esquema nueva; hasta entonces el `Ignore` es obligatorio y se mantiene, con el comentario actualizado.
+- **Verificacion:** `SnapshotModelDriftTests` (nuevo) fija la comparacion modelo/snapshot con la receta validada y pasa 1/1.
+## 2026-11-20 - Comprobacion MiniMax M3.1 Flash
+
+La suite frontend no pudo sobrescribir archivos existentes en `.test-dist` por EPERM. Se compilo en `.test-dist-minimax-m31` y se ejecuto la prueba dirigida correctamente. El filtro `dotnet test --filter` fue ignorado por el runner xUnit v3; se interrumpio y se uso el ejecutable compilado con `-method` (2 pruebas correctas).
+# 2026-11-22 - V-03.02 - Fondo de alerta incompleto
+
+- Sintoma: los movimientos con alerta solo mostraban un borde y un punto.
+- Causa: el estilo anterior habia retirado el fondo de las filas marcadas; la columna fija tiene ademas un fondo propio.
+- Solucion: aplicar el fondo de aviso a la fila y a la columna fija, tambien en hover. Verificacion estatica y pruebas de frontend; revision visual pendiente.
+- Incidencia de verificacion: `npm run test:unit` no pudo escribir en `.test-dist` (EPERM). La compilacion y ejecucion en una carpeta alternativa dentro del proyecto terminaron con 345/345 pruebas correctas.
+# 2026-11-22 - EPERM al ejecutar pruebas del frontend
+
+La salida habitual `.test-dist` contiene archivos sin permiso de escritura y `npm run test:unit` no pudo compilarlos. Se compilo la misma configuracion en una carpeta alternativa del frontend y se ejecutaron alli las pruebas: 316 correctas. No se modificaron permisos ni se elimino la carpeta existente.
+# 2026-11-23 - V-03.02 - Fallos de CI en PR #42
+
+- Dos tests de limpieza de exportaciones dependian de rutas y bloqueo de ficheros de Windows, pero se ejecutaban en Ubuntu. Se usan rutas nativas y el test de bloqueo queda en Windows, donde CI ejecuta la clase.
+- Los fixtures del scanner imprimian OK pero dejaban `$LASTEXITCODE=1` tras una deteccion esperada. Se restablece a 0 solo al finalizar correctamente; una excepcion sigue haciendo fallar el paso.
+- Pendiente: comprobar los nuevos resultados completos en GitHub Actions.

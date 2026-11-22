@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createQueryClient, clearQueryClient } from '../src/services/queryClient.js';
-import { mutationInvalidation, invalidateExtractosFamilia } from '../src/queries/invalidation.js';
+import { mutationInvalidation, invalidateExtractosFamilia, type QueryClientApi } from '../src/queries/invalidation.js';
+
+type Invalidator = (qc: QueryClientApi) => Promise<void>;
 
 test('mutationInvalidation expone familias de claves para cada mutacion critica', () => {
   const expected = [
+    'importacionLoteCrear',
     'importarConfirmar',
     'importarRevertir',
     'extractoCreate',
@@ -57,4 +61,52 @@ test('invalidateExtractosFamilia invalida todas las claves de extractos', async 
   // Dashboard no se invalida con la familia de extractos.
   assert.equal(qc.getQueryState(['dashboard', 'principal'])?.isInvalidated, false);
   clearQueryClient();
+});
+
+test('crear un lote de importacion invalida el catalogo', async () => {
+  const invalidar = (mutationInvalidation as Record<string, unknown>).importacionLoteCrear;
+  assert.equal(typeof invalidar, 'function', 'mutationInvalidation debe exponer importacionLoteCrear');
+
+  const qc = createQueryClient();
+  qc.setQueryData(['catalogo', 'importacion-lotes', { cuentaId: 'c1', page: 1 }], { lotes: [] });
+  qc.setQueryData(['dashboard', 'principal'], { ok: true });
+
+  await (invalidar as Invalidator)(qc);
+
+  assert.equal(
+    qc.getQueryState(['catalogo', 'importacion-lotes', { cuentaId: 'c1', page: 1 }])?.isInvalidated,
+    true
+  );
+  // El lote solo cambia catalogos: los agregados no se tocan.
+  assert.equal(qc.getQueryState(['dashboard', 'principal'])?.isInvalidated, false);
+  clearQueryClient();
+});
+
+test('revertir un lote de importacion invalida extractos y papelera', async () => {
+  // LOTE 6 (S-2): los extractos borrados por una reversion caen en la
+  // papelera, asi que su cache tambien queda obsoleta.
+  const invalidar = (mutationInvalidation as Record<string, unknown>).importarRevertir;
+  assert.equal(typeof invalidar, 'function', 'mutationInvalidation debe exponer importarRevertir');
+
+  const qc = createQueryClient();
+  qc.setQueryData(['extractos', 'list', { page: 1 }], { rows: [] });
+  qc.setQueryData(['papelera', 'extractos', { page: 1 }], { rows: [] });
+
+  await (invalidar as Invalidator)(qc);
+
+  assert.equal(qc.getQueryState(['extractos', 'list', { page: 1 }])?.isInvalidated, true);
+  assert.equal(qc.getQueryState(['papelera', 'extractos', { page: 1 }])?.isInvalidated, true);
+  clearQueryClient();
+});
+
+test('mutationInvalidation no expone claves con el nombre de un prefijo interno', () => {
+  // 'catalogo' es un prefijo de query, no una mutacion: usarlo como clave
+  // rompia la invalidacion (A-7).
+  assert.equal('catalogo' in mutationInvalidation, false);
+});
+
+test('ImportacionPage invalida el catalogo con una clave real y sin casts', () => {
+  const source = readFileSync(new URL('../../src/pages/ImportacionPage.tsx', import.meta.url), 'utf8');
+  assert.equal(source.includes('as never'), false, 'ImportacionPage.tsx no debe usar `as never`');
+  assert.match(source, /invalidate\('importacionLoteCrear'\)/);
 });

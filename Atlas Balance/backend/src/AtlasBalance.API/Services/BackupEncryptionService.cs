@@ -26,6 +26,11 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
     // y selecciona el derivador de nonce correspondiente. Los backups nuevos usan V2.
     private static readonly byte[] MagicV1 = "ATLASBKP1"u8.ToArray();
     private static readonly byte[] MagicV2 = "ATLASBKP2"u8.ToArray();
+    // S-19 (V-03.02): V3 anade el numero de bloques a la cabecera y lo autentica
+    // mediante el AAD del ultimo bloque. V1 y V2 se conservan intactos para poder
+    // descifrar los backups ya existentes (sin autenticar el numero de bloques:
+    // es un limite del formato legacy que no se puede corregir sin romperlos).
+    private static readonly byte[] MagicV3 = "ATLASBKP3"u8.ToArray();
     private const int ChunkSize = 1024 * 1024;
     private const int TagSize = 16;
     private const int NonceSize = 12;
@@ -49,39 +54,98 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
             throw new FileNotFoundException("No existe el archivo de backup a cifrar.", sourcePath);
         }
 
+        // Un volcado de 0 bytes no es un volcado: cifrarlo produciria un .enc que
+        // descifra a un fichero vacio sin dar ningun aviso. Se rechaza antes de escribir.
+        if (new FileInfo(sourcePath).Length == 0)
+        {
+            throw new InvalidOperationException("El archivo de backup a cifrar esta vacio (0 bytes): no se puede cifrar un volcado vacio.");
+        }
+
         var destinationPath = $"{sourcePath}.enc";
         var key = await ResolveKeyAsync(cancellationToken);
         var baseNonce = RandomNumberGenerator.GetBytes(NonceSize);
+        var destinationCreated = false;
 
-        await using (var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true))
-        await using (var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize, useAsync: true))
+        try
         {
-            await destination.WriteAsync(MagicV2, cancellationToken);
-            await destination.WriteAsync(baseNonce, cancellationToken);
-
-            var plain = new byte[ChunkSize];
-            var cipher = new byte[ChunkSize];
-            var tag = new byte[TagSize];
-            var lengthBytes = new byte[4];
-            ulong counter = 0;
-
-            while (true)
+            await using (var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true))
+            await using (var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize, useAsync: true))
             {
-                var read = await source.ReadAsync(plain.AsMemory(0, plain.Length), cancellationToken);
-                if (read == 0)
+                destinationCreated = true;
+                await destination.WriteAsync(MagicV3, cancellationToken);
+                await destination.WriteAsync(baseNonce, cancellationToken);
+                // El numero de bloques no se conoce hasta el final del flujo: se deja
+                // un marcador y se parchea cuando ya esta cifrado el ultimo bloque.
+                await destination.WriteAsync(new byte[4], cancellationToken);
+
+                var plain = new byte[ChunkSize];
+                var cipher = new byte[ChunkSize];
+                var tag = new byte[TagSize];
+                var lengthBytes = new byte[4];
+                var pending = new byte[ChunkSize];
+                var pendingLength = 0;
+                var blockCount = 0;
+                ulong counter = 0;
+
+                async Task WriteBlockAsync(byte[] buffer, int length, byte[] aad, ulong chunkCounter)
                 {
-                    break;
+                    var nonce = BuildChunkNonceV2(baseNonce, chunkCounter);
+                    using var aes = new AesGcm(key, TagSize);
+                    aes.Encrypt(nonce, buffer.AsSpan(0, length), cipher.AsSpan(0, length), tag, aad);
+                    BinaryPrimitives.WriteInt32BigEndian(lengthBytes, length);
+                    await destination.WriteAsync(lengthBytes, cancellationToken);
+                    await destination.WriteAsync(tag, cancellationToken);
+                    await destination.WriteAsync(cipher.AsMemory(0, length), cancellationToken);
                 }
 
-                var nonce = BuildChunkNonceV2(baseNonce, counter++);
-                using var aes = new AesGcm(key, TagSize);
-                aes.Encrypt(nonce, plain.AsSpan(0, read), cipher.AsSpan(0, read), tag, MagicV2);
+                while (true)
+                {
+                    var read = await source.ReadAsync(plain.AsMemory(0, plain.Length), cancellationToken);
+                    if (read == 0)
+                    {
+                        break;
+                    }
 
-                BinaryPrimitives.WriteInt32BigEndian(lengthBytes, read);
-                await destination.WriteAsync(lengthBytes, cancellationToken);
-                await destination.WriteAsync(tag, cancellationToken);
-                await destination.WriteAsync(cipher.AsMemory(0, read), cancellationToken);
+                    if (pendingLength > 0)
+                    {
+                        // El bloque retenido ya no es el ultimo: se cifra con el AAD simple.
+                        await WriteBlockAsync(pending, pendingLength, MagicV3, counter++);
+                        blockCount++;
+                    }
+
+                    Buffer.BlockCopy(plain, 0, pending, 0, read);
+                    pendingLength = read;
+                }
+
+                if (pendingLength == 0)
+                {
+                    throw new InvalidOperationException("El archivo de backup a cifrar esta vacio (0 bytes): no se puede cifrar un volcado vacio.");
+                }
+
+                // El ultimo bloque se cifra con un AAD que liga el numero de bloques:
+                // un recorte o una manipulacion de la cabecera invalida su tag.
+                var totalBlocks = blockCount + 1;
+                var countBytes = new byte[4];
+                BinaryPrimitives.WriteInt32BigEndian(countBytes, totalBlocks);
+                await WriteBlockAsync(pending, pendingLength, BuildBlockCountAad(totalBlocks), counter);
+
+                // Se parchea el numero de bloques real en la cabecera.
+                destination.Seek(MagicV3.Length + NonceSize, SeekOrigin.Begin);
+                await destination.WriteAsync(countBytes, cancellationToken);
+                await destination.FlushAsync(cancellationToken);
             }
+        }
+        catch
+        {
+            // No se deja un .enc a medias: con el numero de bloques sin parchear seria
+            // un fichero corrupto que el descifrado no puede validar. Solo se borra si
+            // este proceso ha llegado a crear el fichero.
+            if (destinationCreated && File.Exists(destinationPath))
+            {
+                File.Delete(destinationPath);
+            }
+
+            throw;
         }
 
         var info = new FileInfo(destinationPath);
@@ -113,58 +177,65 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
             await using var source = new FileStream(encryptedPath, FileMode.Open, FileAccess.Read, FileShare.Read, ChunkSize, useAsync: true);
             await using var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, ChunkSize, useAsync: true);
 
-            var header = new byte[MagicV2.Length];
+            var header = new byte[MagicV3.Length];
             await ReadExactAsync(source, header, cancellationToken);
 
-            byte[] aad;
-            Func<byte[], ulong, byte[]> buildNonce;
-            if (header.AsSpan().SequenceEqual(MagicV2))
+            if (header.AsSpan().SequenceEqual(MagicV3))
             {
-                aad = MagicV2;
-                buildNonce = BuildChunkNonceV2;
-            }
-            else if (header.AsSpan().SequenceEqual(MagicV1))
-            {
-                aad = MagicV1;
-                buildNonce = BuildChunkNonceLegacyV1;
+                await DecryptV3Async(source, destination, key, maxPlaintextBytes, cancellationToken);
             }
             else
             {
-                throw new InvalidOperationException("El backup cifrado no tiene un formato reconocido.");
-            }
-
-            var baseNonce = new byte[NonceSize];
-            await ReadExactAsync(source, baseNonce, cancellationToken);
-
-            var lengthBytes = new byte[4];
-            var tag = new byte[TagSize];
-            var plain = new byte[ChunkSize];
-            var cipher = new byte[ChunkSize];
-            ulong counter = 0;
-            long totalPlaintextBytes = 0;
-
-            while (source.Position < source.Length)
-            {
-                await ReadExactAsync(source, lengthBytes, cancellationToken);
-                var length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
-                if (length <= 0 || length > ChunkSize)
+                byte[] aad;
+                Func<byte[], ulong, byte[]> buildNonce;
+                if (header.AsSpan().SequenceEqual(MagicV2))
                 {
-                    throw new InvalidOperationException("El backup cifrado contiene un bloque invalido.");
+                    aad = MagicV2;
+                    buildNonce = BuildChunkNonceV2;
+                }
+                else if (header.AsSpan().SequenceEqual(MagicV1))
+                {
+                    aad = MagicV1;
+                    buildNonce = BuildChunkNonceLegacyV1;
+                }
+                else
+                {
+                    throw new InvalidOperationException("El backup cifrado no tiene un formato reconocido.");
                 }
 
-                if (length > maxPlaintextBytes - totalPlaintextBytes)
+                var baseNonce = new byte[NonceSize];
+                await ReadExactAsync(source, baseNonce, cancellationToken);
+
+                var lengthBytes = new byte[4];
+                var tag = new byte[TagSize];
+                var plain = new byte[ChunkSize];
+                var cipher = new byte[ChunkSize];
+                ulong counter = 0;
+                long totalPlaintextBytes = 0;
+
+                while (source.Position < source.Length)
                 {
-                    throw new InvalidOperationException("El backup cifrado supera el limite de tamano permitido.");
+                    await ReadExactAsync(source, lengthBytes, cancellationToken);
+                    var length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
+                    if (length <= 0 || length > ChunkSize)
+                    {
+                        throw new InvalidOperationException("El backup cifrado contiene un bloque invalido.");
+                    }
+
+                    if (length > maxPlaintextBytes - totalPlaintextBytes)
+                    {
+                        throw new InvalidOperationException("El backup cifrado supera el limite de tamano permitido.");
+                    }
+
+                    await ReadExactAsync(source, tag, cancellationToken);
+                    await ReadExactAsync(source, cipher.AsMemory(0, length), cancellationToken);
+
+                    var nonce = buildNonce(baseNonce, counter++);
+                    using var aes = new AesGcm(key, TagSize);
+                    aes.Decrypt(nonce, cipher.AsSpan(0, length), tag, plain.AsSpan(0, length), aad);
+                    await destination.WriteAsync(plain.AsMemory(0, length), cancellationToken);
+                    totalPlaintextBytes += length;
                 }
-
-                await ReadExactAsync(source, tag, cancellationToken);
-                await ReadExactAsync(source, cipher.AsMemory(0, length), cancellationToken);
-
-                var nonce = buildNonce(baseNonce, counter++);
-                using var aes = new AesGcm(key, TagSize);
-                aes.Decrypt(nonce, cipher.AsSpan(0, length), tag, plain.AsSpan(0, length), aad);
-                await destination.WriteAsync(plain.AsMemory(0, length), cancellationToken);
-                totalPlaintextBytes += length;
             }
 
             completed = true;
@@ -176,6 +247,89 @@ public sealed class BackupEncryptionService : IBackupEncryptionService
                 File.Delete(destinationPath);
             }
         }
+    }
+
+    // S-19 (V-03.02): descifrado del formato V3. La cabecera declara el numero de
+    // bloques y ese numero esta autenticado por el AAD del ultimo bloque: un fichero
+    // truncado en un limite de bloque deja la cabecera con un numero que ya no
+    // corresponde, y el tag del bloque que pasa a ser el ultimo no valida.
+    private static async Task DecryptV3Async(FileStream source, FileStream destination, byte[] key, long maxPlaintextBytes, CancellationToken cancellationToken)
+    {
+        var baseNonce = new byte[NonceSize];
+        await ReadExactAsync(source, baseNonce, cancellationToken);
+
+        var countBytes = new byte[4];
+        await ReadExactAsync(source, countBytes, cancellationToken);
+        var declaredBlocks = BinaryPrimitives.ReadInt32BigEndian(countBytes);
+        if (declaredBlocks <= 0)
+        {
+            throw new InvalidOperationException("El backup cifrado declara un numero de bloques invalido.");
+        }
+
+        var lengthBytes = new byte[4];
+        var tag = new byte[TagSize];
+        var plain = new byte[ChunkSize];
+        var cipher = new byte[ChunkSize];
+        long totalPlaintextBytes = 0;
+
+        for (var index = 0; index < declaredBlocks; index++)
+        {
+            int length;
+            try
+            {
+                await ReadExactAsync(source, lengthBytes, cancellationToken);
+                length = BinaryPrimitives.ReadInt32BigEndian(lengthBytes);
+                if (length <= 0 || length > ChunkSize)
+                {
+                    throw new InvalidOperationException("El backup cifrado contiene un bloque invalido.");
+                }
+
+                await ReadExactAsync(source, tag, cancellationToken);
+                await ReadExactAsync(source, cipher.AsMemory(0, length), cancellationToken);
+            }
+            catch (EndOfStreamException ex)
+            {
+                throw new InvalidOperationException(
+                    $"El backup cifrado esta truncado: la cabecera declara {declaredBlocks} bloques y solo se han podido leer {index}.",
+                    ex);
+            }
+
+            if (length > maxPlaintextBytes - totalPlaintextBytes)
+            {
+                throw new InvalidOperationException("El backup cifrado supera el limite de tamano permitido.");
+            }
+
+            var aad = index == declaredBlocks - 1 ? BuildBlockCountAad(declaredBlocks) : MagicV3;
+            var nonce = BuildChunkNonceV2(baseNonce, (ulong)index);
+            try
+            {
+                using var aes = new AesGcm(key, TagSize);
+                aes.Decrypt(nonce, cipher.AsSpan(0, length), tag, plain.AsSpan(0, length), aad);
+            }
+            catch (CryptographicException ex)
+            {
+                throw new InvalidOperationException(
+                    $"El backup cifrado ha sido manipulado o esta truncado: no se pudo validar el bloque {index + 1} de {declaredBlocks}.",
+                    ex);
+            }
+
+            await destination.WriteAsync(plain.AsMemory(0, length), cancellationToken);
+            totalPlaintextBytes += length;
+        }
+
+        if (source.Position != source.Length)
+        {
+            throw new InvalidOperationException("El backup cifrado contiene datos extra tras el ultimo bloque.");
+        }
+    }
+
+    // S-19 (V-03.02): AAD del ultimo bloque = magic V3 + numero de bloques.
+    private static byte[] BuildBlockCountAad(int blockCount)
+    {
+        var aad = new byte[MagicV3.Length + 4];
+        Buffer.BlockCopy(MagicV3, 0, aad, 0, MagicV3.Length);
+        BinaryPrimitives.WriteInt32BigEndian(aad.AsSpan(MagicV3.Length), blockCount);
+        return aad;
     }
 
     private async Task<byte[]> ResolveKeyAsync(CancellationToken cancellationToken)

@@ -22,6 +22,12 @@ public sealed record FinancialToolResult<T>
     public int FilasDevueltas { get; init; }
     public int FilasAnalizadas { get; init; }
     public string? Advertencia { get; init; }
+    // A-6/B-10: la herramienta NO puede atender el plan (el filtro de
+    // concepto o de importes no aplica a esta consulta, o la comparacion
+    // mezclaria divisas distintas). En ese caso no se devuelve ninguna
+    // cifra: el ejecutor (PlanExecutor) convierte el motivo de
+    // Advertencia en un rechazo visible para el usuario.
+    public bool Rechazo { get; init; }
 }
 
 public sealed record LatestTransaction(
@@ -120,7 +126,10 @@ public sealed record ComparisonSnapshot(
     decimal Ingresos,
     decimal Gastos,
     decimal Neto,
-    int Movimientos);
+    int Movimientos,
+    // B-10: un snapshot es de UNA sola divisa. Comparar importes de
+    // distinta divisa no tiene sentido (1 EUR != 1 USD).
+    string Divisa);
 
 public sealed record ComparisonResult(
     ComparisonSnapshot Base,
@@ -181,6 +190,11 @@ public sealed class FinancialToolsService : IFinancialToolsService
 {
     public const decimal AnomalyHighFactor = 3m;
     public const int AnomalyHistoryMonths = 6;
+    // B-10: dos movimientos con el mismo concepto, importe y cuenta solo
+    // son "duplicado probable" si estan proximos en el tiempo. Un pago
+    // recurrente legitimo (la prima de seguro de cada mes) NO es un
+    // duplicado: esta constante fija la ventana de proximidad.
+    public const int AnomalyDuplicateMaxDays = 3;
 
     private readonly AppDbContext _dbContext;
     private readonly IUserAccessService _userAccessService;
@@ -237,6 +251,9 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var cuentaIds = plan.Filtros.CuentaIds;
         var titularIds = plan.Filtros.TitularIds;
         var divisas = plan.Filtros.Divisas;
+        var concepto = plan.Filtros.Concepto?.Trim();
+        var importeMin = plan.Filtros.ImporteMinimo;
+        var importeMax = plan.Filtros.ImporteMaximo;
 
         IQueryable<ExtractoJoinRow> query =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -262,6 +279,19 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (cuentaIds is { Count: > 0 }) query = query.Where(x => cuentaIds.Contains(x.CuentaId));
         if (titularIds is { Count: > 0 }) query = query.Where(x => titularIds.Contains(x.TitularId));
         if (divisas is { Count: > 0 }) query = query.Where(x => divisas.Contains(x.Divisa));
+        // A-6: el filtro por concepto y el rango de importes se aplican
+        // igual que en SearchTransactionsAsync: "contains" insensible a
+        // mayusculas sobre el concepto del extracto e importes
+        // comparados contra el VALOR ABSOLUTO del movimiento (los
+        // gastos se guardan en negativo, pero el usuario piensa en
+        // magnitudes).
+        if (concepto is { Length: > 0 })
+        {
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            query = query.Where(x => x.Concepto.ToLower().Contains(terminoNormalizado));
+        }
+        if (importeMin.HasValue) query = query.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) query = query.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         IQueryable<ExtractoJoinRow> ordered = direction switch
         {
@@ -301,6 +331,9 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var cuentaIds = plan.Filtros.CuentaIds;
         var titularIds = plan.Filtros.TitularIds;
         var divisas = plan.Filtros.Divisas;
+        var concepto = plan.Filtros.Concepto?.Trim();
+        var importeMin = plan.Filtros.ImporteMinimo;
+        var importeMax = plan.Filtros.ImporteMaximo;
 
         IQueryable<PeriodTotalsProjection> query =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -315,6 +348,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
                 BancoNombre = c.BancoNombre ?? string.Empty,
                 Divisa = c.Divisa,
                 Fecha = e.Fecha,
+                Concepto = e.Concepto ?? string.Empty,
                 TitularId = t.Id
             };
 
@@ -323,6 +357,16 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (cuentaIds is { Count: > 0 }) query = query.Where(x => cuentaIds.Contains(x.CuentaId));
         if (titularIds is { Count: > 0 }) query = query.Where(x => titularIds.Contains(x.TitularId));
         if (divisas is { Count: > 0 }) query = query.Where(x => divisas.Contains(x.Divisa));
+        // A-6: concepto y rango de importes (magnitudes) tambien acotan
+        // los totales; sin esto, "¿cuanto he gastado en seguros?" salia
+        // con el total de todos los gastos.
+        if (concepto is { Length: > 0 })
+        {
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            query = query.Where(x => x.Concepto.ToLower().Contains(terminoNormalizado));
+        }
+        if (importeMin.HasValue) query = query.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) query = query.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         var totalBase = await query.CountAsync(cancellationToken);
 
@@ -392,6 +436,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
         public string BancoNombre { get; set; } = string.Empty;
         public string Divisa { get; set; } = string.Empty;
         public DateOnly Fecha { get; set; }
+        public string Concepto { get; set; } = string.Empty;
         public Guid TitularId { get; set; }
         // No se proyecta desde EF (no hay columna), solo se usa en
         // tests para asegurar orden estable antes de agregar en
@@ -403,7 +448,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
         UserAccessScope scope, FinancialQueryPlan plan, CancellationToken cancellationToken)
     {
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var hoy = FechasOperativas.HoyLocal();
         // El periodo por defecto (mes en curso, ver IntentPlanner "saldo_actual"
         // e IaPlanValidator.PeriodoPorDefecto) no debe acotar que extracto se
         // considera "el saldo actual": una cuenta sin movimientos este mes (o
@@ -416,6 +461,21 @@ public sealed class FinancialToolsService : IFinancialToolsService
         DateOnly? hasta = periodoEsPorDefecto ? null : (plan.Filtros.Periodo?.To ?? hoy);
         var cuentaIds = plan.Filtros.CuentaIds;
         var divisas = plan.Filtros.Divisas;
+
+        // A-6: un saldo no es un movimiento. Si el plan pide filtrar por
+        // concepto o por rango de importes, esta herramienta no puede
+        // devolver una cifra sin filtrar: se rechaza con motivo.
+        if (HayFiltroDeMovimiento(plan.Filtros))
+        {
+            return new FinancialToolResult<IReadOnlyList<BalanceRow>>
+            {
+                Data = Array.Empty<BalanceRow>(),
+                FilasDevueltas = 0,
+                FilasAnalizadas = 0,
+                Rechazo = true,
+                Advertencia = $"No puedo aplicar el filtro ({DescribirFiltro(plan.Filtros)}) a los saldos: un saldo no es un movimiento. Reformula la pregunta o pide los movimientos filtrados."
+            };
+        }
 
         var latestKeys =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -490,6 +550,9 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var cuentaIds = plan.Filtros.CuentaIds;
         var titularIds = plan.Filtros.TitularIds;
         var divisas = plan.Filtros.Divisas;
+        var concepto = plan.Filtros.Concepto?.Trim();
+        var importeMin = plan.Filtros.ImporteMinimo;
+        var importeMax = plan.Filtros.ImporteMaximo;
 
         IQueryable<RankingProjection> query =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -504,6 +567,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
                 Divisa = c.Divisa,
                 Monto = e.Monto,
                 Fecha = e.Fecha,
+                Concepto = e.Concepto ?? string.Empty,
                 TitularId = t.Id
             };
 
@@ -512,6 +576,15 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (cuentaIds is { Count: > 0 }) query = query.Where(x => cuentaIds.Contains(x.CuentaId));
         if (titularIds is { Count: > 0 }) query = query.Where(x => titularIds.Contains(x.TitularId));
         if (divisas is { Count: > 0 }) query = query.Where(x => divisas.Contains(x.Divisa));
+        // A-6: mismo criterio de concepto e importes que en el resto de
+        // herramientas de movimientos.
+        if (concepto is { Length: > 0 })
+        {
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            query = query.Where(x => x.Concepto.ToLower().Contains(terminoNormalizado));
+        }
+        if (importeMin.HasValue) query = query.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) query = query.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         var raw = await query.ToListAsync(cancellationToken);
 
@@ -536,14 +609,14 @@ public sealed class FinancialToolsService : IFinancialToolsService
 
         rows = rows.Where(x => x.Gastos != 0m || x.Ingresos != 0m || x.Neto != 0m);
 
-        var ordered = metrica switch
-        {
-            FinancialMetric.Gastos => rows.OrderByDescending(x => x.Gastos),
-            FinancialMetric.Ingresos => rows.OrderByDescending(x => x.Ingresos),
-            _ => rows.OrderByDescending(x => Math.Abs(x.Neto))
-        };
-
-        var top = ordered.Take(plan.Limite).ToList();
+        // B-10: el top-N se aplica DENTRO de cada divisa. Comparar el
+        // gasto de una cuenta en USD con el de otra en EUR no tiene
+        // sentido. Si el plan fija una sola divisa, el filtro deja un
+        // unico grupo y el resultado es el de siempre.
+        var top = rows
+            .GroupBy(x => x.Divisa)
+            .SelectMany(g => OrdenarRanking(g, metrica).Take(plan.Limite))
+            .ToList();
 
         return new FinancialToolResult<IReadOnlyList<RankingRow>>
         {
@@ -562,8 +635,18 @@ public sealed class FinancialToolsService : IFinancialToolsService
         public string Divisa { get; set; } = string.Empty;
         public decimal Monto { get; set; }
         public DateOnly Fecha { get; set; }
+        public string Concepto { get; set; } = string.Empty;
         public Guid TitularId { get; set; }
     }
+
+    // B-10: el ranking ordena dentro de una sola divisa.
+    private static IEnumerable<RankingRow> OrdenarRanking(IEnumerable<RankingRow> filas, FinancialMetric metrica) =>
+        metrica switch
+        {
+            FinancialMetric.Gastos => filas.OrderByDescending(x => x.Gastos),
+            FinancialMetric.Ingresos => filas.OrderByDescending(x => x.Ingresos),
+            _ => filas.OrderByDescending(x => Math.Abs(x.Neto))
+        };
 
     public async Task<FinancialToolResult<IReadOnlyList<RevisionItem>>> GetRevisionItemsAsync(
         UserAccessScope scope, FinancialQueryPlan plan, CancellationToken cancellationToken)
@@ -575,6 +658,9 @@ public sealed class FinancialToolsService : IFinancialToolsService
 
         var desde = plan.Filtros.Periodo?.From;
         var hasta = plan.Filtros.Periodo?.To;
+        var concepto = plan.Filtros.Concepto?.Trim();
+        var importeMin = plan.Filtros.ImporteMinimo;
+        var importeMax = plan.Filtros.ImporteMaximo;
 
         IQueryable<RevisionProjection> query =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -596,6 +682,15 @@ public sealed class FinancialToolsService : IFinancialToolsService
 
         if (desde.HasValue) query = query.Where(x => x.Fecha >= desde.Value);
         if (hasta.HasValue) query = query.Where(x => x.Fecha <= hasta.Value);
+        // A-6: los items de revision son movimientos: el concepto y el
+        // rango de importes se aplican igual que en el resto.
+        if (concepto is { Length: > 0 })
+        {
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            query = query.Where(x => x.Concepto.ToLower().Contains(terminoNormalizado));
+        }
+        if (importeMin.HasValue) query = query.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) query = query.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         var raw = await query
             .OrderByDescending(x => x.Fecha)
@@ -637,10 +732,13 @@ public sealed class FinancialToolsService : IFinancialToolsService
         UserAccessScope scope, FinancialQueryPlan plan, CancellationToken cancellationToken)
     {
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
-        var earliest = DateOnly.FromDateTime(DateTime.UtcNow.Date).AddMonths(-AnomalyHistoryMonths);
+        var earliest = FechasOperativas.HoyLocal().AddMonths(-AnomalyHistoryMonths);
         var desde = plan.Filtros.Periodo?.From ?? earliest;
-        var hasta = plan.Filtros.Periodo?.To ?? DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var hasta = plan.Filtros.Periodo?.To ?? FechasOperativas.HoyLocal();
         var divisas = plan.Filtros.Divisas;
+        var concepto = plan.Filtros.Concepto?.Trim();
+        var importeMin = plan.Filtros.ImporteMinimo;
+        var importeMax = plan.Filtros.ImporteMaximo;
 
         IQueryable<TrendProjection> query =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -650,10 +748,19 @@ public sealed class FinancialToolsService : IFinancialToolsService
             {
                 Fecha = e.Fecha,
                 Divisa = c.Divisa,
-                Monto = e.Monto
+                Monto = e.Monto,
+                Concepto = e.Concepto ?? string.Empty
             };
 
         if (divisas is { Count: > 0 }) query = query.Where(x => divisas.Contains(x.Divisa));
+        // A-6: la tendencia tambien acota por concepto y por importe.
+        if (concepto is { Length: > 0 })
+        {
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            query = query.Where(x => x.Concepto.ToLower().Contains(terminoNormalizado));
+        }
+        if (importeMin.HasValue) query = query.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) query = query.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         var raw = await query.ToListAsync(cancellationToken);
 
@@ -684,6 +791,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
         public DateOnly Fecha { get; set; }
         public string Divisa { get; set; } = string.Empty;
         public decimal Monto { get; set; }
+        public string Concepto { get; set; } = string.Empty;
     }
 
     public async Task<FinancialToolResult<IReadOnlyList<PendingMovement>>> GetPendingMovementsAsync(
@@ -692,6 +800,21 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
         var desde = plan.Filtros.Periodo?.From;
         var hasta = plan.Filtros.Periodo?.To;
+
+        // A-6: los movimientos pendientes no son extractos: no se puede
+        // filtrar por concepto ni por importe sin inventar el dato. Se
+        // rechaza con motivo en vez de devolver una lista sin filtrar.
+        if (HayFiltroDeMovimiento(plan.Filtros))
+        {
+            return new FinancialToolResult<IReadOnlyList<PendingMovement>>
+            {
+                Data = Array.Empty<PendingMovement>(),
+                FilasDevueltas = 0,
+                FilasAnalizadas = 0,
+                Rechazo = true,
+                Advertencia = $"No puedo aplicar el filtro ({DescribirFiltro(plan.Filtros)}) a los movimientos pendientes. Reformula la pregunta sin ese filtro."
+            };
+        }
 
         IQueryable<PendingProjection> movimientosEsperados =
             from m in _dbContext.MovimientosEsperados.AsNoTracking()
@@ -819,8 +942,10 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (cuentaIds is { Count: > 0 }) query = query.Where(x => cuentaIds.Contains(x.CuentaId));
         if (titularIds is { Count: > 0 }) query = query.Where(x => titularIds.Contains(x.TitularId));
         if (divisas is { Count: > 0 }) query = query.Where(x => divisas.Contains(x.Divisa));
-        if (importeMin.HasValue) query = query.Where(x => x.Monto >= importeMin.Value);
-        if (importeMax.HasValue) query = query.Where(x => x.Monto <= importeMax.Value);
+        // A-6: los importes son magnitudes: se comparan contra el valor
+        // absoluto del movimiento (los gastos se guardan en negativo).
+        if (importeMin.HasValue) query = query.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) query = query.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         // Filtro de texto: se aplica en la propia consulta (case
         // insensitive via ToLower().Contains(), traducible tanto a
@@ -879,8 +1004,33 @@ public sealed class FinancialToolsService : IFinancialToolsService
         }
 
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
-        var baseSnapshot = await SnapshotAsync(cuentas, plan.Comparacion.Base, "Base", cancellationToken);
-        var refSnapshot = await SnapshotAsync(cuentas, plan.Comparacion.Referencia, "Referencia", cancellationToken);
+        var baseSnapshots = await SnapshotAsync(cuentas, plan.Comparacion.Base, "Base", plan.Filtros, cancellationToken);
+        var refSnapshots = await SnapshotAsync(cuentas, plan.Comparacion.Referencia, "Referencia", plan.Filtros, cancellationToken);
+
+        // B-10: nunca se suman ni comparan importes de distinta divisa.
+        // Si los periodos tocados abarcan mas de una divisa, la
+        // comparacion no tiene sentido: se rechaza con motivo en vez de
+        // devolver un total mixto.
+        var divisas = baseSnapshots.Select(x => x.Divisa)
+            .Concat(refSnapshots.Select(x => x.Divisa))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct()
+            .ToList();
+
+        if (divisas.Count > 1)
+        {
+            return new FinancialToolResult<ComparisonResult>
+            {
+                FilasDevueltas = 0,
+                FilasAnalizadas = 0,
+                Rechazo = true,
+                Advertencia = $"La comparacion abarca varias divisas ({string.Join(", ", divisas.OrderBy(x => x))}). No se pueden comparar importes de distinta divisa: indica una divisa en la pregunta o separa la consulta por divisas."
+            };
+        }
+
+        var divisa = divisas.Count == 1 ? divisas[0] : string.Empty;
+        var baseSnapshot = baseSnapshots.FirstOrDefault() ?? SnapshotVacio("Base", plan.Comparacion.Base, divisa);
+        var refSnapshot = refSnapshots.FirstOrDefault() ?? SnapshotVacio("Referencia", plan.Comparacion.Referencia, divisa);
 
         var variacionIngresos = baseSnapshot.Ingresos - refSnapshot.Ingresos;
         var variacionGastos = baseSnapshot.Gastos - refSnapshot.Gastos;
@@ -908,7 +1058,7 @@ public sealed class FinancialToolsService : IFinancialToolsService
         UserAccessScope scope, FinancialQueryPlan plan, CancellationToken cancellationToken)
     {
         var cuentas = CuentasScope(scope, plan.Filtros.PaisIds?.FirstOrDefault());
-        var hoy = DateOnly.FromDateTime(DateTime.UtcNow.Date);
+        var hoy = FechasOperativas.HoyLocal();
         var inicio = hoy.AddMonths(-AnomalyHistoryMonths);
         // V-02.08: filtros de entidad validados (cuenta/titular/divisa) deben
         // acotar la deteccion igual que el resto de herramientas; sin esto,
@@ -917,6 +1067,9 @@ public sealed class FinancialToolsService : IFinancialToolsService
         var cuentaIds = plan.Filtros.CuentaIds;
         var titularIds = plan.Filtros.TitularIds;
         var divisas = plan.Filtros.Divisas;
+        var concepto = plan.Filtros.Concepto?.Trim();
+        var importeMin = plan.Filtros.ImporteMinimo;
+        var importeMax = plan.Filtros.ImporteMaximo;
 
         var extractosQuery =
             from e in _dbContext.Extractos.AsNoTracking()
@@ -938,22 +1091,35 @@ public sealed class FinancialToolsService : IFinancialToolsService
         if (cuentaIds is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => cuentaIds.Contains(x.CuentaId));
         if (titularIds is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => titularIds.Contains(x.TitularId));
         if (divisas is { Count: > 0 }) extractosQuery = extractosQuery.Where(x => divisas.Contains(x.CuentaDivisa));
+        // A-6: concepto e importes acotan los movimientos analizados igual
+        // que en el resto de herramientas ("contains" insensible a
+        // mayusculas; importes contra el valor absoluto).
+        if (concepto is { Length: > 0 })
+        {
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            extractosQuery = extractosQuery.Where(x => (x.Concepto ?? string.Empty).ToLower().Contains(terminoNormalizado));
+        }
+        if (importeMin.HasValue) extractosQuery = extractosQuery.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) extractosQuery = extractosQuery.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
         var extractos = await extractosQuery.ToListAsync(cancellationToken);
 
         var anomalias = new List<Anomaly>();
 
         // 1. Duplicado probable: mismo concepto + mismo importe + misma
-        // cuenta, dentro de la ventana de historico.
+        // cuenta, y ademas proximos en el tiempo. Un pago recurrente
+        // legitimo (la prima de seguro de cada mes) NO es un duplicado:
+        // sin la ventana de proximidad, B-10 lo marcaba como tal.
         var duplicados = extractos
             .Where(x => !string.IsNullOrWhiteSpace(x.Concepto))
             .GroupBy(x => new { x.CuentaId, x.Concepto, Importe = x.Monto })
             .Where(g => g.Count() > 1)
+            .Where(g => SonProximos(g.Select(x => x.Fecha), AnomalyDuplicateMaxDays))
             .SelectMany(g => g.OrderBy(x => x.Fecha).Take(1))
             .Select(x => new Anomaly(
                 "DUPLICADO_PROBABLE",
                 "media",
-                $"Movimiento repetido en {x.Cuenta}: '{x.Concepto}' por {x.Monto:0.00} aparece mas de una vez en los ultimos {AnomalyHistoryMonths} meses.",
+                $"Movimiento repetido en {x.Cuenta}: '{x.Concepto}' por {x.Monto:0.00} aparece mas de una vez en {AnomalyDuplicateMaxDays} dias.",
                 x.Id, x.CuentaId, x.Cuenta, x.Titular, x.Fecha, x.Monto, null));
 
         anomalias.AddRange(duplicados);
@@ -1087,39 +1253,74 @@ public sealed class FinancialToolsService : IFinancialToolsService
         };
     }
 
-    private async Task<ComparisonSnapshot> SnapshotAsync(
+    // B-10: un snapshot por DIVISA. Antes agrupaba por 1 y sumaba EUR y
+    // USD en el mismo total (y comparaba ese total mixto entre periodos).
+    private async Task<IReadOnlyList<ComparisonSnapshot>> SnapshotAsync(
         IQueryable<Models.Cuenta> cuentas,
         FinancialPeriod periodo,
         string etiqueta,
+        FinancialFilters filtros,
         CancellationToken cancellationToken)
     {
         if (periodo.From is null || periodo.To is null)
         {
-            return new ComparisonSnapshot(etiqueta, default, default, 0, 0, 0, 0);
+            return Array.Empty<ComparisonSnapshot>();
         }
-        var rows = await (
+
+        var concepto = filtros.Concepto?.Trim();
+        var importeMin = filtros.ImporteMinimo;
+        var importeMax = filtros.ImporteMaximo;
+        var divisas = filtros.Divisas;
+
+        IQueryable<ComparisonProjection> query =
             from e in _dbContext.Extractos.AsNoTracking()
             join c in cuentas on e.CuentaId equals c.Id
             where e.Fecha >= periodo.From && e.Fecha <= periodo.To
-            group e by 1
-            into g
-            select new
+            select new ComparisonProjection
             {
-                Ingresos = g.Where(x => x.Monto > 0).Sum(x => x.Monto),
-                Gastos = -g.Where(x => x.Monto < 0).Sum(x => x.Monto),
-                Neto = g.Sum(x => x.Monto),
-                Movimientos = g.Count()
-            }).ToListAsync(cancellationToken);
+                Divisa = c.Divisa,
+                Monto = e.Monto,
+                Concepto = e.Concepto ?? string.Empty
+            };
 
-        if (rows.Count == 0)
+        if (divisas is { Count: > 0 }) query = query.Where(x => divisas.Contains(x.Divisa));
+        // A-6: la comparacion tambien respeta el concepto y el rango de
+        // importes del plan.
+        if (concepto is { Length: > 0 })
         {
-            return new ComparisonSnapshot(etiqueta, periodo.From.Value, periodo.To.Value, 0, 0, 0, 0);
+            var terminoNormalizado = concepto.ToLowerInvariant();
+            query = query.Where(x => x.Concepto.ToLower().Contains(terminoNormalizado));
         }
+        if (importeMin.HasValue) query = query.Where(x => Math.Abs(x.Monto) >= importeMin.Value);
+        if (importeMax.HasValue) query = query.Where(x => Math.Abs(x.Monto) <= importeMax.Value);
 
-        var r = rows[0];
-        return new ComparisonSnapshot(etiqueta, periodo.From.Value, periodo.To.Value,
-            r.Ingresos, r.Gastos, r.Neto, r.Movimientos);
+        var rows = await query.ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(x => x.Divisa)
+            .Select(g => new ComparisonSnapshot(
+                $"{etiqueta} ({g.Key})",
+                periodo.From.Value,
+                periodo.To.Value,
+                g.Where(x => x.Monto > 0).Sum(x => x.Monto),
+                -g.Where(x => x.Monto < 0).Sum(x => x.Monto),
+                g.Sum(x => x.Monto),
+                g.Count(),
+                g.Key))
+            .ToList();
     }
+
+    private sealed class ComparisonProjection
+    {
+        public string Divisa { get; set; } = string.Empty;
+        public decimal Monto { get; set; }
+        public string Concepto { get; set; } = string.Empty;
+    }
+
+    // Snapshot sin movimientos: conserva el periodo y la divisa para que
+    // la comparacion siga siendo legible.
+    private static ComparisonSnapshot SnapshotVacio(string etiqueta, FinancialPeriod periodo, string divisa) =>
+        new(etiqueta, periodo.From ?? default, periodo.To ?? default, 0, 0, 0, 0, divisa);
 
     private static decimal PctDelta(decimal variacion, decimal baseValor)
     {
@@ -1135,5 +1336,50 @@ public sealed class FinancialToolsService : IFinancialToolsService
             FinancialMetric.Ingresos => FinancialDirection.Ingreso,
             _ => fallback
         };
+    }
+
+    // A-6: el plan pide un filtro de movimiento (concepto o rango de
+    // importes). Una herramienta que no opera sobre movimientos no lo
+    // puede aplicar.
+    private static bool HayFiltroDeMovimiento(FinancialFilters filtros) =>
+        !string.IsNullOrWhiteSpace(filtros.Concepto)
+        || filtros.ImporteMinimo.HasValue
+        || filtros.ImporteMaximo.HasValue;
+
+    // A-6: descripcion del filtro rechazado para que el motivo que ve el
+    // usuario sea concreto.
+    private static string DescribirFiltro(FinancialFilters filtros)
+    {
+        var partes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(filtros.Concepto))
+        {
+            partes.Add($"concepto '{filtros.Concepto.Trim()}'");
+        }
+        if (filtros.ImporteMinimo.HasValue)
+        {
+            partes.Add($"importe minimo {filtros.ImporteMinimo.Value:0.##}");
+        }
+        if (filtros.ImporteMaximo.HasValue)
+        {
+            partes.Add($"importe maximo {filtros.ImporteMaximo.Value:0.##}");
+        }
+        return string.Join(", ", partes);
+    }
+
+    // B-10: hay dos elementos proximos si la separacion entre alguna pareja
+    // consecutiva es de maxDias dias o menos. Se cuentan elementos, no
+    // fechas distintas: dos movimientos en la misma fecha (diferencia 0)
+    // son proximos.
+    private static bool SonProximos(IEnumerable<DateOnly> fechas, int maxDias)
+    {
+        var ordenadas = fechas.OrderBy(x => x).ToList();
+        for (int i = 1; i < ordenadas.Count; i++)
+        {
+            if (ordenadas[i].DayNumber - ordenadas[i - 1].DayNumber <= maxDias)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

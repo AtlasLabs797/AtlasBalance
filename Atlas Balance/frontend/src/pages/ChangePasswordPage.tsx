@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -17,6 +18,7 @@ interface ChangePasswordForm {
 }
 
 export default function ChangePasswordPage() {
+  useDocumentTitle('Cambiar contraseña');
   const navigate = useNavigate();
   const usuario = useAuthStore((state) => state.usuario);
   const setUsuario = useAuthStore((state) => state.setUsuario);

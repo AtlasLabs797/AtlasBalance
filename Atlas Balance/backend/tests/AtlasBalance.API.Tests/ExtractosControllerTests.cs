@@ -78,7 +78,7 @@ public sealed class ExtractosControllerTests
         });
         await db.SaveChangesAsync();
 
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
@@ -96,7 +96,8 @@ public sealed class ExtractosControllerTests
             new SaveColumnasVisiblesRequest
             {
                 CuentaId = null,
-                ColumnasVisibles = ["fecha", "monto"]
+                ColumnasVisibles = ["fecha", "monto"],
+                OrdenColumnas = ["monto", "concepto", "fecha"]
             },
             CancellationToken.None);
 
@@ -107,6 +108,7 @@ public sealed class ExtractosControllerTests
         pref.TitularId.Should().BeNull();
         pref.CuentaId.Should().BeNull();
         pref.ColumnasVisibles.Should().Contain("monto");
+        JsonSerializer.Deserialize<string[]>(pref.OrdenColumnas!).Should().Equal("monto", "concepto", "fecha");
 
         var readResult = await controller.GetColumnasVisibles(ct: CancellationToken.None);
         readResult.Should().BeOfType<OkObjectResult>();
@@ -114,6 +116,11 @@ public sealed class ExtractosControllerTests
         readPayload.Should().NotBeNull();
         readPayload!.GetType().GetProperty("columnas_visibles")!.GetValue(readPayload)
             .Should().BeEquivalentTo(new[] { "fecha", "monto" });
+        readPayload.GetType().GetProperty("orden_columnas")!.GetValue(readPayload)
+            .Should().BeEquivalentTo(new[] { "monto", "concepto", "fecha" });
+
+        await controller.SaveColumnasVisibles(new SaveColumnasVisiblesRequest { ColumnasVisibles = ["fecha"] }, CancellationToken.None);
+        JsonSerializer.Deserialize<string[]>(pref.OrdenColumnas!).Should().Equal("monto", "concepto", "fecha");
     }
 
     [Fact]
@@ -515,7 +522,7 @@ public sealed class ExtractosControllerTests
     }
 
     [Fact]
-    public async Task Listar_Should_Return_AvailableExtraColumns_From_Filtered_Result_Not_Only_Current_Page()
+    public async Task Listar_Should_Return_Nonempty_ExtraColumns_From_Account_Scope_Beyond_Filters_And_Page()
     {
         await using var db = BuildDbContext();
         var userId = Guid.NewGuid();
@@ -557,18 +564,14 @@ public sealed class ExtractosControllerTests
                 Saldo = 30m,
                 FilaNumero = 2
             });
-        db.ExtractosColumnasExtra.Add(new ExtractoColumnaExtra
-        {
-            Id = Guid.NewGuid(),
-            ExtractoId = secondExtractoId,
-            NombreColumna = "canal",
-            Valor = "Banca online"
-        });
+        db.ExtractosColumnasExtra.AddRange(
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = secondExtractoId, NombreColumna = "canal", Valor = "Banca online" },
+            new ExtractoColumnaExtra { Id = Guid.NewGuid(), ExtractoId = secondExtractoId, NombreColumna = "vacia", Valor = "  " });
         await db.SaveChangesAsync();
 
         var controller = BuildController(db, userId, RolUsuario.ADMIN);
 
-        var result = await controller.Listar(page: 1, pageSize: 1, sortBy: "fila_numero", sortDir: "asc", ct: CancellationToken.None);
+        var result = await controller.Listar(page: 1, pageSize: 1, sortBy: "fila_numero", sortDir: "asc", cuentaId: cuentaId, search: "sin extra", ct: CancellationToken.None);
 
         var ok = result.Should().BeOfType<OkObjectResult>().Subject;
         var page = ok.Value.Should().BeOfType<PaginatedResponse<ExtractoListItemResponse>>().Subject;
@@ -766,7 +769,10 @@ public sealed class ExtractosControllerTests
 
         var result = await controller.GetAuditCelda(extractoId, "concepto", ct: CancellationToken.None);
 
-        result.Should().BeOfType<NotFoundObjectResult>();
+        // S-8 (LOTE 6): el extracto EXISTE (esta en la papelera) y el actor no es
+        // admin, asi que no tiene permiso sobre el -> 403. Antes devolvia 404
+        // ("no existe"), que no distingue "no existe" de "no me dejan".
+        result.Should().BeOfType<ForbidResult>();
     }
 
     [Fact]
@@ -1645,7 +1651,7 @@ public sealed class ExtractosControllerTests
 
     private static ExtractosController BuildController(AppDbContext db, Guid userId, RolUsuario role)
     {
-        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance);
+        var controller = new ExtractosController(db, new NoOpAlertaService(), NullLogger<AtlasBalance.API.Controllers.ExtractosController>.Instance, TestUserAccess.Create(db));
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),

@@ -1,7 +1,13 @@
 using AtlasBalance.API.Services;
+using Hangfire;
 
 namespace AtlasBalance.API.Jobs;
 
+// V-03.02 (J-1): cron cada 12 h. Una sola sincronizacion a la vez y reintento
+// ante un fallo transitorio de BD (los fallos de la API los absorbe el servicio y
+// dejan aviso al admin, sin lanzar excepcion).
+[DisableConcurrentExecution(timeoutInSeconds: 600)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class SyncTiposCambioJob
 {
     private readonly ITiposCambioService _tiposCambioService;

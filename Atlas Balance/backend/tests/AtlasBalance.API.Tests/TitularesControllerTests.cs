@@ -177,7 +177,7 @@ public sealed class TitularesControllerTests
 
         var controller = BuildController(db, userId, RolUsuario.GERENTE);
 
-        var result = await controller.Listar(page: 1, pageSize: 50, sortBy: "nombre", sortDir: "asc", search: null, tipoTitular: null, paisId: null, incluirEliminados: false, CancellationToken.None);
+        var result = await controller.Listar(page: 1, pageSize: 50, sortBy: "nombre", sortDir: "asc", search: null, tipoTitular: null, paisId: null, incluirEliminados: false, soloEliminados: false, CancellationToken.None);
 
         var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
             .Should().BeOfType<PaginatedResponse<TitularListItemResponse>>().Subject;
@@ -216,7 +216,7 @@ public sealed class TitularesControllerTests
 
         var controller = BuildController(db, userId, RolUsuario.ADMIN);
 
-        var result = await controller.Listar(page: 1, pageSize: 50, sortBy: "nombre", sortDir: "asc", search: null, tipoTitular: null, paisId: null, incluirEliminados: false, CancellationToken.None);
+        var result = await controller.Listar(page: 1, pageSize: 50, sortBy: "nombre", sortDir: "asc", search: null, tipoTitular: null, paisId: null, incluirEliminados: false, soloEliminados: false, CancellationToken.None);
 
         var page = result.Should().BeOfType<OkObjectResult>().Subject.Value
             .Should().BeOfType<PaginatedResponse<TitularListItemResponse>>().Subject;

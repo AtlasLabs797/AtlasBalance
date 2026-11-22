@@ -11,19 +11,21 @@ import type {
   DashboardSaldosDivisa,
   PeriodoDashboard,
 } from '@/types';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency, formatDate, formatPercent, signoPorcentaje } from '@/utils/formatters';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
 import { EmptyState } from '@/components/common/EmptyState';
 import { ConcentracionDonutCharts } from '@/components/dashboard/ConcentracionDonutCharts';
 import { EvolucionChart } from '@/components/dashboard/EvolucionChart';
 import { KpiCard } from '@/components/dashboard/KpiCard';
-import { PageSkeleton } from '@/components/common/PageSkeleton';
+import { DashboardBlockError, DashboardBlockSkeleton, DashboardStaleNotice } from '@/components/dashboard/DashboardBlockStatus';
+import { DivisasSinTipoCambioAviso } from '@/components/dashboard/DivisasSinTipoCambioAviso';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { queryKeys } from '@/queries/queryKeys';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
+import '@/styles/layout/routes/dashboard.css';
 
 const PERIODOS: PeriodoDashboard[] = ['1m', '3m', '6m', '12m', '24m'];
 const TIPO_TITULAR_LABELS = {
@@ -86,12 +88,22 @@ export default function DashboardPage() {
   const principal = principalQuery.data ?? null;
   const evolucion = evolucionQuery.data ?? null;
   const saldosDivisa = saldosDivisaQuery.data ?? null;
-  const loading = principalQuery.isLoading || evolucionQuery.isLoading || saldosDivisaQuery.isLoading;
-  const error =
-    principalQuery.error ? extractErrorMessage(principalQuery.error, 'No se pudo cargar el dashboard.') :
-    evolucionQuery.error ? extractErrorMessage(evolucionQuery.error, 'No se pudo cargar el dashboard.') :
-    saldosDivisaQuery.error ? extractErrorMessage(saldosDivisaQuery.error, 'No se pudo cargar el dashboard.') :
-    null;
+  const principalError = principalQuery.isError && !principal;
+  const evolucionError = evolucionQuery.isError && !evolucion;
+  const saldosDivisaError = saldosDivisaQuery.isError && !saldosDivisa;
+  // Alguna consulta fallo al refrescar pero aun hay datos previos en pantalla.
+  const refreshFailed =
+    (principalQuery.isError && Boolean(principal)) ||
+    (evolucionQuery.isError && Boolean(evolucion)) ||
+    (saldosDivisaQuery.isError && Boolean(saldosDivisa));
+  const updatedAt = Math.min(
+    ...[principalQuery.dataUpdatedAt, evolucionQuery.dataUpdatedAt, saldosDivisaQuery.dataUpdatedAt].filter((value) => value > 0),
+  );
+  const retryAll = () => {
+    if (principalQuery.isError) void principalQuery.refetch();
+    if (evolucionQuery.isError) void evolucionQuery.refetch();
+    if (saldosDivisaQuery.isError) void saldosDivisaQuery.refetch();
+  };
   const divisaOptions = useMemo(() => {
     const options = new Set<string>();
     Object.keys(principal?.saldos_por_divisa ?? {}).forEach((item) => options.add(item));
@@ -199,249 +211,321 @@ export default function DashboardPage() {
     return <Navigate to="/extractos" replace />;
   }
 
-  if (loading) {
-    return <PageSkeleton rows={4} variant="dashboard" />;
-  }
-
-  if (error || !principal || !evolucion || !saldosDivisa) {
-    return (
-      <div className="page-placeholder">
-        <h1>Dashboard</h1>
-        <p>{error ?? 'Carga cuentas o extractos para ver saldos y evolución.'}</p>
-      </div>
-    );
-  }
+  const sinDatos =
+    Boolean(principal) &&
+    (principal?.saldos_por_cuenta?.length ?? 0) === 0 &&
+    (principal?.saldos_por_titular?.length ?? 0) === 0;
+  const diasVencimiento = principal?.plazos_fijos.dias_hasta_proximo_vencimiento ?? null;
+  const plazoProximo = diasVencimiento !== null && diasVencimiento <= 7;
 
   return (
-    <section className="dashboard-page">
-      <header className="dashboard-toolbar">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="dashboard-subtitle">Saldos consolidados, movimiento del periodo y exposición por titular.</p>
+    <section className="dashboard-page page">
+      <header className="dashboard-toolbar page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Dashboard</h1>
+          <p className="page-header__subtitle">Saldos consolidados, movimiento del periodo y exposición por titular.</p>
         </div>
         <div className="dashboard-toolbar-actions">
           <PeriodoSelector value={periodo} onChange={setPeriodo} />
-          <DivisaSelector value={principal.divisa_principal} options={divisaOptions} onChange={setDivisaPrincipal} />
+          <DivisaSelector value={principal?.divisa_principal ?? divisaPrincipal} options={divisaOptions} onChange={setDivisaPrincipal} />
         </div>
       </header>
 
-      <section className="dashboard-hero-card">
-        <div className="dashboard-hero-summary">
-          <div className="dashboard-hero-balance">
-            <p>Saldo consolidado</p>
-            <strong>
-              <SignedAmount value={principal.total_convertido}>
-                {formatCurrency(principal.total_convertido, principal.divisa_principal)}
-              </SignedAmount>
-            </strong>
-            <span className="dashboard-hero-delta">
-              {variacionPct !== null ? (
-                <>
-                  <span className={variacionPct >= 0 ? 'dashboard-variacion-pill dashboard-variacion--positive' : 'dashboard-variacion-pill dashboard-variacion--negative'}>
-                    {variacionPct >= 0 ? '+' : ''}{variacionPct.toFixed(1)}%
-                  </span>
-                  <span>vs. periodo anterior · {formatPeriodoLabel(periodo)}</span>
-                </>
-              ) : 'Sin comparativa suficiente'}
-            </span>
-            <small>
-              {resumenConsolidado.cuentas} cuenta{resumenConsolidado.cuentas === 1 ? '' : 's'} ·{' '}
-              {resumenConsolidado.bancos} banco{resumenConsolidado.bancos === 1 ? '' : 's'} ·{' '}
-              {resumenConsolidado.divisas} divisa{resumenConsolidado.divisas === 1 ? '' : 's'}
-            </small>
-          </div>
+      <DashboardStaleNotice updatedAt={updatedAt} failed={refreshFailed} onRetry={retryAll} />
 
-          <div className="dashboard-hero-divisas">
-            <SaldoPorDivisaCard
-              className="dashboard-divisa-strip dashboard-divisa-strip--hero"
-              items={saldosDivisa.divisas}
-              divisaPrincipal={saldosDivisa.divisa_principal}
-            />
-          </div>
-        </div>
+      {plazoProximo && principal ? (
+        <p className="dashboard-plazo-aviso" role="status">
+          <strong>Plazo fijo próximo a vencer.</strong>{' '}
+          {diasVencimiento === 0
+            ? 'Vence hoy'
+            : diasVencimiento === 1
+              ? 'Vence mañana'
+              : diasVencimiento !== null && diasVencimiento < 0
+                ? `Venció hace ${Math.abs(diasVencimiento)} días`
+                : `Vence en ${diasVencimiento} días`}
+          {principal.plazos_fijos.proximo_vencimiento ? ` (${formatDate(principal.plazos_fijos.proximo_vencimiento)})` : ''}.
+        </p>
+      ) : null}
 
-        <div className="dashboard-hero-chart">
-          <EvolucionChart
-            points={evolucion.puntos}
-            divisa={principal.divisa_principal}
-            colors={principal.chart_colors}
-            height={310}
-            variant="saldoArea"
-            xAxisMode="month"
-          />
-        </div>
-      </section>
-
-      <div className="dashboard-kpi-grid dashboard-kpi-grid--secondary">
-        <KpiCard
-          title="Ingresos período"
-          value={
-            <SignedAmount value={periodTotals.ingresos}>
-              {formatCurrency(periodTotals.ingresos, principal.divisa_principal)}
-            </SignedAmount>
-          }
-          helper={variacionIngPct !== null ? (
-            <span className={variacionIngPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-              {variacionIngPct >= 0 ? '+' : ''}{variacionIngPct.toFixed(1)}% vs. anterior
-            </span>
-          ) : undefined}
+      {sinDatos ? (
+        <EmptyState
+          headingLevel="h2"
+          variant="setup"
+          title="Todavía no hay datos para mostrar."
+          subtitle="Carga cuentas o extractos para ver saldos y evolución."
+          primaryAction={<Link to="/extractos">Ir a extractos</Link>}
         />
-        <KpiCard
-          title="Egresos período"
-          value={
-            <SignedAmount value={periodTotals.egresos} tone="negative">
-              {formatCurrency(periodTotals.egresos, principal.divisa_principal)}
-            </SignedAmount>
-          }
-          helper={variacionEgrPct !== null ? (
-            <span className={variacionEgrPct <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-              {variacionEgrPct >= 0 ? '+' : ''}{variacionEgrPct.toFixed(1)}% vs. anterior
-            </span>
-          ) : undefined}
-        />
-        {liquidezConsolidada ? (
-          <>
-            <KpiCard
-              title="Disponible"
-              value={
-                <SignedAmount value={liquidezConsolidada.disponible}>
-                  {formatCurrency(liquidezConsolidada.disponible, principal.divisa_principal)}
-                </SignedAmount>
-              }
-              helper={variacionDispPct !== null ? (
-                <span className={variacionDispPct >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
-                  {disponiblePct !== null ? `${disponiblePct.toFixed(1)}% del saldo total` : `${variacionDispPct >= 0 ? '+' : ''}${variacionDispPct.toFixed(1)}%`}
-                </span>
-              ) : undefined}
-            />
-            <KpiCard
-              title="Inmovilizado"
-              value={formatCurrency(liquidezConsolidada.inmovilizado, principal.divisa_principal)}
-              helper={variacionInmovPct !== null ? (
-                Math.abs(variacionInmovPct) >= 0.1 ? (
-                  <span className={variacionInmovPct > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
-                    {variacionInmovPct >= 0 ? '+' : ''}{variacionInmovPct.toFixed(1)}% vs. inicio del período
-                  </span>
-                ) : (
-                  <span className="dashboard-variacion--neutral">Sin cambios en el período</span>
-                )
-              ) : undefined}
-            />
-          </>
-        ) : null}
-      </div>
+      ) : (
+        <>
+          <section className="dashboard-hero-card" aria-label="Resumen consolidado">
+            <div className="dashboard-hero-summary">
+              <div className="dashboard-hero-balance">
+                {principalQuery.isLoading ? (
+                  <DashboardBlockSkeleton label="saldo consolidado" rows={4} tall />
+                ) : principalError ? (
+                  <DashboardBlockError
+                    title="No se pudo cargar el saldo consolidado."
+                    message={extractErrorMessage(principalQuery.error, 'No se pudo cargar el dashboard.')}
+                    onRetry={() => void principalQuery.refetch()}
+                    retrying={principalQuery.isFetching}
+                  />
+                ) : principal ? (
+                  <>
+                    <p>Saldo consolidado</p>
+                    <strong>
+                      <SignedAmount value={principal.total_convertido}>
+                        {formatCurrency(principal.total_convertido, principal.divisa_principal)}
+                      </SignedAmount>
+                    </strong>
+                    <span className="dashboard-hero-delta">
+                      {variacionPct !== null ? (
+                        <>
+                          <span className={signoPorcentaje(variacionPct) >= 0 ? 'dashboard-variacion-pill dashboard-variacion--positive' : 'dashboard-variacion-pill dashboard-variacion--negative'}>
+                            {formatPercent(variacionPct, 1)}
+                          </span>
+                          <span>vs. periodo anterior · {formatPeriodoLabel(periodo)}</span>
+                        </>
+                      ) : evolucionError ? 'Comparativa no disponible' : 'Sin comparativa suficiente'}
+                    </span>
+                    <small>
+                      {resumenConsolidado.cuentas} cuenta{resumenConsolidado.cuentas === 1 ? '' : 's'} ·{' '}
+                      {resumenConsolidado.bancos} banco{resumenConsolidado.bancos === 1 ? '' : 's'} ·{' '}
+                      {resumenConsolidado.divisas} divisa{resumenConsolidado.divisas === 1 ? '' : 's'}
+                    </small>
 
-      <div className="dashboard-detail-grid">
-        <section className="dashboard-card dashboard-titulares-card dashboard-titulares-card--wide">
-          <header className="dashboard-card-header">
-            <h2>Saldos por titular</h2>
-            <span className="dashboard-card-meta">{principal.saldos_por_titular.length} titulares · cuota sobre el total</span>
-          </header>
+                    {liquidezConsolidada ? (
+                      <dl className="dashboard-hero-liquidez">
+                        <div>
+                          <dt>Disponible</dt>
+                          <dd>
+                            <SignedAmount value={liquidezConsolidada.disponible}>
+                              {formatCurrency(liquidezConsolidada.disponible, principal.divisa_principal)}
+                            </SignedAmount>
+                          </dd>
+                          {variacionDispPct !== null ? (
+                            <small className={signoPorcentaje(variacionDispPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                              {disponiblePct !== null ? `${formatPercent(disponiblePct)} del saldo total` : formatPercent(variacionDispPct, 1)}
+                            </small>
+                          ) : null}
+                        </div>
+                        <div>
+                          <dt>Inmovilizado</dt>
+                          <dd>{formatCurrency(liquidezConsolidada.inmovilizado, principal.divisa_principal)}</dd>
+                          {variacionInmovPct !== null ? (
+                            Math.abs(variacionInmovPct) >= 0.1 ? (
+                              <small className={signoPorcentaje(variacionInmovPct) > 0 ? 'dashboard-variacion--neutral' : 'dashboard-variacion--positive'}>
+                                {formatPercent(variacionInmovPct, 1)} vs. inicio del período
+                              </small>
+                            ) : (
+                              <small className="dashboard-variacion--neutral">Sin cambios en el período</small>
+                            )
+                          ) : null}
+                        </div>
+                      </dl>
+                    ) : null}
 
-          {principal.saldos_por_titular.length === 0 ? (
-            <EmptyState
-              title="No hay titulares con saldo visible."
-              subtitle="Importa movimientos o revisa permisos para poblar este resumen."
-            />
-          ) : (
-            <div className="dashboard-titular-groups">
-              {saldosPorTipo.map((group) => (
-                <article className="dashboard-titular-group" key={group.tipo}>
-                  <h3>{TIPO_TITULAR_LABELS[group.tipo]}</h3>
-                  <div className="dashboard-titular-list">
-                    {group.items.map((item) => (
-                      <Link
-                        key={item.titular_id}
-                        className="dashboard-titular-item"
-                        to={`/dashboard/titular/${item.titular_id}?periodo=${periodo}&divisa=${principal.divisa_principal}`}
-                      >
-                        <span>{item.titular_nombre}</span>
-                        <strong>
-                          <SignedAmount value={item.total_convertido}>
-                            {formatCurrency(item.total_convertido, principal.divisa_principal)}
-                          </SignedAmount>
-                        </strong>
-                        <small>
-                          Disponible {formatCurrency(item.saldo_disponible_convertido ?? item.total_convertido, principal.divisa_principal)}
-                          {' · '}
-                          Inmovilizado {formatCurrency(item.saldo_inmovilizado_convertido ?? 0, principal.divisa_principal)}
-                        </small>
-                      </Link>
-                    ))}
-                    {group.items.length === 0 ? <div className="dashboard-titular-empty">Sin saldos visibles</div> : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                    <DivisasSinTipoCambioAviso divisas={principal.divisas_sin_tipo_cambio} />
+                  </>
+                ) : null}
+              </div>
 
-        <section className="dashboard-card dashboard-plazo-card">
-          <header className="dashboard-card-header">
-            <h2>Plazos fijos</h2>
-            <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuentas</span>
-          </header>
-          <div className="dashboard-plazo-metrics">
-            <div>
-              <span>Monto total</span>
-              <strong>
-                <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
-                  {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
-                </SignedAmount>
-              </strong>
+              <div className="dashboard-hero-divisas">
+                {saldosDivisaQuery.isLoading ? (
+                  <DashboardBlockSkeleton label="saldos por divisa" rows={3} />
+                ) : saldosDivisaError ? (
+                  <DashboardBlockError
+                    title="No se pudieron cargar los saldos por divisa."
+                    message={extractErrorMessage(saldosDivisaQuery.error, 'No se pudo cargar el dashboard.')}
+                    onRetry={() => void saldosDivisaQuery.refetch()}
+                    retrying={saldosDivisaQuery.isFetching}
+                  />
+                ) : saldosDivisa ? (
+                  <SaldoPorDivisaCard
+                    className="dashboard-divisa-strip dashboard-divisa-strip--hero"
+                    items={saldosDivisa.divisas}
+                    divisaPrincipal={saldosDivisa.divisa_principal}
+                  />
+                ) : null}
+              </div>
             </div>
-            <div>
-              <span>Intereses aprox.</span>
-              <strong>
-                <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
-                  {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
-                </SignedAmount>
-              </strong>
-            </div>
-            <div className={principal.plazos_fijos.dias_hasta_proximo_vencimiento != null && principal.plazos_fijos.dias_hasta_proximo_vencimiento <= 7 ? 'dashboard-plazo-metric--warning' : undefined}>
-              <span>Próximo vencimiento</span>
-              <strong>
-                {principal.plazos_fijos.dias_hasta_proximo_vencimiento == null
-                  ? 'Sin fecha'
-                  : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} días`}
-              </strong>
-              {principal.plazos_fijos.proximo_vencimiento ? (
-                <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
+
+            <div className="dashboard-hero-chart">
+              {evolucionQuery.isLoading ? (
+                <DashboardBlockSkeleton label="evolución" rows={5} tall />
+              ) : evolucionError ? (
+                <DashboardBlockError
+                  title="No se pudo cargar la evolución."
+                  message={extractErrorMessage(evolucionQuery.error, 'No se pudo cargar el dashboard.')}
+                  onRetry={() => void evolucionQuery.refetch()}
+                  retrying={evolucionQuery.isFetching}
+                />
+              ) : evolucion && principal ? (
+                <EvolucionChart
+                  points={evolucion.puntos}
+                  divisa={principal.divisa_principal}
+                  colors={principal.chart_colors}
+                  height={310}
+                  variant="saldoArea"
+                  xAxisMode="month"
+                />
               ) : null}
             </div>
-          </div>
-        </section>
-      </div>
+          </section>
 
-      {!selectedPaisId && principal.saldos_por_pais?.length ? (
-        <section className="dashboard-card">
-          <header className="dashboard-card-header">
-            <h2>Saldos por país</h2>
-          </header>
-          <div className="titulares-divisa-banners">
-            {principal.saldos_por_pais.map((pais) => (
-              <article className="dashboard-mini-card" key={pais.pais_id ?? 'sin-pais'}>
-                <span>{pais.pais_nombre}</span>
-                <strong>{formatCurrency(pais.total_convertido, principal.divisa_principal)}</strong>
-                <small>{pais.total_cuentas} cuenta{pais.total_cuentas === 1 ? '' : 's'}</small>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
+          {principal ? (
+            <>
+              {evolucionQuery.isLoading ? (
+                <DashboardBlockSkeleton label="ingresos y egresos" rows={2} />
+              ) : evolucionError ? null : (
+                <div className="dashboard-kpi-grid dashboard-kpi-grid--secondary">
+                  <KpiCard
+                    headingLevel="h2"
+                    title="Ingresos período"
+                    value={
+                      <SignedAmount value={periodTotals.ingresos} tone={Math.round(periodTotals.ingresos * 100) === 0 ? 'neutral' : undefined}>
+                        {formatCurrency(periodTotals.ingresos, principal.divisa_principal)}
+                      </SignedAmount>
+                    }
+                    helper={variacionIngPct !== null ? (
+                      <span className={signoPorcentaje(variacionIngPct) >= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                        {formatPercent(variacionIngPct, 1)} vs. anterior
+                      </span>
+                    ) : undefined}
+                  />
+                  <KpiCard
+                    headingLevel="h2"
+                    title="Egresos período"
+                    value={
+                      <SignedAmount value={periodTotals.egresos} tone={Math.round(periodTotals.egresos * 100) === 0 ? 'neutral' : 'negative'}>
+                        {formatCurrency(periodTotals.egresos, principal.divisa_principal)}
+                      </SignedAmount>
+                    }
+                    helper={variacionEgrPct !== null ? (
+                      <span className={signoPorcentaje(variacionEgrPct) <= 0 ? 'dashboard-variacion--positive' : 'dashboard-variacion--negative'}>
+                        {formatPercent(variacionEgrPct, 1)} vs. anterior
+                      </span>
+                    ) : undefined}
+                  />
+                </div>
+              )}
 
-      {((principal.concentracion_bancos ?? []).length > 0 || principal.saldos_por_titular.length > 0) ? (
-        <section className="dashboard-card dashboard-bancos-card">
-          <header className="dashboard-card-header">
-            <h2>Concentración</h2>
-          </header>
-          <ConcentracionDonutCharts
-            bancos={principal.concentracion_bancos ?? []}
-            titulares={principal.saldos_por_titular}
-            divisa={principal.divisa_principal}
-          />
-        </section>
-      ) : null}
+              <div className="dashboard-detail-grid">
+                <section className="dashboard-section dashboard-titulares-card dashboard-titulares-card--wide">
+                  <header className="dashboard-card-header">
+                    <h2>Saldos por titular</h2>
+                    <span className="dashboard-card-meta">{principal.saldos_por_titular.length} titular{principal.saldos_por_titular.length === 1 ? '' : 'es'} · cuota sobre el total</span>
+                  </header>
+
+                  {principal.saldos_por_titular.length === 0 ? (
+                    <EmptyState
+                      title="No hay titulares con saldo visible."
+                      subtitle="Importa movimientos o revisa permisos para poblar este resumen."
+                    />
+                  ) : (
+                    <div className="dashboard-titular-groups">
+                      {saldosPorTipo.map((group) => (
+                        <article className="dashboard-titular-group" key={group.tipo}>
+                          <h3>{TIPO_TITULAR_LABELS[group.tipo]}</h3>
+                          <div className="dashboard-titular-list">
+                            {group.items.map((item) => (
+                              <Link
+                                key={item.titular_id}
+                                className="dashboard-titular-item"
+                                to={`/dashboard/titular/${item.titular_id}?periodo=${periodo}&divisa=${principal.divisa_principal}`}
+                              >
+                                <span>{item.titular_nombre}</span>
+                                <strong>
+                                  <SignedAmount value={item.total_convertido}>
+                                    {formatCurrency(item.total_convertido, principal.divisa_principal)}
+                                  </SignedAmount>
+                                </strong>
+                                <small>
+                                  Disponible {formatCurrency(item.saldo_disponible_convertido ?? item.total_convertido, principal.divisa_principal)}
+                                  {' · '}
+                                  Inmovilizado {formatCurrency(item.saldo_inmovilizado_convertido ?? 0, principal.divisa_principal)}
+                                </small>
+                              </Link>
+                            ))}
+                            {group.items.length === 0 ? <div className="dashboard-titular-empty">Sin saldos visibles</div> : null}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="dashboard-section dashboard-plazo-card">
+                  <header className="dashboard-card-header">
+                    <h2>Plazos fijos</h2>
+                    <span className="dashboard-card-meta">{principal.plazos_fijos.total_cuentas} cuenta{principal.plazos_fijos.total_cuentas === 1 ? '' : 's'}</span>
+                  </header>
+                  <div className="dashboard-plazo-metrics">
+                    <div>
+                      <span>Monto total</span>
+                      <strong>
+                        <SignedAmount value={principal.plazos_fijos.monto_total_convertido}>
+                          {formatCurrency(principal.plazos_fijos.monto_total_convertido, principal.divisa_principal)}
+                        </SignedAmount>
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Intereses aprox.</span>
+                      <strong>
+                        <SignedAmount value={principal.plazos_fijos.intereses_previstos_convertidos}>
+                          {formatCurrency(principal.plazos_fijos.intereses_previstos_convertidos, principal.divisa_principal)}
+                        </SignedAmount>
+                      </strong>
+                    </div>
+                    <div className={plazoProximo ? 'dashboard-plazo-metric--warning' : undefined}>
+                      <span>Próximo vencimiento</span>
+                      <strong>
+                        {principal.plazos_fijos.dias_hasta_proximo_vencimiento == null
+                          ? 'Sin fecha'
+                          : `${principal.plazos_fijos.dias_hasta_proximo_vencimiento} días`}
+                      </strong>
+                      {principal.plazos_fijos.proximo_vencimiento ? (
+                        <small>{formatDate(principal.plazos_fijos.proximo_vencimiento)}</small>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {!selectedPaisId && principal.saldos_por_pais?.length ? (
+                <section className="dashboard-section">
+                  <header className="dashboard-card-header">
+                    <h2>Saldos por país</h2>
+                  </header>
+                  <div className="titulares-divisa-banners">
+                    {principal.saldos_por_pais.map((pais) => (
+                      <article className="dashboard-mini-card" key={pais.pais_id ?? 'sin-pais'}>
+                        <span>{pais.pais_nombre}</span>
+                        <strong>{formatCurrency(pais.total_convertido, principal.divisa_principal)}</strong>
+                        <small>{pais.total_cuentas} cuenta{pais.total_cuentas === 1 ? '' : 's'}</small>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {((principal.concentracion_bancos ?? []).length > 0 || principal.saldos_por_titular.length > 0) ? (
+                <section className="dashboard-section dashboard-bancos-card">
+                  <header className="dashboard-card-header">
+                    <h2>Concentración</h2>
+                  </header>
+                  <ConcentracionDonutCharts
+                    bancos={principal.concentracion_bancos ?? []}
+                    titulares={principal.saldos_por_titular}
+                    divisa={principal.divisa_principal}
+                  />
+                </section>
+              ) : null}
+            </>
+          ) : principalQuery.isLoading ? (
+            <DashboardBlockSkeleton label="detalle por titular y plazos" rows={4} tall />
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

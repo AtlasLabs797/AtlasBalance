@@ -10,12 +10,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-// recharts 3: los tooltips custom se tipan con TooltipContentProps.
-// TooltipProps ya no expone payload/label, que se leen del contexto.
-import type { TooltipContentProps } from 'recharts';
-import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import type { DashboardChartColors, DashboardPuntoEvolucion } from '@/types';
 import { formatCompactCurrency, formatCurrency, formatDate } from '@/utils/formatters';
+import { resolveChartColor } from '@/utils/chartColors';
+import { DashboardTooltip } from './DashboardTooltip';
 
 interface EvolucionChartProps {
   points: DashboardPuntoEvolucion[];
@@ -32,16 +30,16 @@ const EVOLUTION_AXIS_PADDING = 14;
 const EVOLUTION_AXIS_TICK_MARGIN = 8;
 const EVOLUTION_DOMAIN_PADDING_RATIO = 0.04;
 const EVOLUTION_AXIS_TICK_STYLE = {
-  fill: 'var(--color-text-secondary)',
-  fontFamily: 'var(--font-family-mono)',
+  fill: 'var(--text-secondary)',
+  fontFamily: 'var(--font-mono)',
   fontSize: 12,
   fontVariantNumeric: 'tabular-nums',
 } as const;
-const LEGACY_CHART_COLOR_TOKENS: Record<string, string> = {
-  '#43b430': 'var(--chart-ingresos)',
-  '#ff4757': 'var(--chart-egresos)',
-  '#7b7b7b': 'var(--chart-saldo)',
-};
+const CHART_COLOR_TOKEN_FALLBACKS = {
+  ingresos: 'var(--chart-5)',
+  egresos: 'var(--chart-7)',
+  saldo: 'var(--chart-1)',
+} as const;
 
 export function EvolucionChart({
   points,
@@ -60,11 +58,28 @@ export function EvolucionChart({
   const axisWidth = getEvolutionAxisWidth(points, divisa, yDomain);
   const saldoAreaAxisWidth = getEvolutionAxisWidthCompact(yDomain);
   const chartColors = {
-    ingresos: resolveChartColor(colors.ingresos, 'var(--chart-ingresos)'),
-    egresos: resolveChartColor(colors.egresos, 'var(--chart-egresos)'),
-    saldo: resolveChartColor(colors.saldo, 'var(--chart-saldo)'),
+    ingresos: resolveChartColor(colors.ingresos, CHART_COLOR_TOKEN_FALLBACKS.ingresos),
+    egresos: resolveChartColor(colors.egresos, CHART_COLOR_TOKEN_FALLBACKS.egresos),
+    saldo: resolveChartColor(colors.saldo, CHART_COLOR_TOKEN_FALLBACKS.saldo),
   };
-  const tickFormatter = xAxisMode === 'month' ? formatMonthTick : formatDate;
+  const monthMode = xAxisMode === 'month';
+  const withYear = monthMode && spansSeveralYears(points);
+  // Modo mes: eje temporal numerico, un tick por inicio de mes y equiespaciado en el tiempo.
+  const chartData = monthMode ? points.map((point) => ({ ...point, ts: isoToTimestamp(point.fecha) })) : points;
+  const xDataKey = monthMode ? 'ts' : 'fecha';
+  // Rangos cortos (<= ~95 dias): ticks por fecha corta ("20 oct") espaciados regularmente.
+  const shortRange = monthMode && isShortRange(points);
+  const tickFormatter = monthMode
+    ? shortRange
+      ? (value: number | string) => formatShortDateTick(timestampToIso(Number(value)))
+      : (value: number | string) => formatMonthTick(timestampToIso(Number(value)), withYear)
+    : (value: string) => formatShortDateTick(value);
+  const xMinTickGap = monthMode ? (shortRange ? 16 : 28) : 56;
+  const xTicks = monthMode ? (shortRange ? getShortRangeTicks(points) : getMonthTicks(points)) : undefined;
+  const xAxisScale = monthMode
+    ? { type: 'number' as const, scale: 'time' as const, domain: ['dataMin', 'dataMax'] as [string, string] }
+    : {};
+  const tooltipLabel = monthMode ? (label: unknown) => formatDate(timestampToIso(Number(label))) : undefined;
 
   if (variant === 'saldoArea') {
     return (
@@ -79,7 +94,7 @@ export function EvolucionChart({
           <span style={{ '--series-color': chartColors.egresos } as CSSProperties}>Egresos</span>
         </div>
         <ResponsiveContainer width="100%" height={height}>
-          <ComposedChart data={points} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
+          <ComposedChart data={chartData} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
             <defs>
               <linearGradient id="dashboardSaldoArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={chartColors.saldo} stopOpacity={0.22} />
@@ -88,13 +103,16 @@ export function EvolucionChart({
             </defs>
             <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
             <XAxis
-              dataKey="fecha"
+              dataKey={xDataKey}
+              {...xAxisScale}
+              ticks={xTicks}
               tickFormatter={tickFormatter}
-              padding={{ left: 8, right: 8 }}
+              padding={{ left: 8, right: 24 }}
               axisLine={false}
               tickLine={false}
               tickMargin={10}
-              minTickGap={28}
+              minTickGap={xMinTickGap}
+              interval="preserveStartEnd"
               tick={EVOLUTION_AXIS_TICK_STYLE}
             />
             <YAxis
@@ -107,7 +125,7 @@ export function EvolucionChart({
               tick={EVOLUTION_AXIS_TICK_STYLE}
             />
             <Tooltip
-            content={(props) => <DashboardTooltip {...props} divisa={divisa} />}
+            content={(props) => <DashboardTooltip {...props} divisa={divisa} formatLabel={tooltipLabel} />}
             cursor={{ stroke: 'var(--chart-grid)' }}
           />
             <Area
@@ -160,16 +178,19 @@ export function EvolucionChart({
         <span style={{ '--series-color': chartColors.egresos } as CSSProperties}>Egresos</span>
       </div>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={points} margin={{ top: 12, right: 18, bottom: 10, left: 0 }}>
+        <LineChart data={chartData} margin={{ top: 12, right: 18, bottom: 10, left: 0 }}>
           <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
           <XAxis
-            dataKey="fecha"
+            dataKey={xDataKey}
+            {...xAxisScale}
+            ticks={xTicks}
             tickFormatter={tickFormatter}
-            padding={{ left: 8, right: 8 }}
+            padding={{ left: 8, right: 24 }}
             axisLine={false}
             tickLine={false}
             tickMargin={10}
-            minTickGap={28}
+            minTickGap={xMinTickGap}
+              interval="preserveStartEnd"
             tick={EVOLUTION_AXIS_TICK_STYLE}
           />
           <YAxis
@@ -182,7 +203,7 @@ export function EvolucionChart({
             tick={EVOLUTION_AXIS_TICK_STYLE}
           />
           <Tooltip
-            content={(props) => <DashboardTooltip {...props} divisa={divisa} />}
+            content={(props) => <DashboardTooltip {...props} divisa={divisa} formatLabel={tooltipLabel} />}
             cursor={{ stroke: 'var(--chart-grid)' }}
           />
           <Line
@@ -222,10 +243,10 @@ function EvolutionDataTable({ points, divisa }: Pick<EvolucionChartProps, 'point
       <caption>Datos de evolución por fecha</caption>
       <thead>
         <tr>
-          <th>Fecha</th>
-          <th>Ingresos</th>
-          <th>Egresos</th>
-          <th>Saldo</th>
+          <th scope="col">Fecha</th>
+          <th scope="col">Ingresos</th>
+          <th scope="col">Egresos</th>
+          <th scope="col">Saldo</th>
         </tr>
       </thead>
       <tbody>
@@ -242,23 +263,15 @@ function EvolutionDataTable({ points, divisa }: Pick<EvolucionChartProps, 'point
   );
 }
 
-function formatMonthTick(value: string): string {
+function formatMonthTick(value: string, withYear = false): string {
   const match = /^(\d{4})-(\d{2})/.exec(value);
   const date = match ? new Date(Number(match[1]), Number(match[2]) - 1, 1) : new Date(value);
   if (Number.isNaN(date.getTime())) {
     return formatDate(value);
   }
 
-  return date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
-}
-
-function resolveChartColor(value: string | undefined, fallback: string): string {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) {
-    return fallback;
-  }
-
-  return LEGACY_CHART_COLOR_TOKENS[normalized] ?? value;
+  const month = date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+  return withYear ? `${month} ${String(date.getFullYear()).slice(2)}` : month;
 }
 
 function getEvolutionDomain(points: DashboardPuntoEvolucion[]): [number, number] {
@@ -337,20 +350,67 @@ function getAxisCharWidth(char: string): number {
   return 6.8;
 }
 
-function DashboardTooltip({ active, payload, label, divisa }: TooltipContentProps<ValueType, NameType> & { divisa: string }) {
-  if (!active || !payload?.length) {
-    return null;
-  }
+/** Tick corto de fecha: "20 oct" (el tooltip da la fecha completa). */
+function formatShortDateTick(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return formatDate(value);
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const month = date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+  return `${Number(match[3])} ${month}`;
+}
 
-  return (
-    <div className="dashboard-chart-tooltip">
-      <strong>{formatDate(String(label))}</strong>
-      {payload.map((item) => (
-        <span key={String(item.dataKey)}>
-          <i style={{ background: item.color }} />
-          {item.name}: {formatCurrency(Number(item.value ?? 0), divisa)}
-        </span>
-      ))}
-    </div>
-  );
+function isoToTimestamp(fecha: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(fecha);
+  return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(fecha).getTime();
+}
+
+function timestampToIso(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10);
+}
+
+/** Un tick por inicio de mes dentro del rango de datos (equiespaciados en el eje temporal). */
+function getMonthTicks(points: DashboardPuntoEvolucion[]): number[] {
+  const stamps = points.map((point) => isoToTimestamp(point.fecha)).filter(Number.isFinite);
+  if (stamps.length === 0) return [];
+  const min = Math.min(...stamps);
+  const max = Math.max(...stamps);
+  const start = new Date(min);
+  const year = start.getUTCFullYear();
+  let month = start.getUTCMonth();
+  if (start.getUTCDate() > 1) month += 1;
+  const ticks: number[] = [];
+  for (let ts = Date.UTC(year, month, 1); ts <= max; ts = Date.UTC(year, ++month, 1)) {
+    ticks.push(ts);
+  }
+  return ticks.length > 0 ? ticks : [min];
+}
+
+const DAY_MS = 86_400_000;
+const SHORT_RANGE_MAX_DAYS = 95;
+
+function getStampRange(points: DashboardPuntoEvolucion[]): { min: number; max: number } | null {
+  const stamps = points.map((point) => isoToTimestamp(point.fecha)).filter(Number.isFinite);
+  if (stamps.length === 0) return null;
+  return { min: Math.min(...stamps), max: Math.max(...stamps) };
+}
+
+function isShortRange(points: DashboardPuntoEvolucion[]): boolean {
+  const range = getStampRange(points);
+  return range !== null && (range.max - range.min) / DAY_MS <= SHORT_RANGE_MAX_DAYS;
+}
+
+/** Ticks cada 7 dias (<= 35 dias de rango) o cada 15, anclados en el ultimo dia para que no se corte. */
+function getShortRangeTicks(points: DashboardPuntoEvolucion[]): number[] {
+  const range = getStampRange(points);
+  if (!range) return [];
+  const stepDays = (range.max - range.min) / DAY_MS <= 35 ? 7 : 15;
+  const ticks: number[] = [];
+  for (let ts = range.max; ts >= range.min; ts -= stepDays * DAY_MS) {
+    ticks.unshift(ts);
+  }
+  return ticks;
+}
+
+function spansSeveralYears(points: DashboardPuntoEvolucion[]): boolean {
+  return new Set(points.map((point) => point.fecha.slice(0, 4))).size > 1;
 }

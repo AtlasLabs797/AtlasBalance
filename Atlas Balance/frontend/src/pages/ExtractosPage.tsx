@@ -9,6 +9,7 @@ import AuditCellModal from '@/components/extractos/AuditCellModal';
 import DesgloseModal from '@/components/extractos/DesgloseModal';
 import type { DesgloseDraftPayload } from '@/components/extractos/DesgloseModal';
 import ExtractoTable from '@/components/extractos/ExtractoTable';
+import { BASE_COLUMNS } from '@/components/extractos/extractoColumns';
 import type { InsertExtractoDraftPayload } from '@/components/extractos/ExtractoTable';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -18,8 +19,13 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import { usePermisosStore } from '@/stores/permisosStore';
 import type { AuditCellEntry, Extracto, ExtractoDesgloseResumen, PaginatedResponse, TitularConCuentas } from '@/types';
+// S-2: la REGLA de columnas del administrador (`columnas_restringidas`) y la
+// PREFERENCIA del usuario (`columnas_visibles`) son conjuntos distintos. El
+// conjunto efectivo es la interseccion: el usuario solo puede estrechar.
+import { columnasExcluidasPorAdmin, columnasPermitidas } from '@/utils/columnasPermitidas';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { parseEuropeanNumber } from '@/utils/formatters';
+import '@/styles/layout/routes/extractos.css';
 
 interface UpdateExtractoPayload {
   fecha?: string;
@@ -84,6 +90,13 @@ export default function ExtractosPage() {
   const [modo, setModo] = useState<'revision' | 'edicion'>('revision');
   const [titularesResumen, setTitularesResumen] = useState<TitularConCuentas[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<string[] | null>(null);
+  const [columnOrder, setColumnOrder] = useState<string[] | null>(null);
+  // S-2: whitelist del administrador para el alcance actual. null = el
+  // administrador no restringe.
+  const [columnasRestringidas, setColumnasRestringidas] = useState<string[] | null>(null);
+  const [columnPreferencesSaving, setColumnPreferencesSaving] = useState(false);
+  const columnPreferencesSavingRef = useRef(false);
+  const columnScopeRef = useRef('');
   const [availableExtraColumns, setAvailableExtraColumns] = useState<string[]>([]);
 
   const [auditOpen, setAuditOpen] = useState(false);
@@ -207,11 +220,12 @@ export default function ExtractosPage() {
     }),
     [usuarioId, cuentaFiltro, selectedCuenta, titularFiltro, selectedPaisId]
   );
+  columnScopeRef.current = JSON.stringify(columnasVisiblesParams);
 
   const visibleColumnsQuery = useQuery({
     queryKey: queryKeys.extractos.columnasVisibles(columnasVisiblesParams),
     queryFn: () =>
-      api.get<{ columnas_visibles: string[] | null }>('/extractos/columnas-visibles', {
+      api.get<{ columnas_visibles: string[] | null; orden_columnas: string[] | null; columnas_restringidas: string[] | null }>('/extractos/columnas-visibles', {
         params: {
           cuentaId: columnasVisiblesParams.cuentaId ?? undefined,
           titularId: columnasVisiblesParams.titularId ?? undefined,
@@ -291,19 +305,42 @@ export default function ExtractosPage() {
   }, [rowsQuery.isLoading, rowsQuery.isFetching]);
 
   useEffect(() => {
+    if (columnPreferencesSaving) return;
     if (visibleColumnsQuery.data) {
       setVisibleColumns(visibleColumnsQuery.data.columnas_visibles ?? null);
+      setColumnOrder(visibleColumnsQuery.data.orden_columnas ?? null);
+      setColumnasRestringidas(visibleColumnsQuery.data.columnas_restringidas ?? null);
     } else if (!visibleColumnsQuery.isLoading && !visibleColumnsQuery.error) {
       setVisibleColumns(null);
+      setColumnOrder(null);
+      setColumnasRestringidas(null);
     }
-  }, [visibleColumnsQuery.data, visibleColumnsQuery.isLoading, visibleColumnsQuery.error]);
+  }, [visibleColumnsQuery.data, visibleColumnsQuery.isLoading, visibleColumnsQuery.error, columnPreferencesSaving]);
 
   useEffect(() => {
     if (visibleColumnsQuery.error) {
       setVisibleColumns(null);
+      setColumnOrder(null);
+      setColumnasRestringidas(null);
       setError(extractErrorMessage(visibleColumnsQuery.error, 'No se pudieron cargar las preferencias de columnas.'));
     }
   }, [visibleColumnsQuery.error]);
+
+  // S-2: el conjunto efectivo de columnas de la tabla. Las columnas que el
+  // administrador prohibio no se ofrecen en el interruptor ni se pintan, y las
+  // que el usuario eligio se recortan contra la regla del administrador.
+  const excludedColumns = useMemo(
+    () => columnasExcluidasPorAdmin(columnasRestringidas, BASE_COLUMNS),
+    [columnasRestringidas]
+  );
+  const permittedExtraColumns = useMemo(
+    () => columnasPermitidas(columnasRestringidas, availableExtraColumns),
+    [columnasRestringidas, availableExtraColumns]
+  );
+  const permittedVisibleColumns = useMemo(
+    () => (visibleColumns === null ? null : columnasPermitidas(columnasRestringidas, visibleColumns)),
+    [columnasRestringidas, visibleColumns]
+  );
 
   const loadRows = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.extractos.list(rowsQueryParams) });
@@ -370,8 +407,19 @@ export default function ExtractosPage() {
     }
   };
 
-  const saveVisibleColumns = async (next: string[]) => {
-    setVisibleColumns(next);
+  const saveVisibleColumns = async (next: string[], nextOrder: string[]) => {
+    if (columnPreferencesSavingRef.current || visibleColumnsQuery.isLoading || visibleColumnsQuery.error) return;
+    columnPreferencesSavingRef.current = true;
+    setColumnPreferencesSaving(true);
+    const scope = columnScopeRef.current;
+    const previousVisible = visibleColumns;
+    const previousOrder = columnOrder;
+    // S-2: el usuario solo puede estrechar. Las columnas que el administrador
+    // prohibio no se ofrecen, no se guardan y no se pintan.
+    const permitidas = columnasPermitidas(columnasRestringidas, next);
+    const ordenPermitido = columnasPermitidas(columnasRestringidas, nextOrder);
+    setVisibleColumns(permitidas);
+    setColumnOrder(ordenPermitido);
     setError(null);
     try {
       const payload: {
@@ -379,8 +427,10 @@ export default function ExtractosPage() {
         titular_id?: string;
         pais_id?: string;
         columnas_visibles: string[];
+        orden_columnas: string[];
       } = {
-        columnas_visibles: next
+        columnas_visibles: permitidas,
+        orden_columnas: ordenPermitido
       };
       const safeCuentaId = asUuidOrUndefined(cuentaFiltro);
       if (safeCuentaId) {
@@ -398,25 +448,39 @@ export default function ExtractosPage() {
       await api.put('/extractos/columnas-visibles', payload);
       await invalidate('extractoColumnasVisibles');
     } catch (err) {
-      setVisibleColumns(visibleColumns);
+      if (scope === columnScopeRef.current) {
+        // Se restaura la preferencia anterior, recortada por la regla del
+        // administrador.
+        setVisibleColumns(previousVisible === null ? null : columnasPermitidas(columnasRestringidas, previousVisible));
+        setColumnOrder(previousOrder === null ? null : columnasPermitidas(columnasRestringidas, previousOrder));
+      }
       setError(extractErrorMessage(err, 'No se pudieron guardar las columnas visibles.'));
+    } finally {
+      columnPreferencesSavingRef.current = false;
+      setColumnPreferencesSaving(false);
     }
   };
 
   const onToggleColumn = async (column: string, availableColumns: string[]) => {
-    const availableSet = new Set(availableColumns);
-    const current = (visibleColumns ?? availableColumns).filter((item) => availableSet.has(item));
-    if (current.includes(column) && current.length <= 1) {
+    const known = new Set<string>(columnOrder ?? BASE_COLUMNS);
+    const current = visibleColumns === null ? [...availableColumns] : [...visibleColumns, ...availableColumns.filter((item) => !known.has(item) && !visibleColumns.includes(item))];
+    if (current.includes(column) && availableColumns.filter((item) => current.includes(item)).length <= 1) {
       setError('Debe quedar al menos una columna visible.');
       return;
     }
 
     const next = current.includes(column) ? current.filter((c) => c !== column) : [...current, column];
-    await saveVisibleColumns(next);
+    await saveVisibleColumns(next, [...availableColumns, ...(columnOrder ?? []).filter((item) => !availableColumns.includes(item))]);
   };
 
   const onShowAllColumns = async (availableColumns: string[]) => {
-    await saveVisibleColumns(availableColumns);
+    await saveVisibleColumns([...new Set([...(visibleColumns ?? []), ...availableColumns])], [...availableColumns, ...(columnOrder ?? []).filter((item) => !availableColumns.includes(item))]);
+  };
+
+  const onReorderColumns = async (nextOrder: string[]) => {
+    const known = new Set<string>(columnOrder ?? BASE_COLUMNS);
+    const visible = visibleColumns === null ? nextOrder : [...visibleColumns, ...nextOrder.filter((item) => !known.has(item) && !visibleColumns.includes(item))];
+    await saveVisibleColumns(visible, [...nextOrder, ...(columnOrder ?? []).filter((item) => !nextOrder.includes(item))]);
   };
 
   const onSaveCell = async (row: Extracto, column: string, value: string) => {
@@ -661,12 +725,12 @@ export default function ExtractosPage() {
   };
 
   return (
-    <section className="extractos-page">
-      <header className="extractos-header">
+    <section className="extractos-page page page--wide">
+      <header className="extractos-header page-header">
         <div className="extractos-heading">
           <span className="extractos-eyebrow">Tesorería / Movimientos</span>
-          <h1>Extractos</h1>
-          <p>Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
+          <h1 className="page-header__title">Extractos</h1>
+          <p className="page-header__subtitle page-header__subtitle--narrow">Movimientos bancarios con edición controlada, auditoría y revisión por cuenta.</p>
         </div>
         <div className="extractos-header-actions">
           <div className="extractos-mode-toggle" role="group" aria-label="Modo de extractos">
@@ -776,11 +840,15 @@ export default function ExtractosPage() {
         loading={loading}
         sortBy={sortBy}
         sortDir={sortDir}
-        visibleColumns={visibleColumns}
-        availableExtraColumns={availableExtraColumns}
+        visibleColumns={permittedVisibleColumns}
+        columnOrder={columnOrder}
+        columnPreferencesSaving={columnPreferencesSaving || !visibleColumnsQuery.data}
+        excludedColumns={excludedColumns}
+        availableExtraColumns={permittedExtraColumns}
         onSort={onSort}
         onToggleColumn={(column, availableColumns) => void onToggleColumn(column, availableColumns)}
         onShowAllColumns={(availableColumns) => void onShowAllColumns(availableColumns)}
+        onReorderColumns={(columns) => void onReorderColumns(columns)}
         onSaveCell={onSaveCell}
         onToggleCheck={onToggleCheck}
         onToggleFlag={onToggleFlag}

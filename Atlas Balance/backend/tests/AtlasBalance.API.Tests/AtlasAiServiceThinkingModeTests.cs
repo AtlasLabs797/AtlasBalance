@@ -94,7 +94,7 @@ public class AtlasAiServiceThinkingModeTests
     public async Task AskAsync_MiniMax_On_Should_Send_Thinking_Type_Enabled()
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, "MINIMAX", AiConfiguration.DefaultMiniMaxModel);
+        var userId = await SeedAiUserAndConfigAsync(db, "MINIMAX", AiConfiguration.MiniMaxM3Model);
         var httpFactory = new CapturingHttpClientFactory();
         var sut = BuildSut(db, httpFactory);
 
@@ -117,7 +117,7 @@ public class AtlasAiServiceThinkingModeTests
     public async Task AskAsync_MiniMax_Off_Should_Send_Thinking_Type_Disabled()
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, "MINIMAX", AiConfiguration.DefaultMiniMaxModel);
+        var userId = await SeedAiUserAndConfigAsync(db, "MINIMAX", AiConfiguration.MiniMaxM3Model);
         var httpFactory = new CapturingHttpClientFactory();
         var sut = BuildSut(db, httpFactory);
 
@@ -137,7 +137,7 @@ public class AtlasAiServiceThinkingModeTests
     public async Task AskAsync_MiniMax_Invalid_Should_Degrade_To_Auto()
     {
         await using var db = BuildDbContext();
-        var userId = await SeedAiUserAndConfigAsync(db, "MINIMAX", AiConfiguration.DefaultMiniMaxModel);
+        var userId = await SeedAiUserAndConfigAsync(db, "MINIMAX", AiConfiguration.MiniMaxM3Model);
         var httpFactory = new CapturingHttpClientFactory();
         var sut = BuildSut(db, httpFactory);
 

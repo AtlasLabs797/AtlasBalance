@@ -90,6 +90,7 @@ public sealed class DashboardService : IDashboardService
             IngresosMes = Decimal.Round(metrics.IngresosMes, 2),
             EgresosMes = Decimal.Round(metrics.EgresosMes, 2),
             TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
+            DivisasSinTipoCambio = metrics.DivisasSinTipoCambio,
             PlazosFijos = plazosFijos,
             SaldosPorTitular = titulares,
             SaldosPorCuenta = saldosPorCuenta,
@@ -138,6 +139,7 @@ public sealed class DashboardService : IDashboardService
             IngresosMes = Decimal.Round(metrics.IngresosMes, 2),
             EgresosMes = Decimal.Round(metrics.EgresosMes, 2),
             TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
+            DivisasSinTipoCambio = metrics.DivisasSinTipoCambio,
             SaldosPorCuenta = saldosPorCuenta,
             SaldosPorPais = saldosPorPais,
             ChartColors = chartColors
@@ -216,7 +218,8 @@ public sealed class DashboardService : IDashboardService
         {
             DivisaPrincipal = targetCurrency,
             Divisas = items,
-            TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2)
+            TotalConvertido = Decimal.Round(metrics.TotalConvertido, 2),
+            DivisasSinTipoCambio = metrics.DivisasSinTipoCambio
         };
     }
 
@@ -542,6 +545,15 @@ public sealed class DashboardService : IDashboardService
             targetCurrency,
             cancellationToken);
 
+        // Lote 5 (B-1): una divisa sin tipo de cambio utilizable no aporta al
+        // total convertido (su cuenta vale 0 en la conversion). El total no
+        // cambia: se listan las divisas para que el usuario sepa que el total
+        // no las incluye, en vez de estimarlas con 0 en silencio.
+        var divisasSinTipoCambio = uniqueDivisasInvolucradas
+            .Where(divisa => !tasaPorDivisa.TryGetValue(divisa, out var tasa) || tasa <= 0m)
+            .OrderBy(divisa => divisa, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
 
         foreach (var cuenta in cuentas)
         {
@@ -618,7 +630,8 @@ public sealed class DashboardService : IDashboardService
             SaldoConvertidoByCuentaId = saldoConvertidoByCuenta,
             IngresosMes = ingresosMes,
             EgresosMes = egresosMes,
-            TotalConvertido = totalConvertido
+            TotalConvertido = totalConvertido,
+            DivisasSinTipoCambio = divisasSinTipoCambio
         };
     }
 
@@ -876,19 +889,16 @@ public sealed class DashboardService : IDashboardService
                 x.TitularId,
                 x.PaisId,
                 x.PuedeVerCuentas,
-                x.PuedeAgregarLineas,
-                x.PuedeEditarLineas,
-                x.PuedeEliminarLineas,
-                x.PuedeImportar,
                 x.PuedeVerDashboard
             })
             .ToListAsync(cancellationToken);
 
+        // S-1: la lectura de saldos y cuentas del dashboard exige PuedeVerCuentas
+        // y PuedeVerDashboard. Los permisos de escritura (agregar, editar, eliminar
+        // o importar) no dan acceso al dashboard y el rol GERENTE tampoco queda
+        // exento de PuedeVerDashboard.
         permisos = permisos
-            .Where(x =>
-                usuario.Rol == RolUsuario.GERENTE
-                    ? GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar)
-                    : x.PuedeVerDashboard && GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar))
+            .Where(x => x.PuedeVerDashboard && x.PuedeVerCuentas)
             .ToList();
 
         if (permisos.Count == 0)
@@ -900,7 +910,7 @@ public sealed class DashboardService : IDashboardService
             x.PaisId == null &&
             x.CuentaId == null &&
             x.TitularId == null &&
-            GrantsAccountDataAccess(x.PuedeVerCuentas, x.PuedeAgregarLineas, x.PuedeEditarLineas, x.PuedeEliminarLineas, x.PuedeImportar));
+            x.PuedeVerCuentas);
         if (globalAccess)
         {
             return DashboardScope.GlobalForManager();
@@ -910,8 +920,8 @@ public sealed class DashboardService : IDashboardService
             .AsNoTracking()
             .Where(c => _dbContext.PermisosUsuario.Any(p =>
                 p.UsuarioId == userId &&
-                (usuario.Rol == RolUsuario.GERENTE || p.PuedeVerDashboard) &&
-                (p.PuedeVerCuentas || p.PuedeAgregarLineas || p.PuedeEditarLineas || p.PuedeEliminarLineas || p.PuedeImportar) &&
+                p.PuedeVerDashboard &&
+                p.PuedeVerCuentas &&
                 (p.PaisId == null || p.PaisId == c.PaisId) &&
                 (p.TitularId == null || p.TitularId == c.TitularId) &&
                 (p.CuentaId == null || p.CuentaId == c.Id)))
@@ -926,14 +936,6 @@ public sealed class DashboardService : IDashboardService
 
         return new DashboardScope(false, cuentaIds);
     }
-
-    private static bool GrantsAccountDataAccess(
-        bool puedeVerCuentas,
-        bool puedeAgregarLineas,
-        bool puedeEditarLineas,
-        bool puedeEliminarLineas,
-        bool puedeImportar) =>
-        puedeVerCuentas || puedeAgregarLineas || puedeEditarLineas || puedeEliminarLineas || puedeImportar;
 
     private async Task<bool> CanAccessTitularAsync(DashboardScope scope, Guid titularId, CancellationToken cancellationToken)
     {
@@ -1054,6 +1056,7 @@ public sealed class DashboardService : IDashboardService
         public decimal IngresosMes { get; set; }
         public decimal EgresosMes { get; set; }
         public decimal TotalConvertido { get; set; }
+        public IReadOnlyList<string> DivisasSinTipoCambio { get; set; } = [];
     }
 
     private sealed class DashboardScope

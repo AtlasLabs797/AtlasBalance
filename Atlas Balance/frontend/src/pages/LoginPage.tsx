@@ -2,6 +2,7 @@
 import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import api from '@/services/api';
 import { useAlertasStore } from '@/stores/alertasStore';
 import { useAuthStore } from '@/stores/authStore';
@@ -30,6 +31,7 @@ interface MfaChallenge {
 }
 
 export default function LoginPage() {
+  useDocumentTitle('Iniciar sesión');
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -244,6 +246,10 @@ export default function LoginPage() {
                 id="email"
                 type="email"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="next"
                 className="auth-input"
                 placeholder="tu@email.com"
                 aria-invalid={errors.email ? true : undefined}
@@ -260,6 +266,7 @@ export default function LoginPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
+                  enterKeyHint="go"
                   className="auth-input"
                   placeholder="Contraseña"
                   aria-invalid={errors.password ? true : undefined}
@@ -324,6 +331,9 @@ export default function LoginPage() {
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="go"
                 className="auth-input"
                 placeholder="000000"
                 aria-invalid={errors.mfaCode ? true : undefined}

@@ -12,6 +12,7 @@ import type { PaginatedResponse, RevisionComisionItem, RevisionEstadoComision, R
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { Check, RotateCcw, X } from 'lucide-react';
+import '@/styles/layout/routes/revision.css';
 
 type RevisionTab = 'comisiones' | 'seguros';
 type EstadoFiltro = 'TODAS' | 'PENDIENTE' | 'DEVUELTA' | 'CORRECTO' | 'DESCARTADA';
@@ -29,7 +30,10 @@ export default function RevisionPage() {
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const canEditCuenta = usePermisosStore((state) => state.canEditCuenta);
+  // LOTE 6 (D-13): el backend revisa con `puede_revisar_lineas` O
+  // `puede_editar_lineas` (UserAccessService.CanReviewCuentaAsync). Con solo
+  // `puede_editar_lineas` se ocultaban acciones que el backend permite.
+  const canRevisarCuenta = usePermisosStore((state) => state.canRevisarCuenta);
   usePermisosStore((state) => state.permisos);
   const invalidate = useInvalidateAfterMutation();
 
@@ -169,11 +173,11 @@ export default function RevisionPage() {
   };
 
   return (
-    <section className="revision-page">
-      <header className="dashboard-toolbar">
-        <div>
-          <h1>Revisión</h1>
-          <p className="dashboard-subtitle">Detección automática de comisiones y seguros en todos los extractos.</p>
+    <section className="revision-page page">
+      <header className="dashboard-toolbar page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Revisión</h1>
+          <p className="page-header__subtitle">Detección automática de comisiones y seguros en todos los extractos.</p>
         </div>
         <AppSelect
           className="revision-filter"
@@ -187,7 +191,7 @@ export default function RevisionPage() {
         />
       </header>
 
-      <div className="config-tabs">
+      <div className="config-tabs config-tabs--seg">
         <button
           type="button"
           className={tab === 'comisiones' ? 'config-tab config-tab--active' : 'config-tab'}
@@ -218,7 +222,7 @@ export default function RevisionPage() {
         <ComisionesTable
           rows={comisiones}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
+          canReviewItem={(item) => canRevisarCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setComisionEstado}
           onVerificar={verificarDevolucion}
         />
@@ -226,7 +230,7 @@ export default function RevisionPage() {
         <SegurosTable
           rows={seguros}
           busyId={busyId}
-          canEditItem={(item) => canEditCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
+          canReviewItem={(item) => canRevisarCuenta(item.cuenta_id, item.titular_id, item.pais_id)}
           onSetEstado={setSeguroEstado}
         />
       )}
@@ -264,32 +268,33 @@ export default function RevisionPage() {
 function ComisionesTable({
   rows,
   busyId,
-  canEditItem,
+  canReviewItem,
   onSetEstado,
   onVerificar,
 }: {
   rows: RevisionComisionItem[];
   busyId: string | null;
-  canEditItem: (item: RevisionComisionItem) => boolean;
+  canReviewItem: (item: RevisionComisionItem) => boolean;
   onSetEstado: (item: RevisionComisionItem, next: RevisionEstadoComision) => void;
   onVerificar: (item: RevisionComisionItem) => void;
 }) {
   if (rows.length === 0) {
-    return <EmptyState title="Sin comisiones detectadas." subtitle="Ajusta el umbral en Configuración si necesitas afinar la revisión." />;
+    return <EmptyState headingLevel="h2" title="Sin comisiones detectadas." subtitle="Ajusta el umbral en Configuración si necesitas afinar la revisión." />;
   }
 
   return (
     <div className="revision-table-wrap">
       <table className="revision-table">
+        <caption className="sr-only">Comisiones detectadas</caption>
         <thead>
           <tr>
-            <th>Titular</th>
-            <th>Cuenta</th>
-            <th>Fecha</th>
-            <th>Monto</th>
-            <th>Concepto</th>
-            <th>Devolución</th>
-            <th>Revisión</th>
+            <th scope="col">Titular</th>
+            <th scope="col">Cuenta</th>
+            <th scope="col">Fecha</th>
+            <th scope="col">Monto</th>
+            <th scope="col">Concepto</th>
+            <th scope="col">Devolución</th>
+            <th scope="col">Revisión</th>
           </tr>
         </thead>
         <tbody>
@@ -309,7 +314,7 @@ function ComisionesTable({
                 <RevisionComisionActions
                   item={item}
                   busy={busyId === item.extracto_id}
-                  canEdit={canEditItem(item)}
+                  canReview={canReviewItem(item)}
                   onSetEstado={onSetEstado}
                   onVerificar={onVerificar}
                 />
@@ -325,29 +330,30 @@ function ComisionesTable({
 function SegurosTable({
   rows,
   busyId,
-  canEditItem,
+  canReviewItem,
   onSetEstado,
 }: {
   rows: RevisionSeguroItem[];
   busyId: string | null;
-  canEditItem: (item: RevisionSeguroItem) => boolean;
+  canReviewItem: (item: RevisionSeguroItem) => boolean;
   onSetEstado: (item: RevisionSeguroItem, next: RevisionEstadoSeguro) => void;
 }) {
   if (rows.length === 0) {
-    return <EmptyState title="Sin seguros detectados." subtitle="No hay movimientos con conceptos de seguros en las cuentas visibles." />;
+    return <EmptyState headingLevel="h2" title="Sin seguros detectados." subtitle="No hay movimientos con conceptos de seguros en las cuentas visibles." />;
   }
 
   return (
     <div className="revision-table-wrap">
       <table className="revision-table">
+        <caption className="sr-only">Seguros detectados</caption>
         <thead>
           <tr>
-            <th>Titular</th>
-            <th>Cuenta</th>
-            <th>Fecha</th>
-            <th>Importe</th>
-            <th>Concepto</th>
-            <th>Estado</th>
+            <th scope="col">Titular</th>
+            <th scope="col">Cuenta</th>
+            <th scope="col">Fecha</th>
+            <th scope="col">Importe</th>
+            <th scope="col">Concepto</th>
+            <th scope="col">Estado</th>
           </tr>
         </thead>
         <tbody>
@@ -364,7 +370,7 @@ function SegurosTable({
                 <RevisionSeguroActions
                   item={item}
                   busy={busyId === item.extracto_id}
-                  canEdit={canEditItem(item)}
+                  canReview={canReviewItem(item)}
                   onSetEstado={onSetEstado}
                 />
               </td>
@@ -379,17 +385,17 @@ function SegurosTable({
 function RevisionComisionActions({
   item,
   busy,
-  canEdit,
+  canReview,
   onSetEstado,
   onVerificar,
 }: {
   item: RevisionComisionItem;
   busy: boolean;
-  canEdit: boolean;
+  canReview: boolean;
   onSetEstado: (item: RevisionComisionItem, next: RevisionEstadoComision) => void;
   onVerificar: (item: RevisionComisionItem) => void;
 }) {
-  if (!canEdit) {
+  if (!canReview) {
     return <span className="revision-status revision-status--readonly">Solo lectura</span>;
   }
 
@@ -441,15 +447,15 @@ function RevisionComisionActions({
 function RevisionSeguroActions({
   item,
   busy,
-  canEdit,
+  canReview,
   onSetEstado,
 }: {
   item: RevisionSeguroItem;
   busy: boolean;
-  canEdit: boolean;
+  canReview: boolean;
   onSetEstado: (item: RevisionSeguroItem, next: RevisionEstadoSeguro) => void;
 }) {
-  if (!canEdit) {
+  if (!canReview) {
     return <span className="revision-status revision-status--readonly">Solo lectura</span>;
   }
 

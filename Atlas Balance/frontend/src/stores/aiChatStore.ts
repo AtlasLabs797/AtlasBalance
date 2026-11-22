@@ -109,7 +109,7 @@ export const useAiChatStore = create<AiChatState>((set, get) => ({
         // para no enviar un valor que el backend rechazaria.
         thinkingMode: currentThinkingMode === 'auto'
           ? 'auto'
-          : normalizeThinkingMode(data.provider, currentThinkingMode),
+          : normalizeThinkingMode(data.provider, currentThinkingMode, data.model),
         selectedModel: nextSelectedModel,
         messages: data.configurada
           ? get().messages

@@ -28,6 +28,12 @@ public sealed class UsuarioListItemResponse
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaUltimaLogin { get; set; }
     public DateTime? DeletedAt { get; set; }
+
+    // A-2: estado del bloqueo por intentos fallidos. El admin necesita ver
+    // cuando caduca el bloqueo y cuantos intentos lleva el usuario para
+    // decidir si lo desbloquea.
+    public DateTime? BloqueadoHasta { get; set; }
+    public int IntentosFallidos { get; set; }
 }
 
 public sealed class UsuarioDetalleResponse
@@ -94,6 +100,11 @@ public sealed class UpdateUsuarioRequest
     public string Email { get; set; } = string.Empty;
     [Required, MaxLength(200)]
     public string NombreCompleto { get; set; } = string.Empty;
+    // S-5: el PUT exige el CUERPO COMPLETO. Rol y los tres flags van como
+    // nullable para poder distinguir "no enviado" de "enviado en false": con
+    // valores por defecto, un PUT parcial degradaba al usuario a EMPLEADO, lo
+    // desactivaba, le borraba la marca de primer login y le revocaba la IA.
+    // Si falta alguno, el controller responde 400 con la lista de campos.
     // V-02.07: JsonStringEnumConverter rechaza una cadena desconocida, pero NO
     // valida un entero: `"rol": 99` deserializa a (RolUsuario)99 sin rechistar.
     // RolUsuario esta mapeado como enum nativo de Postgres (HasPostgresEnum), asi
@@ -101,18 +112,20 @@ public sealed class UpdateUsuarioRequest
     // corrupcion de rol -la BD no lo acepta- pero el codigo de error enganaba.
     [EnumDataType(typeof(RolUsuario))]
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public RolUsuario Rol { get; set; } = RolUsuario.EMPLEADO;
-    public bool Activo { get; set; }
-    public bool PrimerLogin { get; set; }
-    public bool PuedeUsarIa { get; set; }
+    public RolUsuario? Rol { get; set; }
+    public bool? Activo { get; set; }
+    public bool? PrimerLogin { get; set; }
+    public bool? PuedeUsarIa { get; set; }
     // V-02.07: nullable y opcional a proposito (cambio de password no obligatorio
     // al actualizar usuario), por eso no lleva [Required].
     [MaxLength(256)]
     public string? PasswordNueva { get; set; }
+    // S-5: la lista de emails de notificacion y la matriz de permisos tambien
+    // son obligatorias: si no vinieran, un PUT parcial las borraba.
     [MaxLength(20)]
-    public IReadOnlyList<string> Emails { get; set; } = [];
+    public IReadOnlyList<string>? Emails { get; set; }
     [MaxLength(500)]
-    public IReadOnlyList<SavePermisoUsuarioRequest> Permisos { get; set; } = [];
+    public IReadOnlyList<SavePermisoUsuarioRequest>? Permisos { get; set; }
 }
 
 public sealed class UsuarioEmailResponse

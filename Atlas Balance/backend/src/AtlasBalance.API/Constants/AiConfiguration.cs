@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace AtlasBalance.API.Constants;
 
 public static class AiConfiguration
@@ -12,7 +14,10 @@ public static class AiConfiguration
     public const string OpenRouterNemotronModel = "nvidia/nemotron-3-super-120b-a12b:free";
     public const string OpenRouterGptOss120BModel = "openai/gpt-oss-120b:free";
     public const string DefaultOpenAiModel = "gpt-4o-mini";
-    public const string DefaultMiniMaxModel = "MiniMax-M3";
+    public const string MiniMaxM31FlashModel = "MiniMax-M3.1-Flash";
+    public const int MiniMaxM31ContextWindow = 1_000_000;
+    public const string DefaultMiniMaxModel = MiniMaxM31FlashModel;
+    public const string MiniMaxM3Model = "MiniMax-M3";
     public const string MiniMaxM27Model = "MiniMax-M2.7";
 
     // V-02.09 (Fase UI): modos de pensamiento admitidos por provider.
@@ -24,6 +29,8 @@ public static class AiConfiguration
     public const string ThinkingModeLow = "low";
     public const string ThinkingModeMedium = "medium";
     public const string ThinkingModeHigh = "high";
+    public const string ThinkingModeXHigh = "xhigh";
+    public const string ThinkingModeMax = "max";
     public const string ThinkingModeOn = "on";
     public const string ThinkingModeOff = "off";
 
@@ -41,6 +48,9 @@ public static class AiConfiguration
         ThinkingModeOn,
         ThinkingModeOff
     ];
+
+    private static readonly string[] ThinkingModesMiniMaxFlash =
+    [ThinkingModeAuto, ThinkingModeLow, ThinkingModeMedium, ThinkingModeHigh, ThinkingModeXHigh, ThinkingModeMax];
 
     private static readonly string[] ThinkingModesOpenRouter =
     [
@@ -86,6 +96,7 @@ public static class AiConfiguration
     private static readonly string[] AllowedMiniMaxModels =
     [
         DefaultMiniMaxModel,
+        MiniMaxM3Model,
         MiniMaxM27Model
     ];
 
@@ -93,9 +104,10 @@ public static class AiConfiguration
     public static IReadOnlyList<string> OpenAiModels => AllowedOpenAiModels;
     public static IReadOnlyList<string> MiniMaxModels => AllowedMiniMaxModels;
 
-    public static IReadOnlyList<string> GetThinkingModesForProvider(string? provider)
+    public static IReadOnlyList<string> GetThinkingModesForProvider(string? provider, string? model = null)
     {
         var normalized = NormalizeProvider(provider);
+        if (normalized == "MINIMAX" && model == MiniMaxM31FlashModel) return ThinkingModesMiniMaxFlash;
         return normalized switch
         {
             "OPENAI" => ThinkingModesOpenAi,
@@ -104,7 +116,7 @@ public static class AiConfiguration
         };
     }
 
-    public static bool IsAllowedThinkingMode(string? provider, string? mode)
+    public static bool IsAllowedThinkingMode(string? provider, string? mode, string? model = null)
     {
         var normalized = NormalizeProvider(provider);
         var trimmed = mode?.Trim()?.ToLowerInvariant();
@@ -116,12 +128,12 @@ public static class AiConfiguration
         return normalized switch
         {
             "OPENAI" => ThinkingModesOpenAi.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
-            "MINIMAX" => ThinkingModesMiniMax.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
+            "MINIMAX" => GetThinkingModesForProvider(normalized, model).Any(x => string.Equals(x, trimmed, StringComparison.Ordinal)),
             _ => AllowedThinkingModesOpenRouter.Any(x => string.Equals(x, trimmed, StringComparison.Ordinal))
         };
     }
 
-    public static string? NormalizeThinkingMode(string? provider, string? mode)
+    public static string? NormalizeThinkingMode(string? provider, string? mode, string? model = null)
     {
         var trimmed = mode?.Trim()?.ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, ThinkingModeAuto, StringComparison.Ordinal))
@@ -129,7 +141,7 @@ public static class AiConfiguration
             return ThinkingModeAuto;
         }
 
-        return IsAllowedThinkingMode(provider, trimmed) ? trimmed : null;
+        return IsAllowedThinkingMode(provider, trimmed, model) ? trimmed : null;
     }
 
     public static bool IsAllowedOpenRouterModel(string? model)
@@ -239,6 +251,28 @@ public static class AiConfiguration
                normalized.EndsWith(":free", StringComparison.OrdinalIgnoreCase);
     }
 
+    // A-5: bloque de privacidad de OpenRouter (retencion cero de datos y
+    // rechazo de la recogida de datos). Vive aqui para que TODAS las llamadas
+    // a OpenRouter usen el MISMO constructor: la del servicio principal y la
+    // del planificador semantico.
+    // Devuelve null cuando el modelo en/runtime es gratuito: los endpoints
+    // `openrouter/free` y `*:free` no garantizan rutas compatibles con
+    // ZDR/data_collection=deny y OpenRouter responde 404 (LOG_ERRORES_INCIDENCIAS,
+    // entrada 2026-09-21 "OpenRouter gratuito rechazado por restricciones ZDR").
+    public static IReadOnlyDictionary<string, object?>? OpenRouterPrivacyProvider(string? provider, string? runtimeModel)
+    {
+        if (NormalizeProvider(provider) != "OPENROUTER" || IsOpenRouterFreeModel(runtimeModel))
+        {
+            return null;
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["zdr"] = true,
+            ["data_collection"] = "deny"
+        };
+    }
+
     public static string NormalizeProvider(string? provider)
     {
         var normalized = provider?.Trim().ToUpperInvariant();
@@ -264,5 +298,50 @@ public static class AiConfiguration
         return normalized.All(ch =>
             char.IsAsciiLetterOrDigit(ch) ||
             ch is '/' or '-' or '_' or '.' or ':' or '+');
+    }
+}
+
+// R-2: snapshot de CONFIGURACIONES compartido dentro de la misma peticion.
+//
+// Se cachea por instancia del DbContext (scoped): AtlasAiService y
+// SemanticPlannerClient reciben el MISMO contexto scoped, asi que la tabla
+// CONFIGURACIONES se lee una sola vez por pregunta en vez de dos.
+//
+// Se eligio el snapshot por contexto y no un cache de proceso con TTL porque
+// el TTL dejaria una ventana de configuracion obsoleta (el admin cambia el
+// modelo y el servicio sigue sirviendo el anterior hasta que caduque). Aqui
+// el snapshot caduca con el scope: no hay contenido obsoleto posible.
+public static class AiConfigSnapshot
+{
+    private sealed class Holder
+    {
+        public readonly SemaphoreSlim Gate = new(1, 1);
+        public IReadOnlyDictionary<string, string>? Valores;
+    }
+
+    private static readonly ConditionalWeakTable<object, Holder> Holders = new();
+
+    public static async Task<IReadOnlyDictionary<string, string>> GetAsync(
+        object cacheKey,
+        Func<Task<IReadOnlyDictionary<string, string>>> loader,
+        CancellationToken cancellationToken)
+    {
+        var holder = Holders.GetValue(cacheKey, _ => new Holder());
+        await holder.Gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (holder.Valores is not null)
+            {
+                return holder.Valores;
+            }
+
+            var valores = await loader();
+            holder.Valores = valores;
+            return valores;
+        }
+        finally
+        {
+            holder.Gate.Release();
+        }
     }
 }

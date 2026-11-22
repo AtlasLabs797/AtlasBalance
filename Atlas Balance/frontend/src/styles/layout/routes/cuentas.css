@@ -1,0 +1,219 @@
+/* L8/R-9: reglas exclusivas de la ruta "cuentas".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.cuenta-open-button {
+  background: var(--accent-solid);
+  color: var(--text-inverse);
+  border: 1px solid transparent;
+  font-weight: var(--weight-semibold);
+}
+
+.cuenta-open-button:hover {
+  background: var(--accent-solid-hover);
+}
+
+.cuenta-open-button:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--ring-focus);
+}
+
+.cuenta-card {
+  padding: var(--space-4);
+  gap: var(--space-3);
+}
+
+.cuentas-page .cuenta-card {
+  min-height: 100%;
+}
+
+.cuentas-page .cuenta-card-meta {
+  grid-template-columns: minmax(0, 1fr) minmax(9rem, auto);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.cuentas-page .cuenta-card-balance {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+  justify-self: end;
+}
+
+.cuenta-card-notes {
+  grid-column: 1 / -1;
+}
+
+.cuentas-balance-list {
+  display: grid;
+  gap: var(--space-1);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  gap: 0;
+}
+
+/* P2-9: lista plana, una regla fina por fila (sin fila-pastilla). */
+.cuentas-balance-row {
+  border-width: 0 0 1px;
+  border-style: solid;
+  border-color: var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+.cuentas-balance-heading,
+.cuentas-balance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(7rem, 0.65fr) minmax(6rem, 0.55fr) 4.75rem minmax(11rem, 0.75fr) 5.5rem;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cuentas-balance-heading {
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cuentas-balance-heading span:nth-child(5),
+.cuentas-balance-heading span:last-child {
+  text-align: right;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cuentas-balance-row:hover {
+    border-color: var(--border-subtle);
+    background: var(--surface-sunken);
+    text-decoration: none;
+  }
+  .cuentas-balance-row:hover .cuentas-balance-avatar,
+  .cuentas-balance-row:hover .cuentas-balance-open {
+    background: var(--accent-solid);
+    color: var(--text-inverse);
+  }
+}
+
+.cuentas-balance-row:active {
+  transform: scale(var(--press-scale-surface));
+}
+
+.cuentas-balance-row:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--ring-focus);
+}
+
+.cuentas-balance-account {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cuentas-balance-avatar {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  color: var(--text-link);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+}
+
+.cuentas-balance-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.cuentas-balance-name,
+.cuentas-balance-bank,
+.cuentas-balance-currency,
+.cuentas-balance-owner {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cuentas-balance-name {
+  color: var(--text-primary);
+  font-weight: var(--weight-bold);
+}
+
+.cuentas-balance-bank,
+.cuentas-balance-owner {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.cuentas-balance-currency {
+  justify-self: start;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  font-weight: var(--weight-bold);
+}
+
+@media (max-width: 767.98px) {
+
+  .cuentas-balance-heading {
+    display: none;
+  }
+
+  .cuentas-balance-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "account account"
+      "bank bank"
+      "currency currency"
+      "amount open";
+    gap: var(--space-2);
+  }
+
+  .cuentas-balance-account {
+    grid-area: account;
+  }
+
+  .cuentas-balance-bank {
+    grid-area: bank;
+    padding-left: calc(2.5rem + var(--space-3));
+  }
+
+  .cuentas-balance-currency {
+    grid-area: currency;
+    padding-left: calc(2.5rem + var(--space-3));
+  }
+
+  .cuentas-balance-open {
+    grid-area: open;
+  }
+
+  .cuentas-page .cuenta-card-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .cuentas-page .cuenta-card-balance {
+    grid-column: auto;
+    grid-row: auto;
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+.entity-header .button-primary {
+  white-space: nowrap;
+}

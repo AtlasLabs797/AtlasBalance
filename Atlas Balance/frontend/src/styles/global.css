@@ -7,29 +7,36 @@
 }
 
 html {
-  font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  scroll-behavior: smooth;
   color-scheme: light;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 html[data-theme="dark"] {
   color-scheme: dark;
 }
 
+/* Un solo anillo de foco: --ring-focus. El outline transparente solo existe
+   para que Alto Contraste (forced-colors) siga pintando un borde visible. */
 :focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: var(--focus-outline-offset);
   box-shadow: var(--ring-focus);
 }
 
 body {
-  font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-normal);
+  font-family: var(--font-ui);
+  font-size: var(--text-17);
+  line-height: var(--leading-normal);
   letter-spacing: var(--tracking-body);
-  color: var(--color-text-primary);
-  background: var(--bg-app);
+  color: var(--text-primary);
+  background: var(--surface-page);
   min-width: 0;
   overflow-x: clip;
   transition: background-color var(--transition-normal), color var(--transition-normal);
@@ -44,22 +51,22 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-family-heading);
-  font-weight: var(--font-weight-semibold);
-  line-height: var(--line-height-tight);
-  color: var(--color-text-primary);
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  color: var(--text-primary);
   text-wrap: balance;
 }
 
-h1 { font-size: var(--font-size-2xl); }
-h2 { font-size: var(--font-size-xl); }
-h3 { font-size: var(--font-size-lg); }
-h4 { font-size: var(--font-size-md); }
-h5 { font-size: var(--font-size-base); }
-h6 { font-size: var(--font-size-sm); }
+h1 { font-size: var(--text-28); }
+h2 { font-size: var(--text-28); }
+h3 { font-size: var(--text-21); }
+h4 { font-size: var(--text-17); }
+h5 { font-size: var(--text-17); }
+h6 { font-size: var(--text-13); }
 
 a {
-  color: var(--color-text-link);
+  color: var(--text-link);
   text-decoration: none;
   text-underline-offset: 0.18em;
 }
@@ -77,12 +84,12 @@ input, textarea, select, button {
 }
 
 input, textarea, select {
-  background: var(--control-bg);
-  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
   padding: var(--pad-field-y) var(--pad-field-x);
   font: var(--type-body);
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   min-height: var(--control-height);
   transition:
     background-color var(--transition-fast),
@@ -93,7 +100,33 @@ input, textarea, select {
 input:hover:not(:disabled),
 textarea:hover:not(:disabled),
 select:hover:not(:disabled) {
-  border-color: var(--surface-border-hover);
+  border-color: var(--border-control-hover);
+}
+
+/* Contrato de control (DESIGN 3.5): inputs de texto y select miden exactamente
+   --control-height (min-height de la regla base + sin padding vertical) y no
+   desbordan su celda de rejilla. :where() mantiene la especificidad en (0,0,1)
+   para que cualquier regla de clase (celdas y filtros de Extractos, paleta,
+   auth, etc.) siga ganando. Checkbox, radio, file, range, color y botones
+   quedan fuera; el textarea conserva su alto automatico. */
+input:where(:not(
+  [type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'],
+  [type='hidden'], [type='image'], [type='submit'], [type='button'], [type='reset'],
+  .cell input, .extracto-filter-search input, .app-palette-input
+)),
+select {
+  padding-block: 0;
+}
+
+input:where(:not(
+  [type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color'],
+  [type='hidden'], [type='image'], [type='submit'], [type='button'], [type='reset'],
+  .cell input, .extracto-filter-search input, .app-palette-input
+)),
+select,
+textarea {
+  width: 100%;
+  min-width: 0;
 }
 
 select {
@@ -110,7 +143,7 @@ select {
 }
 
 select option {
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-primary);
 }
 
@@ -134,12 +167,12 @@ input[type='date']::-webkit-datetime-edit-fields-wrapper {
 }
 
 input[type='date']::-webkit-calendar-picker-indicator {
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1.25rem;
+  height: 1.25rem;
   margin-right: -0.35rem;
-  padding: 0.42rem;
-  border-radius: var(--radius-full);
-  background-color: var(--accent-primary-soft);
+  padding: 0;
+  border-radius: var(--radius-xs);
+  background-color: transparent;
   cursor: pointer;
   opacity: 0.78;
   transition:
@@ -150,7 +183,6 @@ input[type='date']::-webkit-calendar-picker-indicator {
 
 input[type='date']:hover::-webkit-calendar-picker-indicator,
 input[type='date']:focus::-webkit-calendar-picker-indicator {
-  background-color: color-mix(in srgb, var(--accent-primary) 14%, var(--accent-primary-soft));
   opacity: 1;
 }
 
@@ -175,7 +207,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 .date-field > span {
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
   font: var(--type-label);
 }
 
@@ -186,41 +218,38 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   gap: var(--space-2);
   width: 100%;
   min-height: var(--control-height);
-  padding: var(--space-2) var(--control-padding-x);
-  border: 1px solid var(--control-border);
+  padding: 0 var(--space-7);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-field);
-  background: var(--control-bg);
-  color: var(--color-text-primary);
+  background: var(--surface-card);
+  color: var(--text-primary);
   text-align: left;
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
   box-shadow: none;
 }
 
 .date-picker-trigger:hover:not(:disabled) {
-  border-color: var(--surface-border-hover);
-  background: var(--control-bg);
+  border-color: var(--border-control-hover);
+  background: var(--surface-card);
   transform: none;
 }
 
 .date-picker-trigger:focus-visible,
 .date-picker-field:has(.date-picker-popover) .date-picker-trigger {
-  outline: none;
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-solid);
+  box-shadow: var(--ring-focus);
 }
 
 .date-picker-trigger svg {
   flex: 0 0 auto;
-  width: 2.1rem;
-  height: 2.1rem;
-  padding: 0.42rem;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary-soft);
-  color: var(--color-text-primary);
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--text-secondary);
 }
 
 .date-picker-trigger--empty {
-  color: var(--color-text-muted);
+  color: var(--text-tertiary);
 }
 
 .date-picker-native-row {
@@ -247,11 +276,11 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   z-index: var(--z-dropdown);
   width: min(19.5rem, calc(100dvw - 2rem));
   padding: var(--space-3);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
-  color: var(--color-text-primary);
-  box-shadow: var(--shadow-overlay);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xl);
   transform-origin: top left;
   animation: date-picker-popover-in var(--transition-fast) var(--ease-premium);
 }
@@ -282,17 +311,16 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-picker-header strong {
   text-align: center;
-  text-transform: capitalize;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .date-picker-header button,
 .date-picker-footer button {
   min-height: 2.5rem;
   padding: 0;
-  border-color: var(--border-soft);
-  background: var(--bg-surface-soft);
+  border-color: var(--border-default);
+  background: var(--surface-muted);
 }
 
 .date-picker-header button {
@@ -303,7 +331,7 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 .date-picker-header button:hover,
 .date-picker-footer button:hover {
   border-color: var(--border-strong);
-  background: var(--accent-primary-soft);
+  background: var(--accent-soft);
 }
 
 .date-picker-weekdays,
@@ -315,9 +343,9 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 
 .date-picker-weekdays {
   margin-bottom: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   text-align: center;
 }
 
@@ -333,33 +361,32 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   padding: 0;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .date-picker-grid button:hover {
-  border-color: var(--border-soft);
-  background: var(--bg-surface-soft);
+  border-color: var(--border-default);
+  background: var(--surface-muted);
   transform: none;
 }
 
 .date-picker-grid button:focus-visible {
-  outline: none;
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-solid);
+  box-shadow: var(--ring-focus);
 }
 
 .date-picker-day--today {
-  color: var(--color-text-link) !important;
-  background: color-mix(in srgb, var(--accent-primary) 8%, transparent) !important;
+  color: var(--text-link) !important;
+  background: color-mix(in srgb, var(--accent-solid) 8%, transparent) !important;
 }
 
 .date-picker-day--selected {
-  border-color: var(--accent-primary) !important;
-  background: var(--accent-primary) !important;
-  color: var(--color-text-inverse) !important;
+  border-color: var(--accent-solid) !important;
+  background: var(--accent-solid) !important;
+  color: var(--text-inverse) !important;
 }
 
 .date-picker-footer {
@@ -368,13 +395,13 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
   gap: var(--space-2);
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--border-default);
 }
 
 .date-picker-footer button {
   flex: 1;
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 @keyframes date-picker-popover-in {
@@ -395,8 +422,8 @@ html[data-theme="dark"] input[type='date']::-webkit-calendar-picker-indicator {
 }
 
 input:focus, textarea:focus, select:focus {
-  outline: none;
-  border-color: var(--accent-500);
+  outline: 2px solid transparent;
+  border-color: var(--accent-solid);
   box-shadow: var(--ring-focus);
 }
 
@@ -410,9 +437,9 @@ input[type='checkbox'] {
   place-content: center;
   flex: 0 0 auto;
   padding: 0;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--border-control);
   border-radius: var(--radius-xs);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-inverse);
   vertical-align: middle;
   cursor: pointer;
@@ -439,23 +466,18 @@ input[type='checkbox']::before {
 }
 
 input[type='checkbox']:hover:not(:disabled) {
-  border-color: var(--accent-primary);
-  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-surface));
+  border-color: var(--accent-solid);
+  background: color-mix(in srgb, var(--accent-solid) 8%, var(--surface-card));
 }
 
 input[type='checkbox']:checked {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
 }
 
 input[type='checkbox']:checked::before {
   opacity: 1;
   transform: rotate(40deg) scale(1);
-}
-
-input[type='checkbox']:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
 }
 
 input[type='checkbox']:active:not(:disabled) {
@@ -470,13 +492,13 @@ input[type='checkbox']:disabled {
 button {
   cursor: pointer;
   touch-action: manipulation;
-  border: 1px solid var(--color-button-secondary-border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-control);
-  background: var(--color-button-secondary-bg);
-  color: var(--color-button-secondary-text);
+  background: var(--surface-muted);
+  color: var(--text-primary);
   padding: var(--space-2) var(--space-4);
   min-height: var(--control-height);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--weight-semibold);
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
@@ -486,13 +508,8 @@ button {
 }
 
 button:not([class]):hover:not(:disabled) {
-  background: var(--color-button-secondary-hover);
+  background: var(--surface-sunken);
   border-color: var(--border-strong);
-}
-
-button:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
 }
 
 button:active:not(:disabled),
@@ -502,7 +519,8 @@ a[class*="button"]:active {
 }
 
 button:disabled {
-  opacity: 0.5;
+  color: var(--text-disabled);
+  opacity: 1;
   cursor: not-allowed;
 }
 
@@ -514,7 +532,7 @@ table {
 th, td {
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border-primary);
+  border-bottom: 1px solid var(--border-default);
 }
 
 td {
@@ -525,23 +543,21 @@ td {
 }
 
 tr:hover td {
-  background-color: var(--bg-hover);
+  background-color: var(--surface-hover);
 }
 
 th {
-  font-weight: var(--font-weight-semibold);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-secondary);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-13);
+  color: var(--text-secondary);
+  background: var(--surface-page);
 }
 
 .button,
 .button-primary,
 .button-secondary,
-.button-tertiary,
 .button-warning,
-.button-danger,
-.button-icon {
+.button-danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -562,13 +578,13 @@ th {
 }
 
 .button-primary {
-  background: var(--accent-primary);
+  background: var(--accent-solid);
   color: var(--text-inverse);
-  border-color: color-mix(in srgb, var(--accent-primary-hover) 36%, var(--accent-primary));
+  border-color: color-mix(in srgb, var(--accent-solid-hover) 36%, var(--accent-solid));
 }
 
 .button-primary:hover {
-  background: var(--accent-primary-hover);
+  background: var(--accent-solid-hover);
   text-decoration: none;
 }
 
@@ -591,79 +607,51 @@ th {
   background: color-mix(in srgb, var(--accent-500) 12%, transparent);
 }
 
-.button-tertiary {
-  background: transparent;
-  color: var(--text-link);
-  padding-inline: var(--space-2);
-}
-
-.button-tertiary:hover {
-  background: var(--accent-primary-soft);
-  text-decoration: none;
-}
-
 .button-warning {
-  background: var(--warning-bg);
-  border-color: color-mix(in srgb, var(--warning-text) 32%, transparent);
-  color: var(--warning-text);
+  background: var(--status-warning-bg);
+  border-color: color-mix(in srgb, var(--status-warning-text) 32%, transparent);
+  color: var(--status-warning-text);
 }
 
 .button-warning:hover {
-  background: color-mix(in srgb, var(--warning-bg) 72%, var(--warning-text) 28%);
-  border-color: var(--warning-text);
-  color: var(--warning-text);
+  background: color-mix(in srgb, var(--status-warning-bg) 72%, var(--status-warning-text) 28%);
+  border-color: var(--status-warning-text);
+  color: var(--status-warning-text);
   text-decoration: none;
 }
 
 .button-danger {
-  background: var(--danger-bg);
-  border-color: color-mix(in srgb, var(--danger-text) 30%, transparent);
-  color: var(--danger-text);
+  background: var(--status-danger-bg);
+  border-color: color-mix(in srgb, var(--status-danger-text) 30%, transparent);
+  color: var(--status-danger-text);
 }
 
 .button-danger:hover {
-  background: var(--danger-text);
+  background: var(--status-danger-text);
   color: var(--text-inverse);
   text-decoration: none;
 }
 
-.button-icon {
-  width: var(--control-height);
-  padding: 0;
+/* Confirmaciones: tres niveles distinguibles por forma e icono, no solo color. */
+.confirm-action {
+  min-height: 44px;
+  font-weight: 600;
 }
 
-.ab-badge {
-  display: inline-flex;
+.confirm-action-reversible {
+  border-color: var(--status-warning-text);
+}
+
+.confirm-dialog-irreversible {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 1.65rem;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface-soft);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.ab-badge--info {
-  border-color: color-mix(in srgb, var(--info-text) 28%, transparent);
-  background: var(--info-bg);
-  color: var(--info-text);
-}
-
-.ab-badge--success {
-  border-color: color-mix(in srgb, var(--success-text) 28%, transparent);
-  background: var(--success-bg);
-  color: var(--success-text);
-}
-
-.ab-badge--warning {
-  border-color: color-mix(in srgb, var(--warning-text) 28%, transparent);
-  background: var(--warning-bg);
-  color: var(--warning-text);
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--status-danger-text);
+  border-radius: var(--radius-field);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
 }
 
 .ab-tabs {
@@ -672,9 +660,9 @@ th {
   gap: 0.2rem;
   min-height: var(--control-height);
   padding: 0.2rem;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
 }
 
 .ab-tab {
@@ -683,56 +671,16 @@ th {
   border: 1px solid transparent;
   border-radius: calc(var(--radius-control) - 3px);
   background: transparent;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .ab-tab[aria-pressed="true"],
-.ab-tab[aria-checked="true"],
-.ab-tab--active {
-  border-color: var(--border-soft);
-  background: var(--bg-surface);
+.ab-tab[aria-checked="true"] {
+  border-color: var(--border-default);
+  background: var(--surface-card);
   color: var(--text-primary);
-}
-
-.ab-field {
-  display: grid;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.ab-field > span,
-.ab-label {
-  color: var(--color-text-secondary);
-  font: var(--type-label);
-}
-
-.ab-input {
-  width: 100%;
-}
-
-.ab-empty {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  padding: var(--space-5);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-card);
-  background: var(--bg-surface-soft);
-  color: var(--color-text-secondary);
-}
-
-.ab-button--block {
-  width: 100%;
-}
-
-.ab-button--sm {
-  min-height: var(--control-height-sm);
-  padding: 0 var(--space-7);
-  font: var(--type-caption);
 }
 
 .close-icon-button {
@@ -745,15 +693,15 @@ th {
   height: var(--control-height);
   min-height: var(--control-height);
   padding: 0;
-  border: 1px solid var(--control-border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-control);
-  background: var(--surface-bg-raised);
+  background: var(--surface-raised);
   color: var(--text-secondary);
 }
 
 .close-icon-button:hover:not(:disabled) {
-  border-color: var(--surface-border-hover);
-  background: var(--bg-hover);
+  border-color: var(--border-control-hover);
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
@@ -781,24 +729,24 @@ th {
   min-height: var(--control-height);
   justify-content: space-between;
   gap: var(--space-3);
-  border: 1px solid var(--border-default);
-  background: var(--bg-surface);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-field);
+  background: var(--surface-card);
   color: var(--text-primary);
   font: var(--type-body);
-  padding: var(--pad-field-y) var(--pad-field-x);
+  padding: 0 var(--pad-field-x);
   text-align: left;
   box-shadow: none;
   touch-action: manipulation;
 }
 
 .app-select-trigger:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--bg-surface);
+  border-color: var(--border-control-hover);
+  background: var(--surface-card);
 }
 
 .app-select-trigger:focus-visible {
-  outline: none;
-  border-color: var(--accent-500);
+  border-color: var(--accent-solid);
   box-shadow: var(--ring-focus);
 }
 
@@ -864,8 +812,8 @@ th {
   padding: var(--space-1);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-overlay);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-xl);
   transform-origin: top left;
   animation: app-select-pop 160ms var(--ease-premium);
 }
@@ -879,12 +827,12 @@ th {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
+  background: var(--surface-page);
 }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-primary) 22%, transparent);
   border-radius: var(--radius-full);
-  border: 2px solid var(--color-bg-secondary);
+  border: 2px solid var(--surface-page);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--text-primary) 38%, transparent);
@@ -911,15 +859,15 @@ th {
 
 .signed-amount {
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
 }
 
 .signed-amount--positive {
-  color: var(--color-amount-positive);
+  color: var(--amount-positive);
 }
 
 .signed-amount--negative {
-  color: var(--color-amount-negative);
+  color: var(--amount-negative);
 }
 
 @keyframes app-select-pop {
@@ -934,14 +882,10 @@ th {
   }
 }
 
+/* Movimiento reducido: sin reset global; entradas sin desplazamiento ni escala */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    scroll-behavior: auto !important;
-    transition-duration: 1ms !important;
+  .app-select-popover {
+    animation: none;
   }
 }
 
@@ -979,10 +923,10 @@ th {
   }
 
   input[type='checkbox'] {
-    width: 1.25rem;
-    height: 1.25rem;
-    min-width: 1.25rem;
-    min-height: 1.25rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
   }
 
   label:has(> input[type='checkbox']),
@@ -997,4 +941,111 @@ th {
   .date-picker-grid span {
     min-height: var(--control-height);
   }
+}
+
+/* Utilidad global de texto secundario. D-6: movida desde layout/importacion.css
+   porque la usan 10 paginas y 4 componentes (entre ellos PageSkeleton, que
+   aparece en cualquier ruta). No hay ninguna otra regla para esta clase. */
+.import-muted {
+  color: var(--text-secondary);
+}
+
+/* D-5 (LOTE 8): capa de coherencia reubicada. Antes vivia en
+   layout/system-coherence.css, que era la ultima hoja de pagina y por eso
+   ganaba por orden de fuente. Aqui estas reglas son la base transversal de la
+   aplicacion, asi que global.css es su sitio natural: se cargan antes que las
+   hojas de pagina y no hay ninguna regla de pagina que compita con ellas. */
+.app-content {
+  background: transparent;
+}
+
+label,
+.auth-label,
+.app-select-label,
+.config-field > span,
+.config-manual-form label,
+.auditoria-filtros label,
+.exportaciones-toolbar label {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.users-table-scroll th,
+.config-table-wrap th,
+.extracto-table-section th,
+.dashboard-table-wrap th,
+.import-preview-grid th,
+.import-validation-table-wrap th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.users-table-scroll,
+.config-table-wrap,
+.dashboard-table-wrap,
+.import-preview-grid,
+.import-validation-table-wrap,
+.revision-table-wrap,
+.account-excel-wrap {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+}
+
+tbody tr {
+  transition: background-color var(--transition-fast);
+}
+
+.pill,
+.config-badge {
+  border-radius: var(--radius-full);
+}
+
+.button-danger {
+  border-color: color-mix(in srgb, var(--status-danger-text) 28%, transparent);
+}
+
+/* Deshabilitado: color de texto atenuado en vez de opacity .5; los botones con
+   relleno pasan a una superficie neutra para no dejar texto gris sobre color. */
+.button-primary:disabled,
+.button-warning:disabled,
+.button-danger:disabled,
+.users-primary-button:disabled {
+  background: var(--surface-sunken);
+  border-color: var(--border-default);
+  color: var(--text-disabled);
+}
+
+.button-secondary:disabled {
+  background: transparent;
+  border-color: var(--border-default);
+  color: var(--text-disabled);
+}
+
+/* Coherencia de cabecera de pagina. El barrido en navegador encontro titulos a
+   28/700 en casi todas las pantallas y a 40/600 en Conciliacion, que hereda la
+   regla base de `h1`. El sistema compone los titulos con --type-title-2
+   (28/600); el 700 venia del alias legacy --font-weight-heavy. Esta capa se
+   carga la ultima, asi que normaliza sin tocar 30 reglas por archivo. */
+.app-content h1 {
+  font-size: var(--text-28);
+  font-weight: var(--weight-semibold);
+}
+
+/* Cabeceras de tabla: overline de 12/600 en mayusculas, como .atl-table th y
+   .atl-datagrid__table th. Antes convivian 13/600 sin mayusculas (Titulares) y
+   12/700 con mayusculas (Usuarios, Auditoria, Conciliacion).
+   El selector baja a `table th` (0,1,2) para conservar el reparto: antes ganaba
+   por orden de fuente a `.revision-table th` y `.import-validation-table th`
+   (0,1,1), y desde global.css, que se carga antes, la especificidad hace ese
+   mismo trabajo. */
+.app-content table th {
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }

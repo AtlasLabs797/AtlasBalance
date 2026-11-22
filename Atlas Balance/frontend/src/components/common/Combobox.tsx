@@ -112,8 +112,11 @@ export function Combobox({
       return;
     }
     if (event.key === 'Escape') {
-      event.preventDefault();
-      closeAndReset();
+      // Con la lista cerrada el Escape sigue su camino y puede cerrar el dialogo contenedor.
+      if (open) {
+        event.preventDefault();
+        closeAndReset();
+      }
       return;
     }
     if (event.key === 'Tab') {

@@ -8,6 +8,11 @@ public sealed class ExtractoListItemResponse
     public Guid Id { get; set; }
     public Guid CuentaId { get; set; }
     public string CuentaNombre { get; set; } = string.Empty;
+    // S-2: BancoNombre, Concepto y Comentarios llegan a null cuando la columna
+    // queda fuera del conjunto efectivo de columnas visibles (la regla del
+    // administrador es una restriccion y el filtro se aplica en el servidor).
+    // Los campos no nullable (Fecha, Monto, Saldo, FilaNumero...) no se pueden
+    // omitir sin romper el contrato de la fila.
     public string? BancoNombre { get; set; }
     public Guid TitularId { get; set; }
     public string TitularNombre { get; set; } = string.Empty;
@@ -160,6 +165,32 @@ public sealed class ToggleFlagRequest
     public string? Nota { get; set; }
 }
 
+// F-7: borrado y marcado en lote como una sola peticion atomica.
+public sealed class LoteEliminarExtractosRequest
+{
+    public List<Guid> Ids { get; set; } = [];
+}
+
+public sealed class LoteFlagExtractoItem
+{
+    public Guid Id { get; set; }
+    [MaxLength(ExtractoLimits.ComentariosMaxLength)]
+    public string? Nota { get; set; }
+}
+
+public sealed class LoteFlagExtractosRequest
+{
+    public bool Flagged { get; set; }
+    public List<LoteFlagExtractoItem> Items { get; set; } = [];
+}
+
+public sealed class LoteExtractosResponse
+{
+    public int Procesados { get; set; }
+    public List<Guid> Ids { get; set; } = [];
+    public string Message { get; set; } = string.Empty;
+}
+
 public sealed class AuditCellEntryResponse
 {
     public Guid Id { get; set; }
@@ -222,6 +253,10 @@ public sealed class SaveColumnasVisiblesRequest
     [JsonPropertyName("columnas_visibles")]
     [MaxLength(ExtractoLimits.ColumnasVisiblesMaxEntries)]
     public IReadOnlyList<string>? ColumnasVisibles { get; set; }
+
+    [JsonPropertyName("orden_columnas")]
+    [MaxLength(ExtractoLimits.ColumnasVisiblesMaxEntries)]
+    public IReadOnlyList<string>? OrdenColumnas { get; set; }
 }
 
 public sealed class LenientNullableGuidJsonConverter : System.Text.Json.Serialization.JsonConverter<Guid?>

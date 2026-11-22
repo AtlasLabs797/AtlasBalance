@@ -50,7 +50,7 @@ public class ConciliacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ConciliacionService(db, TestAuditService.Create(db));
+        var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
         var esperado = await service.CrearMovimientoEsperadoAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),
@@ -112,7 +112,7 @@ public class ConciliacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ConciliacionService(db, TestAuditService.Create(db));
+        var service = new ConciliacionService(db, TestAuditService.Create(db), TestUserAccess.Create(db));
         var act = () => service.SugerirAsync(
             userId,
             RolUsuario.EMPLEADO.ToString(),

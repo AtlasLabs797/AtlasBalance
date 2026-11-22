@@ -6,14 +6,20 @@ import App from './App';
 import { queryClient } from '@/services/queryClient';
 import AppErrorBoundary from '@/components/common/AppErrorBoundary';
 import { reportClientError } from '@/utils/reportClientError';
+import { applyThemeToDocument, resolveInitialTheme, systemPrefersDark } from '@/utils/theme';
 import '@/styles/variables.css';
 import '@/styles/global.css';
 import '@/styles/layout.css';
 import '@/styles/auth.css';
 
-const rawTheme = localStorage.getItem('theme');
-const savedTheme = rawTheme === 'dark' || rawTheme === 'light' ? rawTheme : 'light';
-document.documentElement.setAttribute('data-theme', savedTheme);
+// Coherente con public/theme-init.js y uiStore: guardado ?? sistema.
+let rawTheme: string | null;
+try {
+  rawTheme = localStorage.getItem('theme');
+} catch {
+  rawTheme = null;
+}
+applyThemeToDocument(resolveInitialTheme(rawTheme, systemPrefersDark()));
 
 // Listeners globales: capturan errores que no llegan a un error boundary de
 // React (codigo fuera del arbol de componentes, promesas sin catch). Nunca

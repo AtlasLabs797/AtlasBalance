@@ -27,7 +27,17 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist', '.test-dist', '.test-dist-build-*', 'node_modules.blocked-*'],
+    ignores: [
+      'dist',
+      'dist-*',
+      '.dist-*',
+      'public',
+      '.test-dist',
+      '.test-dist-*',
+      'playwright-report',
+      'test-results',
+      'node_modules.blocked-*',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

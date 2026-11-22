@@ -9,12 +9,56 @@ import { TopBar } from '@/components/layout/TopBar';
 import { useAlertasActivasQuery } from '@/hooks/queries/useAlertasActivasQuery';
 import { useIaConfigQuery } from '@/hooks/queries/useIaConfigQuery';
 import { usePaisesQuery } from '@/hooks/queries/usePaisesQuery';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 
+// Titulos por ruta de App.tsx. Los segmentos ":param" casan con cualquier valor.
+const TITULOS_POR_RUTA: ReadonlyArray<readonly [string, string]> = [
+  ['/dashboard', 'Dashboard'],
+  ['/dashboard/titular/:id', 'Dashboard titular'],
+  ['/dashboard/cuenta/:id', 'Dashboard cuenta'],
+  ['/titulares', 'Titulares'],
+  ['/titulares/:id', 'Detalle de titular'],
+  ['/cuentas', 'Cuentas'],
+  ['/cuentas/:id', 'Detalle de cuenta'],
+  ['/extractos', 'Extractos'],
+  ['/importacion', 'Importación'],
+  ['/conciliacion', 'Conciliación'],
+  ['/revision', 'Revisión'],
+  ['/ia', 'IA'],
+  ['/formatos-importacion', 'Formatos de importación'],
+  ['/alertas', 'Alertas'],
+  ['/exportaciones', 'Exportaciones'],
+  ['/usuarios', 'Usuarios'],
+  ['/auditoria', 'Auditoría'],
+  ['/configuracion', 'Configuración'],
+  ['/configuracion/paises', 'Configuración de países'],
+  ['/backups', 'Backups'],
+  ['/papelera', 'Papelera'],
+];
+
+// Compara segmento a segmento; un segmento ":param" casa con cualquier valor.
+function coincideRuta(patron: string, ruta: string): boolean {
+  const segmentosPatron = patron.split('/').filter(Boolean);
+  const segmentosRuta = ruta.split('/').filter(Boolean);
+  if (segmentosPatron.length !== segmentosRuta.length) {
+    return false;
+  }
+  return segmentosPatron.every(
+    (segmento, indice) => segmento.startsWith(':') || segmento === segmentosRuta[indice]
+  );
+}
+
+function obtenerTituloRuta(pathname: string): string {
+  const coincidencia = TITULOS_POR_RUTA.find(([patron]) => coincideRuta(patron, pathname));
+  return coincidencia ? coincidencia[1] : 'Atlas Balance';
+}
+
 export function Layout() {
   const location = useLocation();
+  useDocumentTitle(obtenerTituloRuta(location.pathname));
   const isEmbedded = new URLSearchParams(location.search).get('embedded') === '1';
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const blockingOverlayCount = useUiStore((state) => state.blockingOverlayCount);

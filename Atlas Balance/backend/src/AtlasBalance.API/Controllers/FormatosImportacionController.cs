@@ -216,7 +216,7 @@ public sealed class FormatosImportacionController : ControllerBase
 
     private static IQueryable<FormatoImportacion> ApplySorting(IQueryable<FormatoImportacion> query, string sortBy, bool desc)
     {
-        return (sortBy.ToLowerInvariant(), desc) switch
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
         {
             ("nombre", true) => query.OrderByDescending(f => f.Nombre),
             ("nombre", false) => query.OrderBy(f => f.Nombre),
@@ -225,8 +225,17 @@ public sealed class FormatosImportacionController : ControllerBase
             ("divisa", true) => query.OrderByDescending(f => f.Divisa),
             ("divisa", false) => query.OrderBy(f => f.Divisa),
             ("fecha_creacion", true) => query.OrderByDescending(f => f.FechaCreacion),
-            _ => query.OrderBy(f => f.FechaCreacion)
+            ("fecha_creacion", false) => query.OrderBy(f => f.FechaCreacion),
+            // R-3 (seccion 9): el caso por defecto tambien respeta `sortDir`.
+            // Antes ignoraba `desc`, asi que un `sortBy` desconocido salia
+            // siempre por fecha de creacion ascendente.
+            _ => desc
+                ? query.OrderByDescending(f => f.FechaCreacion)
+                : query.OrderBy(f => f.FechaCreacion)
         };
+
+        // B-15: desempate estable por clave primaria, despues del campo pedido.
+        return ((IOrderedQueryable<FormatoImportacion>)ordered).ThenBy(f => f.Id);
     }
 
     private static FormatoImportacionResponse MapToResponse(FormatoImportacion f)

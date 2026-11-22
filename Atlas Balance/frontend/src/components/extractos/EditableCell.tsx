@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { applyEditableCellSaveResult } from '@/utils/editableCellSave';
 
 interface EditableCellProps {
   value: string;
   editable: boolean;
   onSave: (next: string) => Promise<void> | void;
-  displayValue?: string;
+  displayValue?: ReactNode;
   displayClassName?: string;
   tabIndex?: number;
 }
@@ -41,11 +43,17 @@ export default function EditableCell({ value, editable, onSave, displayValue, di
     setSaving(true);
     try {
       await onSave(draft);
-      setSaveState('saved');
-      setIsEditing(false);
+      const next = applyEditableCellSaveResult({ draft, isEditing, saveState }, 'saved');
+      setIsEditing(next.isEditing);
+      setSaveState(next.saveState);
     } catch {
-      setDraft(value);
-      setSaveState('error');
+      // F-9: el fallo no sustituye el borrador por el valor del servidor. El
+      // editor sigue abierto con lo escrito y avisando del fallo, para que el
+      // usuario reintente (Enter o blur) o lo descarte (Escape).
+      const next = applyEditableCellSaveResult({ draft, isEditing, saveState }, 'failed');
+      setDraft(next.draft);
+      setIsEditing(next.isEditing);
+      setSaveState(next.saveState);
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -57,27 +65,37 @@ export default function EditableCell({ value, editable, onSave, displayValue, di
   }
 
   if (isEditing) {
+    // El shell mantiene la caja del input como estaba (justifyItems evita que
+    // el input se estire al ancho de la celda) y deja sitio al aviso de fallo.
     return (
-      <input
-        autoFocus
-        disabled={saving}
-        value={draft}
-        aria-invalid={saveState === 'error'}
-        aria-describedby={saveState === 'error' ? feedbackId : undefined}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            void commit();
-          }
-          if (e.key === 'Escape') {
-            setDraft(value);
-            setIsEditing(false);
-          }
-        }}
-        aria-label="Editar celda"
-      />
+      <span className="cell-edit-shell" style={{ justifyItems: 'start' }}>
+        <input
+          autoFocus
+          disabled={saving}
+          value={draft}
+          aria-invalid={saveState === 'error'}
+          aria-describedby={saveState === 'error' ? feedbackId : undefined}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              void commit();
+            }
+            if (e.key === 'Escape') {
+              setDraft(value);
+              setSaveState('idle');
+              setIsEditing(false);
+            }
+          }}
+          aria-label="Editar celda"
+        />
+        {saveState === 'error' ? (
+          <small id={feedbackId} className="cell-save-state cell-save-state--error" role="alert">
+            No guardado. Revisa el dato e inténtalo otra vez.
+          </small>
+        ) : null}
+      </span>
     );
   }
 

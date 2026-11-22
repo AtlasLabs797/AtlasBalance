@@ -91,57 +91,73 @@ public sealed class AlertaService : IAlertaService
         var cooldownKey = $"alerta_saldo_last_sent_utc:{cuenta.Id:N}:{alcance}";
         // V-02-05 (HIGH-11): lock por (cuenta, alcance) para evitar que dos
         // EvaluateSaldoPostAsync concurrentes disparen email doble en importacion
-        // masiva. Se libera al final del SaveChangesAsync.
+        // masiva.
         var lockKey = $"alerta_saldo_lock:{cuenta.Id:N}:{alcance}";
-        if (string.Equals(
-                _dbContext.Database.ProviderName,
-                "Npgsql.EntityFrameworkCore.PostgreSQL",
-                StringComparison.Ordinal))
-        {
-            await _dbContext.Database.ExecuteSqlRawAsync(
-                "SELECT pg_advisory_xact_lock(hashtext({0}))", new object[] { lockKey }, cancellationToken);
-        }
+        var esPostgres = string.Equals(
+            _dbContext.Database.ProviderName,
+            "Npgsql.EntityFrameworkCore.PostgreSQL",
+            StringComparison.Ordinal);
 
-        var lastSentAt = await GetCuentaCooldownAsync(cooldownKey, cancellationToken);
-        if (!lastSentAt.HasValue && alertaAplicable.CuentaId == cuenta.Id)
-        {
-            lastSentAt = alertaAplicable.FechaUltimaAlerta;
-        }
+        // V-03.02 (B-8): pg_advisory_xact_lock es un lock DE TRANSACCION. Sin una
+        // transaccion explicita el SELECT corre en autocommit, el lock se libera al
+        // terminar la sentencia y dos importaciones simultaneas pasan las dos el
+        // lock: las dos envian el email de alerta. La transaccion cubre la zona
+        // critica (lock -> comprobacion del cooldown -> escritura del cooldown ->
+        // commit) y el lock se libera con el commit.
+        // El envio del email y la auditoria quedan FUERA de la transaccion: un SMTP
+        // lento mantendria el lock retenido.
+        List<string> recipients;
+        string? ultimoConcepto;
 
-        if (lastSentAt.HasValue && lastSentAt.Value > now.AddHours(-cooldownHours))
+        await using (var tx = esPostgres && _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null)
         {
-            _logger.LogInformation(
-                "No se envia alerta por saldo bajo duplicada. alerta_id={AlertaId}, cuenta_id={CuentaId}, alcance={Alcance}, cooldown_horas={CooldownHours}",
-                alertaAplicable.Id,
-                cuenta.Id,
-                alcance,
-                cooldownHours);
-            return;
-        }
+            if (esPostgres)
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock(hashtext({0}))", new object[] { lockKey }, cancellationToken);
+            }
 
-        var ultimoConcepto = await _dbContext.Extractos
-            .Where(x => x.CuentaId == cuentaId)
-            .OrderByDescending(x => x.FilaNumero)
-            .ThenByDescending(x => x.Fecha)
-            .Select(x => x.Concepto)
-            .FirstOrDefaultAsync(cancellationToken);
+            var lastSentAt = await GetCuentaCooldownAsync(cooldownKey, cancellationToken);
+            if (!lastSentAt.HasValue && alertaAplicable.CuentaId == cuenta.Id)
+            {
+                lastSentAt = alertaAplicable.FechaUltimaAlerta;
+            }
 
-        var destinatarioUserIds = await _dbContext.AlertaDestinatarios
-            .Where(x => x.AlertaId == alertaAplicable.Id)
-            .Select(x => x.UsuarioId)
-            .Distinct()
-            .ToListAsync(cancellationToken);
+            if (lastSentAt.HasValue && lastSentAt.Value > now.AddHours(-cooldownHours))
+            {
+                _logger.LogInformation(
+                    "No se envia alerta por saldo bajo duplicada. alerta_id={AlertaId}, cuenta_id={CuentaId}, alcance={Alcance}, cooldown_horas={CooldownHours}",
+                    alertaAplicable.Id,
+                    cuenta.Id,
+                    alcance,
+                    cooldownHours);
+                return;
+            }
 
-        var recipients = await ResolveRecipientEmailsAsync(destinatarioUserIds, cancellationToken);
-        if (recipients.Count == 0)
-        {
-            _logger.LogWarning(
-                "No se envia email de alerta por saldo bajo: alerta_id={AlertaId} sin destinatarios validos",
-                alertaAplicable.Id);
-            return;
-        }
-        else
-        {
+            ultimoConcepto = await _dbContext.Extractos
+                .Where(x => x.CuentaId == cuentaId)
+                .OrderByDescending(x => x.FilaNumero)
+                .ThenByDescending(x => x.Fecha)
+                .Select(x => x.Concepto)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var destinatarioUserIds = await _dbContext.AlertaDestinatarios
+                .Where(x => x.AlertaId == alertaAplicable.Id)
+                .Select(x => x.UsuarioId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            recipients = await ResolveRecipientEmailsAsync(destinatarioUserIds, cancellationToken);
+            if (recipients.Count == 0)
+            {
+                _logger.LogWarning(
+                    "No se envia email de alerta por saldo bajo: alerta_id={AlertaId} sin destinatarios validos",
+                    alertaAplicable.Id);
+                return;
+            }
+
             // Se registra el intento (cooldown) antes de enviar: si el SMTP esta caido, el
             // fallo no debe dejar el cooldown sin marcar, o la alerta se reintentaria en
             // cada ciclo de evaluacion en lugar de esperar el cooldown configurado.
@@ -149,28 +165,34 @@ public sealed class AlertaService : IAlertaService
             await UpsertCuentaCooldownAsync(cooldownKey, now, cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            try
+            if (tx is not null)
             {
-                await _emailService.SendSaldoBajoAlertAsync(
-                    recipients,
-                    cuenta.TitularNombre,
-                    cuenta.Nombre,
-                    cuenta.Id,
-                    cuenta.Divisa,
-                    saldoActual.Value,
-                    alertaAplicable.SaldoMinimo,
-                    ultimoConcepto,
-                    cancellationToken);
+                await tx.CommitAsync(cancellationToken);
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "Fallo al enviar email de alerta por saldo bajo. alerta_id={AlertaId}, cuenta_id={CuentaId}",
-                    alertaAplicable.Id,
-                    cuenta.Id);
-                return;
-            }
+        }
+
+        // Fin de la zona critica: el lock ya esta liberado con el commit.
+        try
+        {
+            await _emailService.SendSaldoBajoAlertAsync(
+                recipients,
+                cuenta.TitularNombre,
+                cuenta.Nombre,
+                cuenta.Id,
+                cuenta.Divisa,
+                saldoActual.Value,
+                alertaAplicable.SaldoMinimo,
+                ultimoConcepto,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Fallo al enviar email de alerta por saldo bajo. alerta_id={AlertaId}, cuenta_id={CuentaId}",
+                alertaAplicable.Id,
+                cuenta.Id);
+            return;
         }
 
         await _auditService.LogAsync(

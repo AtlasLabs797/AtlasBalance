@@ -16,6 +16,11 @@ const MONTH_FORMATTER = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 
 const DISPLAY_FORMATTER = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
 const FULL_DATE_FORMATTER = new Intl.DateTimeFormat('es-ES', { dateStyle: 'full' });
 
+function formatMonthTitle(date: Date): string {
+  const text = MONTH_FORMATTER.format(date);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function parseIsoDate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
@@ -200,6 +205,8 @@ export function DatePickerField({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // Evita que el dialogo contenedor (useDialogFocus) cierre tambien con este Escape.
+        event.preventDefault();
         closePicker(true);
       }
     };
@@ -273,7 +280,7 @@ export function DatePickerField({
             <button type="button" aria-label="Mes anterior" onClick={() => setViewMonth((current) => addMonths(current, -1))}>
               <ChevronLeft aria-hidden="true" size={18} strokeWidth={2} />
             </button>
-            <strong>{MONTH_FORMATTER.format(viewMonth)}</strong>
+            <strong>{formatMonthTitle(viewMonth)}</strong>
             <button type="button" aria-label="Mes siguiente" onClick={() => setViewMonth((current) => addMonths(current, 1))}>
               <ChevronRight aria-hidden="true" size={18} strokeWidth={2} />
             </button>

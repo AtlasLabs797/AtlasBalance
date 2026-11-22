@@ -1,3 +1,4 @@
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\update.ps1" %*
+rem Alias en ingles del lanzador canonico "Actualizar Atlas Balance.cmd".
+call "%~dp0Actualizar Atlas Balance.cmd" %*
 exit /b %ERRORLEVEL%

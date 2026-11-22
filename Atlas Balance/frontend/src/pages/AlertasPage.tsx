@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { AppSelect } from '@/components/common/AppSelect';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { IconAlertaDanger, IconAlertaWarning } from '@/components/Icons';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
@@ -11,7 +12,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { TipoTitular } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDateTime } from '@/utils/formatters';
+import { formatCurrency, formatDateTime, parseStrictDecimal } from '@/utils/formatters';
+import '@/styles/layout/routes/alertas.css';
 
 interface AlertaContextoCuenta {
   id: string;
@@ -65,6 +67,21 @@ const EMPTY_FORM: SaveAlertaPayload = {
   destinatario_usuario_ids: [],
 };
 
+// Importe de saldo minimo en texto (coma decimal) <-> numero. Vacio = 0.
+function saldoToInput(value: number): string {
+  return String(value).replace('.', ',');
+}
+
+function parseSaldoInput(raw: string): number | null {
+  if (!raw.trim()) {
+    return 0;
+  }
+  const parsed = parseStrictDecimal(raw);
+  return parsed === null || parsed < 0 ? null : parsed;
+}
+
+const SALDO_INVALIDO = 'El saldo mínimo debe ser un importe válido mayor o igual que 0.';
+
 export default function AlertasPage() {
   const usuario = useAuthStore((state) => state.usuario);
   const isAdmin = usuario?.rol === 'ADMIN';
@@ -84,6 +101,10 @@ export default function AlertasPage() {
   const [globalForm, setGlobalForm] = useState<SaveAlertaPayload>(EMPTY_FORM);
   const [cuentaForm, setCuentaForm] = useState<SaveAlertaPayload>(EMPTY_FORM);
   const [tipoForm, setTipoForm] = useState<SaveAlertaPayload>({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+  // Saldo minimo como texto para admitir coma decimal; se parsea al guardar
+  const [globalSaldo, setGlobalSaldo] = useState('0');
+  const [cuentaSaldo, setCuentaSaldo] = useState('0');
+  const [tipoSaldo, setTipoSaldo] = useState('0');
   const [editingCuentaAlertId, setEditingCuentaAlertId] = useState<string | null>(null);
   const [editingTipoAlertId, setEditingTipoAlertId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AlertaItem | null>(null);
@@ -123,8 +144,10 @@ export default function AlertasPage() {
         activa: global.activa,
         destinatario_usuario_ids: global.destinatarios.map((d) => d.usuario_id),
       });
+      setGlobalSaldo(saldoToInput(global.saldo_minimo));
     } else {
       setGlobalForm({ ...EMPTY_FORM, cuenta_id: null });
+      setGlobalSaldo('0');
     }
   };
 
@@ -149,7 +172,7 @@ export default function AlertasPage() {
       setAlertas(alertasRes.data);
       hydrateForms(alertasRes.data);
     } catch (loadError: unknown) {
-      setError(extractErrorMessage(loadError, 'No se pudo cargar la configuración de alertas.'));
+      setError(extractErrorMessage(loadError, 'No se pudo cargar la configuración de alertas. Revisa la conexión con el servidor e inténtalo de nuevo.'));
     } finally {
       setConfigLoading(false);
     }
@@ -174,31 +197,9 @@ export default function AlertasPage() {
 
   const saveGlobalAlert = async (event: FormEvent) => {
     event.preventDefault();
-    setSaving(true);
-    setError(null);
-    setFeedback(null);
-
-    try {
-      if (onlyGlobalAlert) {
-        await api.put(`/alertas/${onlyGlobalAlert.id}`, globalForm);
-      } else {
-        await api.post('/alertas', globalForm);
-      }
-
-      setFeedback('Alerta global guardada.');
-      await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
-      await invalidate('alerta');
-    } catch (saveError: unknown) {
-      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta global.'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveCuentaAlert = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!cuentaForm.cuenta_id) {
-      setError('Selecciona una cuenta.');
+    const saldoMinimo = parseSaldoInput(globalSaldo);
+    if (saldoMinimo === null) {
+      setError(SALDO_INVALIDO);
       return;
     }
 
@@ -207,7 +208,42 @@ export default function AlertasPage() {
     setFeedback(null);
 
     try {
-      const payload = { ...cuentaForm, tipo_titular: null };
+      const payload = { ...globalForm, saldo_minimo: saldoMinimo };
+      if (onlyGlobalAlert) {
+        await api.put(`/alertas/${onlyGlobalAlert.id}`, payload);
+      } else {
+        await api.post('/alertas', payload);
+      }
+
+      setFeedback('Alerta global guardada.');
+      await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
+      await invalidate('alerta');
+    } catch (saveError: unknown) {
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta global. Revisa el saldo mínimo y los destinatarios e inténtalo de nuevo.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveCuentaAlert = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!cuentaForm.cuenta_id) {
+      setError('Selecciona una cuenta de la lista para guardar la alerta.');
+      return;
+    }
+
+    const saldoMinimo = parseSaldoInput(cuentaSaldo);
+    if (saldoMinimo === null) {
+      setError(SALDO_INVALIDO);
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setFeedback(null);
+
+    try {
+      const payload = { ...cuentaForm, tipo_titular: null, saldo_minimo: saldoMinimo };
       if (editingCuentaAlertId) {
         await api.put(`/alertas/${editingCuentaAlertId}`, payload);
       } else {
@@ -217,10 +253,11 @@ export default function AlertasPage() {
       setFeedback(editingCuentaAlertId ? 'Alerta de cuenta actualizada.' : 'Alerta de cuenta creada.');
       setEditingCuentaAlertId(null);
       setCuentaForm(EMPTY_FORM);
+      setCuentaSaldo('0');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (saveError: unknown) {
-      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta de cuenta. Revisa el saldo mínimo y los destinatarios e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -233,12 +270,18 @@ export default function AlertasPage() {
       return;
     }
 
+    const saldoMinimo = parseSaldoInput(tipoSaldo);
+    if (saldoMinimo === null) {
+      setError(SALDO_INVALIDO);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setFeedback(null);
 
     try {
-      const payload = { ...tipoForm, cuenta_id: null };
+      const payload = { ...tipoForm, cuenta_id: null, saldo_minimo: saldoMinimo };
       if (editingTipoAlertId) {
         await api.put(`/alertas/${editingTipoAlertId}`, payload);
       } else {
@@ -248,10 +291,11 @@ export default function AlertasPage() {
       setFeedback(editingTipoAlertId ? 'Alerta por tipo actualizada.' : 'Alerta por tipo creada.');
       setEditingTipoAlertId(null);
       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+      setTipoSaldo('0');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (saveError: unknown) {
-      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta por tipo.'));
+      setError(extractErrorMessage(saveError, 'No se pudo guardar la alerta por tipo de titular. Revisa el saldo mínimo y los destinatarios e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -266,6 +310,7 @@ export default function AlertasPage() {
       activa: item.activa,
       destinatario_usuario_ids: item.destinatarios.map((d) => d.usuario_id),
     });
+    setCuentaSaldo(saldoToInput(item.saldo_minimo));
     setFeedback(null);
     setError(null);
   };
@@ -279,6 +324,7 @@ export default function AlertasPage() {
       activa: item.activa,
       destinatario_usuario_ids: item.destinatarios.map((d) => d.usuario_id),
     });
+    setTipoSaldo(saldoToInput(item.saldo_minimo));
     setFeedback(null);
     setError(null);
   };
@@ -293,17 +339,19 @@ export default function AlertasPage() {
       if (editingCuentaAlertId === alertId) {
         setEditingCuentaAlertId(null);
         setCuentaForm(EMPTY_FORM);
+        setCuentaSaldo('0');
       }
       if (editingTipoAlertId === alertId) {
         setEditingTipoAlertId(null);
         setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+        setTipoSaldo('0');
       }
 
       setFeedback('Alerta eliminada.');
       await Promise.all([loadConfiguracion(), loadScopedAlertasActivas()]);
       await invalidate('alerta');
     } catch (deleteError: unknown) {
-      setError(extractErrorMessage(deleteError, 'No se pudo eliminar la alerta.'));
+      setError(extractErrorMessage(deleteError, 'No se pudo eliminar la alerta. Recarga la lista de alertas e inténtalo de nuevo.'));
     } finally {
       setSaving(false);
     }
@@ -323,10 +371,10 @@ export default function AlertasPage() {
   };
 
   return (
-    <section className="alertas-page">
-      <header>
-        <h1>Alertas de Saldo Bajo</h1>
-        <p className="users-subtitle">
+    <section className="alertas-page page">
+      <header className="page-header page-header--static">
+        <h1 className="page-header__title">Alertas de saldo bajo</h1>
+        <p className="page-header__subtitle">
           {isAdmin
             ? 'Configuración y seguimiento de cuentas por debajo del mínimo.'
             : 'Estado actual de las cuentas por debajo del mínimo dentro de tu alcance.'}
@@ -339,12 +387,12 @@ export default function AlertasPage() {
       <article className="alertas-card">
         <div className="users-section-header">
           <div>
-            <h2>Alertas Activas</h2>
+            <h2>Alertas activas</h2>
             <p>
               Se evalúan al crear o editar extractos. El banner superior y este listado usan la misma fuente.
             </p>
           </div>
-          <button type="button" onClick={() => void loadScopedAlertasActivas()} disabled={activeLoading}>
+          <button type="button" className="button-secondary button-sm" onClick={() => void loadScopedAlertasActivas()} disabled={activeLoading}>
             {activeLoading ? 'Actualizando...' : 'Recargar'}
           </button>
         </div>
@@ -352,7 +400,7 @@ export default function AlertasPage() {
         {activeError ? <p className="auth-error" role="alert">{activeError}</p> : null}
 
         {!activeError && activeLoading && alertasActivas.length === 0 ? (
-          <p className="import-muted">Cargando alertas activas...</p>
+          <PageSkeleton variant="inline" label="Cargando alertas activas..." />
         ) : null}
 
         {!activeError && !activeLoading && alertasActivas.length === 0 ? (
@@ -412,24 +460,22 @@ export default function AlertasPage() {
           <article className="alertas-card">
             <div className="users-section-header">
               <div>
-                <h2>Alerta Global</h2>
+                <h2>Alerta global</h2>
                 <p>Aplica cuando una cuenta no tiene alerta específica.</p>
               </div>
             </div>
 
-            {configLoading ? <p className="import-muted">Cargando configuración...</p> : null}
+            {configLoading ? <PageSkeleton variant="inline" label="Cargando configuración..." /> : null}
 
             <form className="alertas-form" onSubmit={saveGlobalAlert}>
               <label>
                 Saldo mínimo global
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={globalForm.saldo_minimo}
-                  onChange={(event) =>
-                    setGlobalForm({ ...globalForm, saldo_minimo: Number(event.target.value || '0') })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={globalSaldo}
+                  onChange={(event) => setGlobalSaldo(event.target.value)}
                 />
               </label>
               <label className="config-check">
@@ -453,7 +499,7 @@ export default function AlertasPage() {
                   </label>
                 ))}
               </div>
-              <button type="submit" disabled={saving || configLoading}>
+              <button type="submit" className="button-primary" disabled={saving || configLoading}>
                 {onlyGlobalAlert ? 'Actualizar global' : 'Crear global'}
               </button>
             </form>
@@ -472,13 +518,11 @@ export default function AlertasPage() {
               <label>
                 Saldo mínimo
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={tipoForm.saldo_minimo}
-                  onChange={(event) =>
-                    setTipoForm({ ...tipoForm, saldo_minimo: Number(event.target.value || '0') })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={tipoSaldo}
+                  onChange={(event) => setTipoSaldo(event.target.value)}
                 />
               </label>
               <label className="config-check">
@@ -502,16 +546,18 @@ export default function AlertasPage() {
                   </label>
                 ))}
               </div>
-              <div className="users-row-actions">
-                <button type="submit" disabled={saving || configLoading}>
+              <div className="alertas-form-actions">
+                <button type="submit" className="button-primary" disabled={saving || configLoading}>
                   {editingTipoAlertId ? 'Guardar cambios' : 'Crear alerta'}
                 </button>
                 {editingTipoAlertId ? (
                   <button
                     type="button"
+                    className="button-secondary"
                     onClick={() => {
                       setEditingTipoAlertId(null);
                       setTipoForm({ ...EMPTY_FORM, tipo_titular: 'AUTONOMO' });
+                      setTipoSaldo('0');
                     }}
                   >
                     Cancelar edición
@@ -545,13 +591,11 @@ export default function AlertasPage() {
               <label>
                 Saldo mínimo
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={cuentaForm.saldo_minimo}
-                  onChange={(event) =>
-                    setCuentaForm({ ...cuentaForm, saldo_minimo: Number(event.target.value || '0') })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={cuentaSaldo}
+                  onChange={(event) => setCuentaSaldo(event.target.value)}
                 />
               </label>
               <label className="config-check">
@@ -575,16 +619,18 @@ export default function AlertasPage() {
                   </label>
                 ))}
               </div>
-              <div className="users-row-actions">
-                <button type="submit" disabled={saving || configLoading || availableCuentas.length === 0}>
+              <div className="alertas-form-actions">
+                <button type="submit" className="button-primary" disabled={saving || configLoading || availableCuentas.length === 0}>
                   {editingCuentaAlertId ? 'Guardar cambios' : 'Crear alerta'}
                 </button>
                 {editingCuentaAlertId ? (
                   <button
                     type="button"
+                    className="button-secondary"
                     onClick={() => {
                       setEditingCuentaAlertId(null);
                       setCuentaForm(EMPTY_FORM);
+                      setCuentaSaldo('0');
                     }}
                   >
                     Cancelar edición
@@ -595,8 +641,8 @@ export default function AlertasPage() {
           </article>
 
           <article className="alertas-card">
-            <h2>Alertas por Tipo de Titular</h2>
-            {configLoading ? <p className="import-muted">Cargando alertas configuradas...</p> : null}
+            <h2>Alertas por tipo de titular</h2>
+            {configLoading ? <PageSkeleton variant="table" rows={5} columns={6} label="Cargando alertas configuradas..." /> : null}
 
             {!configLoading && tipoAlerts.length === 0 ? (
               <p className="import-muted">No hay alertas por tipo configuradas.</p>
@@ -604,26 +650,27 @@ export default function AlertasPage() {
 
             {tipoAlerts.length > 0 ? (
               <div className="config-table-wrap">
-                <table>
+                <table className="table-stack-mobile">
+                  <caption className="sr-only">Alertas por tipo de titular</caption>
                   <thead>
                     <tr>
-                      <th>Alcance</th>
-                      <th>Mínimo</th>
-                      <th>Activa</th>
-                      <th>Destinatarios</th>
-                      <th>Última alerta</th>
-                      <th>Acciones</th>
+                      <th scope="col">Alcance</th>
+                      <th scope="col">Mínimo</th>
+                      <th scope="col">Activa</th>
+                      <th scope="col">Destinatarios</th>
+                      <th scope="col">Última alerta</th>
+                      <th scope="col">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {tipoAlerts.map((item) => (
                       <tr key={item.id}>
-                        <td>Tipo: {item.tipo_titular}</td>
-                        <td><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
-                        <td>{item.activa ? 'Sí' : 'No'}</td>
-                        <td>{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
-                        <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
-                        <td>
+                        <td data-label="Alcance">Tipo: {tipoTitularOptions.find((option) => option.value === item.tipo_titular)?.label ?? item.tipo_titular}</td>
+                        <td data-label="Mínimo"><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
+                        <td data-label="Activa">{item.activa ? 'Sí' : 'No'}</td>
+                        <td data-label="Destinatarios">{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
+                        <td data-label="Última alerta">{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
+                        <td data-label="Acciones">
                           <div className="users-row-actions">
                             <button type="button" onClick={() => editTipoAlert(item)} aria-label={`Editar alerta por tipo ${item.tipo_titular}`}>
                               Editar
@@ -642,8 +689,8 @@ export default function AlertasPage() {
           </article>
 
           <article className="alertas-card">
-            <h2>Alertas por Cuenta</h2>
-            {configLoading ? <p className="import-muted">Cargando alertas configuradas...</p> : null}
+            <h2>Alertas por cuenta</h2>
+            {configLoading ? <PageSkeleton variant="table" rows={5} columns={8} label="Cargando alertas configuradas..." /> : null}
 
             {!configLoading && cuentaAlerts.length === 0 ? (
               <p className="import-muted">No hay alertas por cuenta configuradas.</p>
@@ -651,30 +698,31 @@ export default function AlertasPage() {
 
             {cuentaAlerts.length > 0 ? (
               <div className="config-table-wrap">
-                <table>
+                <table className="table-stack-mobile">
+                  <caption className="sr-only">Alertas por cuenta</caption>
                   <thead>
                   <tr>
-                    <th>Titular</th>
-                    <th>Cuenta</th>
-                    <th>Divisa</th>
-                    <th>Mínimo</th>
-                    <th>Activa</th>
-                    <th>Destinatarios</th>
-                      <th>Última alerta</th>
-                    <th>Acciones</th>
+                    <th scope="col">Titular</th>
+                    <th scope="col">Cuenta</th>
+                    <th scope="col">Divisa</th>
+                    <th scope="col">Mínimo</th>
+                    <th scope="col">Activa</th>
+                    <th scope="col">Destinatarios</th>
+                      <th scope="col">Última alerta</th>
+                    <th scope="col">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {cuentaAlerts.map((item) => (
                     <tr key={item.id}>
-                        <td>{item.titular_nombre ?? '—'}</td>
-                        <td>{item.cuenta_nombre ?? '—'}</td>
-                        <td>{item.divisa ?? '—'}</td>
-                        <td><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
-                        <td>{item.activa ? 'Sí' : 'No'}</td>
-                        <td>{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
-                        <td>{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
-                        <td>
+                        <td data-label="Titular">{item.titular_nombre ?? '—'}</td>
+                        <td data-label="Cuenta">{item.cuenta_nombre ?? '—'}</td>
+                        <td data-label="Divisa">{item.divisa ?? '—'}</td>
+                        <td data-label="Mínimo"><SignedAmount value={item.saldo_minimo}>{formatCurrency(item.saldo_minimo, item.divisa ?? 'EUR')}</SignedAmount></td>
+                        <td data-label="Activa">{item.activa ? 'Sí' : 'No'}</td>
+                        <td data-label="Destinatarios">{item.destinatarios.map((d) => d.nombre_completo).join(', ') || '—'}</td>
+                        <td data-label="Última alerta">{item.fecha_ultima_alerta ? formatDateTime(item.fecha_ultima_alerta) : '—'}</td>
+                        <td data-label="Acciones">
                           <div className="users-row-actions">
                             <button type="button" onClick={() => editCuentaAlert(item)} aria-label={`Editar alerta de cuenta ${item.cuenta_nombre ?? 'sin nombre'}`}>
                               Editar
@@ -705,6 +753,7 @@ export default function AlertasPage() {
               : 'Vas a eliminar la alerta global.'
         }
         confirmLabel="Eliminar alerta"
+        tone="reversible"
         loadingLabel="Eliminando..."
         loading={saving}
         onCancel={() => setDeleteTarget(null)}

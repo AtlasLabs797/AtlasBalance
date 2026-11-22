@@ -1,0 +1,8 @@
+/* L8/R-9: reglas exclusivas de la ruta "titular-detail".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.titular-detail-table {
+  min-width: 720px;
+}

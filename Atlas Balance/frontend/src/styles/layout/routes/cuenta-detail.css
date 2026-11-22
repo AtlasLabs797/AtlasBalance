@@ -1,0 +1,293 @@
+/* L8/R-9: reglas exclusivas de la ruta "cuenta-detail".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+/* V-02.08: banner de error de acciones en CuentaDetailPage (no destructivo,
+   sustituye al early-return que colapsaba la pagina completa). */
+.cuenta-error-dismiss {
+  justify-self: start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-12);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+
+.account-notes-card {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.account-notes-textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.account-notes-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.cuenta-plazo-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.cuenta-plazo-summary strong {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.dashboard-toolbar-main {
+  flex: 1 1 42rem;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.cuenta-detail-page .dashboard-toolbar-main {
+  display: contents;
+}
+
+.cuenta-heading-block {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.account-identity-strip > div {
+  flex: 1 1 11rem;
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  align-content: start;
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
+}
+
+.account-identity-strip > div:first-child {
+  flex-basis: 16rem;
+  border-color: color-mix(in srgb, var(--accent-solid) 22%, var(--border-default));
+  background: color-mix(in srgb, var(--accent-solid) 7%, var(--surface-card));
+}
+
+.account-identity-strip dt {
+  color: var(--text-secondary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-identity-strip dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.account-identity-strip > div:first-child dd {
+  font-size: var(--text-17);
+  font-weight: var(--weight-bold);
+}
+
+.account-identity-strip .account-identity-iban {
+  flex: 1.45 1 20rem;
+}
+
+/* P2-11: identidad como dl plano de 4 columnas, sin cajas. */
+.account-identity-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.7fr);
+  gap: var(--space-6) var(--space-9);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.account-identity-strip > div,
+.account-identity-strip > div:first-child {
+  flex: initial;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.account-identity-strip > div:first-child dd {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+/* P2-11: acciones de cabecera en una sola fila (Volver ghost, Ver en extractos secondary, Importar primary). */
+.cuenta-detail-page .dashboard-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+
+.cuenta-action {
+  min-height: var(--control-height);
+  padding: 0 var(--space-7);
+  font: var(--type-label);
+  white-space: nowrap;
+}
+
+/* Lote 4 F4: periodo + 3 acciones en una sola fila a la derecha, a la altura
+   del titulo; la franja de identidad pasa a ancho completo debajo. */
+@media (min-width: 1200px) {
+  .cuenta-detail-page .dashboard-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cuenta-detail-page .dashboard-toolbar-actions {
+    grid-row: 1;
+    flex-wrap: nowrap;
+    width: auto;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .cuenta-detail-page .dashboard-toolbar-actions .cuenta-action {
+    padding: 0 var(--space-5);
+  }
+
+  .cuenta-detail-page .account-identity-strip {
+    grid-column: 1 / -1;
+  }
+}
+
+.account-identity-iban dd {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+}
+
+.account-identity-value--muted {
+  color: var(--text-secondary) !important;
+  font-weight: var(--weight-semibold) !important;
+}
+
+.account-rows-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.account-rows-pagination-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dashboard-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.dashboard-bulk-selection {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+}
+
+.dashboard-bulk-actions-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dashboard-row-delete {
+  border-color: var(--color-border-danger);
+  color: var(--status-danger-text);
+  background: var(--status-danger-bg);
+  white-space: nowrap;
+}
+
+.dashboard-row-delete:hover:not(:disabled) {
+  border-color: var(--status-danger-text);
+  color: var(--text-inverse);
+  background: var(--status-danger-text);
+}
+
+.dashboard-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  min-width: var(--control-height);
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0;
+  line-height: 0;
+}
+
+.dashboard-icon-action svg {
+  flex: 0 0 auto;
+}
+
+.dashboard-flag-selected {
+  border-color: color-mix(in srgb, var(--status-warning-text) 34%, var(--border-default));
+  color: var(--status-warning-text);
+  background: var(--status-warning-bg);
+}
+
+.dashboard-flag-selected:hover:not(:disabled) {
+  border-color: var(--status-warning-text);
+  background: color-mix(in srgb, var(--status-warning-bg) 78%, var(--status-warning-text) 22%);
+}
+
+@media (max-width: 1023.98px) {
+
+  .account-identity-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .account-identity-strip .account-identity-iban {
+    grid-column: 1 / -1;
+  }
+
+  .cuenta-detail-page .dashboard-toolbar-actions {
+    justify-content: flex-start;
+  }
+}
+
+.dashboard-row-delete {
+  border-color: color-mix(in srgb, var(--status-danger-text) 28%, transparent);
+}

@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { AppSelect } from '@/components/common/AppSelect';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { useInvalidateAfterMutation } from '@/hooks/queries/useInvalidateAfterMutation';
 import api from '@/services/api';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
@@ -13,6 +14,7 @@ import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { Cuenta, ExportacionItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatBytes, formatDateTime } from '@/utils/formatters';
+import '@/styles/layout/routes/exportaciones.css';
 
 const pageSizeOptions = [10, 20, 50];
 const estadoExportacionLabels: Record<string, string> = {
@@ -189,11 +191,11 @@ export default function ExportacionesPage() {
   }, [markExportacionesRead, usuario?.rol]);
 
   return (
-    <section className="exportaciones-page">
-      <header className="exportaciones-header">
-        <div>
-          <h1>Exportaciones</h1>
-          <p className="dashboard-subtitle">
+    <section className="exportaciones-page page">
+      <header className="exportaciones-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Exportaciones</h1>
+          <p className="page-header__subtitle">
             {canCreateManualExport
               ? 'Historial y generación manual de XLSX por cuenta'
               : 'Historial de XLSX disponibles dentro de tu alcance'}
@@ -224,9 +226,10 @@ export default function ExportacionesPage() {
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
       <div className="users-table-card">
-        {loading ? <p className="import-muted">Cargando exportaciones...</p> : null}
+        {loading ? <PageSkeleton variant="table" rows={5} columns={8} label="Cargando exportaciones..." /> : null}
         {!loading && rows.length === 0 ? (
           <EmptyState
+            headingLevel="h2"
             title="No hay exportaciones con estos filtros."
             subtitle={
               canCreateManualExport
@@ -238,31 +241,32 @@ export default function ExportacionesPage() {
 
         {!loading && rows.length > 0 ? (
           <>
-            <div className="users-table-scroll">
-              <table>
+            <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de exportaciones">
+              <table className="table-stack-mobile">
+                <caption className="sr-only">Exportaciones</caption>
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Cuenta</th>
-                    <th>Titular</th>
-                    <th>Estado</th>
-                    <th>Tipo</th>
-                    <th>Tamaño</th>
-                    <th>Iniciado por</th>
-                    <th>Acciones</th>
+                    <th scope="col">Fecha</th>
+                    <th scope="col">Cuenta</th>
+                    <th scope="col">Titular</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col">Tipo</th>
+                    <th scope="col">Tamaño</th>
+                    <th scope="col">Iniciado por</th>
+                    <th scope="col">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id}>
-                      <td>{formatDateTime(row.fecha_exportacion)}</td>
-                      <td>{row.cuenta_nombre}</td>
-                      <td>{row.titular_nombre}</td>
-                      <td>{formatEstadoExportacion(row.estado)}</td>
-                      <td>{formatTipoExportacion(row.tipo)}</td>
-                      <td>{formatBytes(row.tamanio_bytes)}</td>
-                      <td>{row.iniciado_por_nombre ?? 'Sistema'}</td>
-                      <td className="users-row-actions">
+                      <td data-label="Fecha">{formatDateTime(row.fecha_exportacion)}</td>
+                      <td data-label="Cuenta">{row.cuenta_nombre}</td>
+                      <td data-label="Titular">{row.titular_nombre}</td>
+                      <td data-label="Estado">{formatEstadoExportacion(row.estado)}</td>
+                      <td data-label="Tipo">{formatTipoExportacion(row.tipo)}</td>
+                      <td data-label="Tamaño">{formatBytes(row.tamanio_bytes)}</td>
+                      <td data-label="Iniciado por">{row.iniciado_por_nombre ?? 'Sistema'}</td>
+                      <td className="users-row-actions" data-label="Acciones">
                         <button type="button" onClick={() => void downloadExport(row.id)} disabled={row.estado !== 'SUCCESS'}>
                           Descargar XLSX
                         </button>

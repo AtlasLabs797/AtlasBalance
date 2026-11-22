@@ -1,18 +1,107 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { EmptyState } from '@/components/common/EmptyState';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import type { PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatCurrency, formatDate as formatDateOnly, formatDateTime } from '@/utils/formatters';
+import { crearSecuenciaPeticion, type SecuenciaPeticion } from '@/utils/peticionSecuencial';
+import '@/styles/layout/routes/papelera.css';
 
 type TabKey = 'titulares' | 'cuentas' | 'extractos' | 'usuarios';
+
+// F-2: la papelera pide una pagina real al backend (no 500 filas) y deja que
+// el backend filtre solo lo eliminado.
+const PAGE_SIZE = 50;
+
+const TIPO_TITULAR_LABELS: Record<string, string> = {
+  EMPRESA: 'Empresa',
+  AUTONOMO: 'Autónomo',
+  PARTICULAR: 'Particular',
+};
+
+interface PapeleraResultado {
+  rows: TrashRow[];
+  total: number;
+  totalPages: number;
+}
+
+// F-2: la peticion se hace fuera del componente y devuelve el resultado ya
+// normalizado. Asi el estado se escribe en un unico sitio, despues de
+// comprobar que la respuesta sigue siendo la vigente.
+async function fetchPapelera(tab: TabKey, page: number): Promise<PapeleraResultado> {
+  if (tab === 'titulares') {
+    const { data } = await api.get<PaginatedResponse<TitularTrashApiRow>>('/titulares', {
+      params: { soloEliminados: true, page, pageSize: PAGE_SIZE, sortBy: 'fecha_creacion', sortDir: 'desc' },
+    });
+    return {
+      rows: (data.data ?? []).map((row) => ({
+        id: row.id,
+        titulo: row.nombre,
+        subtitulo: TIPO_TITULAR_LABELS[row.tipo] ?? row.tipo,
+        deleted_at: row.deleted_at ?? '',
+      })),
+      total: data.total ?? 0,
+      totalPages: Math.max(data.total_pages ?? 1, 1),
+    };
+  }
+
+  if (tab === 'cuentas') {
+    const { data } = await api.get<PaginatedResponse<CuentaTrashApiRow>>('/cuentas', {
+      params: { soloEliminados: true, page, pageSize: PAGE_SIZE, sortBy: 'fecha_creacion', sortDir: 'desc' },
+    });
+    return {
+      rows: (data.data ?? []).map((row) => ({
+        id: row.id,
+        titulo: row.nombre,
+        subtitulo: `${row.titular_nombre} · ${row.divisa}`,
+        deleted_at: row.deleted_at ?? '',
+      })),
+      total: data.total ?? 0,
+      totalPages: Math.max(data.total_pages ?? 1, 1),
+    };
+  }
+
+  if (tab === 'extractos') {
+    const { data } = await api.get<PaginatedResponse<ExtractoTrashApiRow>>('/extractos', {
+      params: { soloEliminados: true, page, pageSize: PAGE_SIZE, sortBy: 'fecha', sortDir: 'desc' },
+    });
+    return {
+      rows: (data.data ?? []).map((row) => ({
+        id: row.id,
+        titulo: `${row.cuenta_nombre ?? 'Cuenta'} · fila ${row.fila_numero}`,
+        subtitulo: `${formatDateOnly(row.fecha)} · ${row.concepto ?? 'Sin concepto'}`,
+        monto: row.monto,
+        divisa: row.divisa,
+        deleted_at: row.deleted_at ?? '',
+      })),
+      total: data.total ?? 0,
+      totalPages: Math.max(data.total_pages ?? 1, 1),
+    };
+  }
+
+  const { data } = await api.get<PaginatedResponse<UsuarioTrashApiRow>>('/usuarios', {
+    params: { soloEliminados: true, page, pageSize: PAGE_SIZE, sortBy: 'fecha_creacion', sortDir: 'desc' },
+  });
+  return {
+    rows: (data.data ?? []).map((row) => ({
+      id: row.id,
+      titulo: row.nombre_completo,
+      subtitulo: `${row.email} · ${row.rol}`,
+      deleted_at: row.deleted_at ?? '',
+    })),
+    total: data.total ?? 0,
+    totalPages: Math.max(data.total_pages ?? 1, 1),
+  };
+}
 
 interface TrashRow {
   id: string;
   titulo: string;
   subtitulo: string;
   monto?: number;
+  divisa?: string;
   deleted_at: string;
 }
 
@@ -38,6 +127,7 @@ interface ExtractoTrashApiRow {
   fecha: string;
   concepto: string | null;
   monto: number;
+  divisa: string;
   deleted_at: string | null;
 }
 
@@ -75,82 +165,44 @@ export default function PapeleraPage() {
   const [loading, setLoading] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [rows, setRows] = useState<TrashRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const title = useMemo(() => tabs.find((item) => item.key === tab)?.label ?? '', [tab]);
 
+  // F-2: la secuencia descarta las respuestas fuera de orden. Si el usuario
+  // cambia de pestaña o de pagina mientras una peticion esta en vuelo, la
+  // respuesta vieja no debe pisar la nueva ni apagar su estado de carga.
+  const secuenciaRef = useRef<SecuenciaPeticion>(crearSecuenciaPeticion());
+
   const load = async () => {
+    const secuencia = secuenciaRef.current.siguiente();
     setLoading(true);
     setError(null);
     setMessage(null);
     try {
-      if (tab === 'titulares') {
-        const { data } = await api.get<PaginatedResponse<TitularTrashApiRow>>('/titulares', {
-          params: { incluirEliminados: true, page: 1, pageSize: 500, sortBy: 'fecha_creacion', sortDir: 'desc' },
-        });
-        const filtered = (data.data ?? [])
-          .filter((row) => !!row.deleted_at)
-          .map((row) => ({
-            id: row.id,
-            titulo: row.nombre,
-            subtitulo: row.tipo,
-            deleted_at: row.deleted_at ?? '',
-          }));
-        setRows(filtered);
+      const resultado = await fetchPapelera(tab, page);
+      if (!secuenciaRef.current.esActual(secuencia)) {
         return;
       }
-
-      if (tab === 'cuentas') {
-        const { data } = await api.get<PaginatedResponse<CuentaTrashApiRow>>('/cuentas', {
-          params: { incluirEliminados: true, page: 1, pageSize: 500, sortBy: 'fecha_creacion', sortDir: 'desc' },
-        });
-        const filtered = (data.data ?? [])
-          .filter((row) => !!row.deleted_at)
-          .map((row) => ({
-            id: row.id,
-            titulo: row.nombre,
-            subtitulo: `${row.titular_nombre} · ${row.divisa}`,
-            deleted_at: row.deleted_at ?? '',
-          }));
-        setRows(filtered);
-        return;
-      }
-
-      if (tab === 'extractos') {
-        const { data } = await api.get<PaginatedResponse<ExtractoTrashApiRow>>('/extractos', {
-          params: { incluirEliminados: true, page: 1, pageSize: 500, sortBy: 'fecha', sortDir: 'desc' },
-        });
-        const filtered = (data.data ?? [])
-          .filter((row) => !!row.deleted_at)
-          .map((row) => ({
-            id: row.id,
-            titulo: `${row.cuenta_nombre ?? 'Cuenta'} · fila ${row.fila_numero}`,
-            subtitulo: `${formatDateOnly(row.fecha)} · ${row.concepto ?? 'Sin concepto'}`,
-            monto: row.monto,
-            deleted_at: row.deleted_at ?? '',
-          }));
-        setRows(filtered);
-        return;
-      }
-
-      const { data } = await api.get<PaginatedResponse<UsuarioTrashApiRow>>('/usuarios', {
-        params: { incluirEliminados: true, page: 1, pageSize: 500, sortBy: 'fecha_creacion', sortDir: 'desc' },
-      });
-      const filtered = (data.data ?? [])
-        .filter((row) => !!row.deleted_at)
-        .map((row) => ({
-          id: row.id,
-          titulo: row.nombre_completo,
-          subtitulo: `${row.email} · ${row.rol}`,
-          deleted_at: row.deleted_at ?? '',
-        }));
-      setRows(filtered);
+      setRows(resultado.rows);
+      setTotal(resultado.total);
+      setTotalPages(resultado.totalPages);
     } catch (err) {
+      if (!secuenciaRef.current.esActual(secuencia)) {
+        return;
+      }
       setError(extractErrorMessage(err, 'No se pudo cargar la papelera.'));
       setRows([]);
+      setTotal(0);
+      setTotalPages(1);
     } finally {
-      setLoading(false);
+      if (secuenciaRef.current.esActual(secuencia)) {
+        setLoading(false);
+      }
     }
   };
 
@@ -171,15 +223,15 @@ export default function PapeleraPage() {
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo depende del tab activo
-  }, [tab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depende del tab activo y de la pagina
+  }, [tab, page]);
 
   return (
-    <section className="trash-page">
-      <header className="trash-header">
-        <div>
-          <h1>Papelera</h1>
-          <p className="dashboard-subtitle">Entidades eliminadas con restauración y auditoría.</p>
+    <section className="trash-page page">
+      <header className="trash-header page-header page-header--static">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Papelera</h1>
+          <p className="page-header__subtitle">Entidades eliminadas con restauración y auditoría.</p>
         </div>
       </header>
 
@@ -189,7 +241,10 @@ export default function PapeleraPage() {
             key={item.key}
             type="button"
             className={tab === item.key ? 'config-tab config-tab--active' : 'config-tab'}
-            onClick={() => setTab(item.key)}
+            onClick={() => {
+              setPage(1);
+              setTab(item.key);
+            }}
           >
             {item.label}
           </button>
@@ -200,39 +255,41 @@ export default function PapeleraPage() {
       {message ? <p className="config-feedback">{message}</p> : null}
 
       <div className="users-table-card">
-        {loading ? <p className="import-muted">Cargando {title.toLowerCase()} eliminados...</p> : null}
+        {loading ? <PageSkeleton variant="table" rows={5} columns={4} label={`Cargando ${title.toLowerCase()} eliminados...`} /> : null}
         {!loading && rows.length === 0 ? (
           <EmptyState
+            headingLevel="h2"
             title={`No hay registros eliminados en ${title.toLowerCase()}.`}
             subtitle="Cuando elimines una entidad de este tipo aparecerá aquí para restaurarla o purgarla."
           />
         ) : null}
         {!loading && rows.length > 0 ? (
-          <div className="users-table-scroll">
-            <table>
+          <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de elementos eliminados">
+            <table className="table-stack-mobile">
+              <caption className="sr-only">Elementos eliminados</caption>
               <thead>
                 <tr>
-                  <th>Elemento</th>
-                  <th>Detalle</th>
-                  <th>Eliminado en</th>
-                  <th>Acciones</th>
+                  <th scope="col">Elemento</th>
+                  <th scope="col">Detalle</th>
+                  <th scope="col">Eliminado en</th>
+                  <th scope="col">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.id}>
-                    <td>{row.titulo}</td>
-                    <td>
+                    <td data-label="Elemento">{row.titulo}</td>
+                    <td data-label="Detalle">
                       {row.monto !== undefined ? (
                         <>
-                          {row.subtitulo} · <SignedAmount value={row.monto}>{formatCurrency(row.monto, 'EUR')}</SignedAmount>
+                          {row.subtitulo} · <SignedAmount value={row.monto}>{formatCurrency(row.monto, row.divisa ?? 'EUR')}</SignedAmount>
                         </>
                       ) : (
                         row.subtitulo
                       )}
                     </td>
-                    <td>{formatDateTime(row.deleted_at)}</td>
-                    <td className="users-row-actions">
+                    <td data-label="Eliminado en">{row.deleted_at ? formatDateTime(row.deleted_at) : '—'}</td>
+                    <td className="users-row-actions" data-label="Acciones">
                       <button
                         type="button"
                         onClick={() => void restore(row.id)}
@@ -248,6 +305,26 @@ export default function PapeleraPage() {
             </table>
           </div>
         ) : null}
+
+        <div className="users-pagination">
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={loading || page <= 1}
+          >
+            Anterior
+          </button>
+          <span>
+            Página {page} / {totalPages} · {total} eliminados
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            disabled={loading || page >= totalPages}
+          >
+            Siguiente
+          </button>
+        </div>
       </div>
     </section>
   );

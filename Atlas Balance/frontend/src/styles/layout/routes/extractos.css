@@ -1,0 +1,252 @@
+/* L8/R-9: reglas exclusivas de la ruta "extractos".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+/* Extractos mantiene su ancho de 62ch, no 72ch. */
+.page-header__subtitle--narrow {
+  max-width: 62ch;
+}
+
+.extractos-page {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.extractos-heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: min(100%, 24rem);
+}
+
+.extractos-heading h1 {
+  font-size: var(--text-28);
+  font-weight: var(--weight-bold);
+}
+
+.extractos-heading p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.extractos-clear-period {
+  min-height: 2.625rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 1199.98px) {
+  .extractos-header {
+    grid-template-columns: 1fr;
+  }
+  .extractos-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .extractos-header-actions {
+    width: 100%;
+  }
+}
+
+/* V-03.01: Extractos — jerarquía de página y rejilla densa de movimientos. */
+.extractos-page {
+  gap: var(--space-9);
+  padding-bottom: var(--space-9);
+}
+
+.extractos-heading {
+  gap: var(--space-2);
+}
+
+.extractos-eyebrow,
+.extractos-filter-eyebrow {
+  color: var(--accent-text);
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.extractos-heading h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--type-title-2);
+  letter-spacing: var(--tracking-display);
+}
+
+.extractos-heading p {
+  max-width: 62ch;
+  color: var(--text-secondary);
+  font: var(--type-body-sm);
+}
+
+.extractos-header-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.extractos-filter-bar {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--pad-card-compact);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+}
+
+.extractos-filter-bar-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-7);
+}
+
+.extractos-filter-bar-head > div {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.extractos-filter-bar h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--type-title-3);
+  letter-spacing: var(--tracking-heading);
+}
+
+.extractos-filter-summary {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  white-space: nowrap;
+}
+
+.searchable-select-control {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-field);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+}
+
+.searchable-select-control:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-control-hover);
+}
+
+.searchable-select-control:focus-within {
+  border-color: var(--accent-500);
+  box-shadow: var(--ring-focus);
+}
+
+.searchable-select-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: var(--type-body-sm);
+}
+
+.searchable-select-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.extractos-searchable-select-popover {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  display: grid;
+  gap: 0.15rem;
+  max-height: min(18rem, 54vh);
+  overflow: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-xl);
+}
+
+.extractos-searchable-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--control-height-compact);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: var(--type-body-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.extractos-searchable-select-option:hover,
+.extractos-searchable-select-option[data-active='true'] {
+  background: var(--surface-hover);
+}
+
+.extractos-searchable-select-option[aria-selected='true'] {
+  color: var(--accent-text);
+  font-weight: var(--weight-semibold);
+}
+
+.extractos-searchable-select-empty {
+  padding: var(--space-3);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+.extractos-clear-period {
+  align-self: end;
+  min-height: var(--control-height);
+  padding-inline: var(--space-5);
+  border-color: transparent;
+  background: transparent;
+  color: var(--accent-text);
+  font: var(--type-label);
+  white-space: nowrap;
+}
+
+.extractos-clear-period:hover:not(:disabled) {
+  border-color: var(--accent-soft-border);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+@media (max-width: 767.98px) {
+  .extractos-page {
+    gap: var(--space-7);
+  }
+
+  .extractos-heading h1 {
+    font-size: var(--text-28);
+  }
+
+  .extractos-filter-bar {
+    padding: var(--space-6);
+  }
+
+  .extractos-filter-bar-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .extractos-filter-summary {
+    white-space: normal;
+  }
+
+  .extractos-clear-period {
+    justify-self: start;
+  }
+}

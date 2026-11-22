@@ -1,3 +1,5 @@
+import { isSessionInvalidatingError } from '../utils/sessionErrors.js';
+
 const REFRESH_LOCK_NAME = 'atlas-balance-auth-refresh';
 const REFRESH_OUTCOME_STORAGE_KEY = 'atlas-balance-auth-refresh-outcome-v1';
 const REFRESH_LEASE_STORAGE_KEY = 'atlas-balance-auth-refresh-lease-v1';
@@ -63,6 +65,15 @@ type RefreshOutcome =
       id: string;
       completedAt: number;
       sessionKey: string;
+    }
+  | {
+      // V-03.02 (F-1): el refresh fallo pero la sesion sigue siendo valida
+      // (red, 5xx, 429, timeout). No se difunde como 'failed' porque las
+      // demas pestanas cerrarian su sesion por un fallo que no la invalida.
+      type: 'transient_error';
+      id: string;
+      completedAt: number;
+      sessionKey: string;
     };
 
 interface RefreshLease {
@@ -123,7 +134,7 @@ const isRefreshOutcome = (value: unknown): value is RefreshOutcome => {
   }
 
   const candidate = value as Partial<RefreshOutcome>;
-  return (candidate.type === 'completed' || candidate.type === 'failed') &&
+  return (candidate.type === 'completed' || candidate.type === 'failed' || candidate.type === 'transient_error') &&
     typeof candidate.id === 'string' &&
     typeof candidate.completedAt === 'number' &&
     typeof candidate.sessionKey === 'string';
@@ -317,6 +328,12 @@ export const createRefreshCoordinator = (options: RefreshCoordinatorOptions = {}
       throw toFailure(outcome);
     }
 
+    if (outcome.type === 'transient_error') {
+      // El fallo no invalida la sesion: la pestana que espera recibe un error
+      // normal y no cierra sesion.
+      throw new Error('La renovación de sesión falló de forma transitoria.');
+    }
+
     return outcome.payload;
   };
 
@@ -492,7 +509,12 @@ export const createRefreshCoordinator = (options: RefreshCoordinatorOptions = {}
       publishOutcome({ type: 'completed', id: createId(), completedAt: now(), sessionKey, payload });
       return payload;
     } catch (error) {
-      publishOutcome({ type: 'failed', id: createId(), completedAt: now(), sessionKey });
+      // V-03.02 (F-1): solo un 401/403 del endpoint de refresh demuestra que
+      // la sesion ya no vale. Cualquier otro fallo (red, 5xx, 429, timeout) se
+      // difunde como transitorio: las demas pestanas no cierran su sesion.
+      publishOutcome(isSessionInvalidatingError(error)
+        ? { type: 'failed', id: createId(), completedAt: now(), sessionKey }
+        : { type: 'transient_error', id: createId(), completedAt: now(), sessionKey });
       throw error;
     }
   };

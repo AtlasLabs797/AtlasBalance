@@ -1,0 +1,23 @@
+/* L8/R-9: reglas exclusivas de la ruta "exportaciones".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.exportaciones-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+}
+
+.exportaciones-toolbar {
+  display: flex;
+  gap: var(--space-3);
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.exportaciones-toolbar label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: min(100%, 340px);
+}

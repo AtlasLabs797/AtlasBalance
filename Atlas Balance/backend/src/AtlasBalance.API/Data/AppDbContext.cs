@@ -2,7 +2,6 @@
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace AtlasBalance.API.Data;
 
@@ -10,14 +9,10 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    // V-03.01: EF Core 9+ lanza excepcion en Migrate() si el modelo difiere del
-    // snapshot. La deriva es previa (migraciones SQL manuscritas con IF NOT EXISTS
-    // que no actualizan el snapshot) y un scaffold la recrearia contra el esquema
-    // real. Se ignora solo este warning, igual que se comportaba EF 8.
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-    }
+    // V-03.02 (M-9): modelo, snapshot y esquema real alineados por la migracion
+    // 20261122223119_CloseM9SnapshotDrift. Ya no se ignora
+    // PendingModelChangesWarning: si vuelve a haber deriva, Migrate() falla y
+    // SnapshotModelDriftTests lo detecta antes.
 
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<UsuarioEmail> UsuarioEmails => Set<UsuarioEmail>();
@@ -218,10 +213,14 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => new { e.CuentaId, e.FilaNumero })
                 .IsUnique()
                 .HasFilter("\"deleted_at\" IS NULL");
+            // B-3: el UNIQUE de huella no filtraba deleted_at, asi que tras
+            // revertir un lote (soft delete) no se podia reimportar la misma
+            // huella. Indice UNIQUE parcial: la unicidad se exige solo entre
+            // extractos activos.
             entity.HasIndex(e => new { e.CuentaId, e.ImportacionFingerprint })
                 .IsUnique()
                 .HasDatabaseName("ix_extractos_cuenta_id_importacion_fingerprint")
-                .HasFilter("\"importacion_fingerprint\" IS NOT NULL");
+                .HasFilter("\"deleted_at\" IS NULL AND \"importacion_fingerprint\" IS NOT NULL");
             entity.HasIndex(e => e.ImportacionLoteHash);
             entity.HasIndex(e => e.ImportacionLoteId);
             // V-02-03 (H5): indice cubriente para busqueda de conciliacion.
@@ -295,6 +294,8 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             // V-02-05 (MED-22): ISoftDelete.
             entity.HasIndex(e => new { e.ExtractoId, e.NombreColumna }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
+            // M-9: indice simple por FK; el compuesto es parcial y no sirve para el chequeo de la FK.
+            entity.HasIndex(e => e.ExtractoId);
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.Restrict);
             // V-02-03 (MEDIUM): cascade a restrict por la misma razon.
@@ -370,7 +371,9 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.UsuarioId);
             entity.HasIndex(e => new { e.UsuarioId, e.PaisId, e.TitularId, e.CuentaId });
             entity.Property(e => e.ColumnasVisibles).HasColumnType("jsonb");
+            entity.Property(e => e.OrdenColumnas).HasColumnType("jsonb");
             entity.Property(e => e.ColumnasEditables).HasColumnType("jsonb");
+            entity.Property(e => e.ColumnasVisiblesAdmin).HasColumnType("jsonb");
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<Pais>().WithMany().HasForeignKey(e => e.PaisId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Titular>().WithMany().HasForeignKey(e => e.TitularId).OnDelete(DeleteBehavior.Restrict);
@@ -440,6 +443,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CosteEstimadoEur).HasPrecision(18, 8);
             entity.HasIndex(e => new { e.UsuarioId, e.MonthKey }).IsUnique();
             entity.HasIndex(e => e.FechaModificacion);
+            // M-9: el indice ya existe en BD; se declara para alinear modelo y snapshot.
+            entity.HasIndex(e => e.DeletedAt);
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -539,7 +544,14 @@ public class AppDbContext : DbContext
             // V-02-05 (MED-22): soft delete explicito en conciliacion.
             entity.HasIndex(e => new { e.CuentaId, e.Estado });
             entity.HasIndex(e => e.MovimientoEsperadoId);
-            entity.HasIndex(e => e.ExtractoId);
+            // B-6: un mismo extracto no puede quedar conciliado dos veces.
+            // UNIQUE parcial: solo afecta a las conciliaciones en estado
+            // 'conciliada' y no borradas logicamente. Sustituye al indice
+            // simple sobre extracto_id.
+            entity.HasIndex(e => e.ExtractoId)
+                .IsUnique()
+                .HasDatabaseName("ix_conciliaciones_extracto_id_conciliada")
+                .HasFilter("\"estado\" = 'conciliada' AND \"extracto_id\" IS NOT NULL AND \"deleted_at\" IS NULL");
             entity.HasIndex(e => new { e.MovimientoEsperadoId, e.ExtractoId }).IsUnique().HasFilter("\"deleted_at\" IS NULL");
             entity.HasIndex(e => e.DeletedAt);
             entity.HasOne<Usuario>().WithMany().HasForeignKey(e => e.DeletedById).OnDelete(DeleteBehavior.SetNull);

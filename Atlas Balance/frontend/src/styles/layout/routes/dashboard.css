@@ -1,0 +1,443 @@
+/* L8/R-9: reglas exclusivas de la ruta "dashboard".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.dashboard-hero-card {
+  display: grid;
+  gap: 1.875rem;
+  min-width: 0;
+  padding: 1.55rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  box-shadow: none;
+}
+
+.dashboard-hero-summary {
+  display: grid;
+  grid-template-columns: minmax(19rem, 1fr) minmax(18rem, 0.95fr);
+  gap: var(--space-5);
+  align-items: start;
+  min-width: 0;
+}
+
+.dashboard-hero-balance {
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-hero-balance > p {
+  margin: 0;
+  color: var(--text-link);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.dashboard-hero-balance > strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  /* Heroe absoluto del dashboard: se queda dentro de la escala (34 -> 56)
+     en vez del clamp en rem del sistema viejo. Peso 600, como todo KPI. */
+  font-size: clamp(var(--text-34), 5vw, var(--text-56));
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.dashboard-hero-delta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 1.5rem;
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.dashboard-hero-balance small {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.dashboard-hero-divisas {
+  min-width: 0;
+}
+
+.dashboard-hero-chart {
+  min-width: 0;
+  display: grid;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-variacion--neutral {
+  color: var(--text-tertiary);
+  font-weight: var(--weight-semibold);
+}
+
+.dashboard-variacion-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.35rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: var(--type-caption);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.dashboard-bancos-card {
+  container-type: inline-size;
+}
+
+/* ── Concentración donut charts ── */
+.concentracion-donuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.concentracion-donut-panel {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.concentracion-donut-title {
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.concentracion-donut-body {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.2fr) minmax(0, 0.95fr);
+  gap: var(--space-4);
+  align-items: center;
+  min-width: 0;
+  min-height: 13.5rem;
+  padding: var(--space-2) 0;
+}
+
+.concentracion-donut-chart {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 0;
+  max-height: 13rem;
+  container-type: inline-size;
+}
+
+.concentracion-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  pointer-events: none;
+}
+
+.concentracion-donut-center-value {
+  font-family: var(--font-mono);
+  font-size: clamp(var(--text-12), 9.5cqw, var(--text-17));
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1;
+  max-width: calc(100% - var(--space-2));
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.concentracion-donut-center-label {
+  font: var(--type-caption);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.concentracion-donut-legend {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.concentracion-donut-legend-item--otros .concentracion-donut-legend-name {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.concentracion-donut-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--entry-color, var(--accent-solid));
+  flex-shrink: 0;
+}
+
+.concentracion-donut-legend-name {
+  font-size: var(--text-13);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.concentracion-donut-legend-pct {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  min-width: 3.5ch;
+  text-align: right;
+}
+
+@container (max-width: 760px) {
+  .concentracion-donut-body {
+    grid-template-columns: minmax(10rem, 1.1fr) minmax(0, 1fr);
+    gap: var(--space-3);
+    padding-inline: 0;
+  }
+}
+
+@container (max-width: 560px) {
+  .concentracion-donuts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Disponible / inmovilizado: nivel 1, junto al saldo consolidado. */
+.dashboard-hero-liquidez {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+}
+
+.dashboard-hero-liquidez > div {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.dashboard-hero-liquidez dt {
+  color: var(--text-tertiary);
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.dashboard-hero-liquidez dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: clamp(var(--text-17), 3.2vw, var(--text-28));
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+  overflow-wrap: anywhere;
+}
+
+.dashboard-hero-liquidez small {
+  font: var(--type-caption);
+}
+
+.dashboard-hero-chart .dashboard-block-skeleton--tall {
+  min-height: 310px;
+}
+
+.dashboard-card-meta {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.dashboard-plazo-card {
+  padding: 1.35rem;
+}
+
+.dashboard-plazo-metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+}
+
+.dashboard-plazo-metrics div {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border: 1px solid var(--border-default);
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-plazo-metrics div:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning {
+  border-color: color-mix(in srgb, var(--status-warning-text) 32%, transparent);
+  background: var(--status-warning-bg);
+}
+
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning span,
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning small,
+.dashboard-plazo-metrics div.dashboard-plazo-metric--warning strong {
+  color: var(--status-warning-text);
+}
+
+.dashboard-plazo-metrics span {
+  color: var(--text-secondary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.dashboard-plazo-metrics small {
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.dashboard-plazo-metrics strong {
+  font-family: var(--font-mono);
+  font-size: var(--text-17);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-divisa-strip--hero {
+  grid-area: divisas;
+  align-self: stretch;
+}
+
+.dashboard-titulares-card--wide {
+  grid-column: 1 / -1;
+}
+
+.dashboard-titular-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.dashboard-titular-group {
+  min-width: 0;
+}
+
+.dashboard-titular-group h3 {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-17);
+}
+
+.dashboard-titular-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dashboard-titular-item {
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.dashboard-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(18rem, 0.95fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.dashboard-detail-grid .dashboard-titulares-card--wide {
+  grid-column: auto;
+}
+
+.dashboard-titular-item:active {
+  transform: scale(var(--press-scale-surface)) !important;
+  box-shadow: none !important;
+}
+
+.dashboard-titular-item small {
+  color: var(--text-secondary);
+}
+
+.dashboard-titular-empty {
+  display: grid;
+  min-height: 5.75rem;
+  place-items: center;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-size: var(--text-13);
+}
+
+@media (max-width: 1199.98px) {
+  .dashboard-hero-card {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "balance"
+      "divisas"
+      "chart";
+  }
+}
+
+@media (max-width: 1023.98px) {
+
+  .dashboard-hero-card {
+    padding: var(--space-4);
+  }
+
+  .dashboard-hero-summary,
+  .dashboard-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-hero-liquidez {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-hero-chart {
+    padding: 0;
+  }
+
+  .dashboard-plazo-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-titular-groups {
+    grid-template-columns: 1fr;
+  }
+}

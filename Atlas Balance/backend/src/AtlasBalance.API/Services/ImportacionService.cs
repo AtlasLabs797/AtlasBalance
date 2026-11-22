@@ -17,10 +17,10 @@ public interface IImportacionService
     Task<ImportacionContextoResponse> GetContextoAsync(Guid usuarioId, string rol, Guid? paisId, CancellationToken cancellationToken);
     Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken);
     Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
-    Task<PaginatedResponse<ImportacionLoteResponse>> ListarLotesAsync(Guid usuarioId, string rol, Guid? cuentaId, int page, int pageSize, CancellationToken cancellationToken);
+    Task<PaginatedResponse<ImportacionLoteResponse>> ListarLotesAsync(Guid usuarioId, string rol, Guid? cuentaId, int page, int pageSize, string sortBy, string sortDir, CancellationToken cancellationToken);
     Task<ImportacionLoteDetalleResponse> CrearLoteAsync(Guid usuarioId, string rol, ImportacionLoteCrearRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionLoteDetalleResponse> ObtenerLoteAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken);
-    Task<IReadOnlyList<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken);
+    Task<PaginatedResponse<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, int page, int pageSize, string sortBy, string sortDir, CancellationToken cancellationToken);
     Task<ImportacionConfirmarResponse> ConfirmarLoteAsync(Guid usuarioId, string rol, Guid id, ImportacionLoteConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionLoteResponse> RevertirLoteAsync(Guid usuarioId, string rol, Guid id, ImportacionLoteRevertirRequest request, HttpContext httpContext, CancellationToken cancellationToken);
     Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken);
@@ -33,6 +33,12 @@ public sealed class ImportacionService : IImportacionService
     internal const int MaxExtraColumns = 64;
     internal const int MaxExtraColumnNameLength = 80;
     private const int MaxImportedCellLength = 4096;
+
+    // R-7: las escrituras masivas (la importacion admite hasta 50.000 filas)
+    // van por bloques, cada uno con su propio SaveChanges, dentro de la misma
+    // transaccion. Un unico SaveChanges con 50.000 filas genera un comando
+    // gigante: memoria, tiempo de transaccion, locks y rollback todo proporcionales.
+    private const int TamanoBloqueInsercion = 1_000;
 
     // Cotas de cordura para las fechas importadas. Ver AcceptIfWithinRange.
     private const int MinImportYear = 1990;
@@ -56,24 +62,20 @@ public sealed class ImportacionService : IImportacionService
 
     private readonly AppDbContext _dbContext;
     private readonly IAuditService _auditService;
+    private readonly IUserAccessService _userAccessService;
     private readonly IAlertaService? _alertaService;
     private readonly ILogger<ImportacionService> _logger;
-
-    private enum ImportacionPermissionMode
-    {
-        Importar,
-        Aprobar,
-        Ver
-    }
 
     public ImportacionService(
         AppDbContext dbContext,
         IAuditService auditService,
+        IUserAccessService userAccessService,
         IAlertaService? alertaService = null,
         ILogger<ImportacionService>? logger = null)
     {
         _dbContext = dbContext;
         _auditService = auditService;
+        _userAccessService = userAccessService;
         _alertaService = alertaService;
         _logger = logger ?? NullLogger<ImportacionService>.Instance;
     }
@@ -155,7 +157,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionValidarResponse> ValidarAsync(Guid usuarioId, string rol, ImportacionValidarRequest request, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, UserAccessAction.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var normalizedMap = NormalizeMap(request.Mapeo);
@@ -167,6 +169,7 @@ public sealed class ImportacionService : IImportacionService
             FilasOk = validationRows.Count(r => r.Valida),
             FilasError = validationRows.Count(r => !r.Valida),
             SeparadorDetectado = HumanSeparator(separator),
+            Advertencias = DetectarOrdenDeFilas(validationRows),
             Filas = validationRows,
             Errores = validationRows
                 .Where(r => !r.Valida)
@@ -185,6 +188,8 @@ public sealed class ImportacionService : IImportacionService
         Guid? cuentaId,
         int page,
         int pageSize,
+        string sortBy,
+        string sortDir,
         CancellationToken cancellationToken)
     {
         page = Math.Max(1, page);
@@ -192,7 +197,7 @@ public sealed class ImportacionService : IImportacionService
 
         if (cuentaId.HasValue)
         {
-            await EnsureCuentaPermitidaAsync(usuarioId, rol, cuentaId.Value, ImportacionPermissionMode.Ver, cancellationToken);
+            await EnsureCuentaPermitidaAsync(usuarioId, rol, cuentaId.Value, UserAccessAction.Ver, cancellationToken);
         }
 
         var isAdmin = string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -216,8 +221,10 @@ public sealed class ImportacionService : IImportacionService
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var lotes = await query
-            .OrderByDescending(x => x.FechaCreacion)
+        // R-3 (seccion 9): el listado admite `sortBy`/`sortDir`. El valor por
+        // defecto mantiene el orden por fecha de creacion descendente.
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var lotes = await ApplyLoteSorting(query, sortBy, desc)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
@@ -245,7 +252,7 @@ public sealed class ImportacionService : IImportacionService
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId, UserAccessAction.Importar, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
 
         var rawData = request.RawData ?? string.Empty;
@@ -329,62 +336,127 @@ public sealed class ImportacionService : IImportacionService
         };
 
         _dbContext.ImportacionLotes.Add(lote);
-        _dbContext.ImportacionLoteFilas.AddRange(validationRows.Select(row => new ImportacionLoteFila
-        {
-            Id = Guid.NewGuid(),
-            LoteId = lote.Id,
-            Indice = row.Indice,
-            Valida = row.Valida,
-            SeleccionadaDefault = row.Valida && row.Advertencias.Count == 0,
-            Estado = ResolveLoteFilaEstado(row),
-            DatosJson = JsonSerializer.Serialize(row.Datos, SnakeCaseJsonOptions),
-            ErroresJson = JsonSerializer.Serialize(row.Errores, SnakeCaseJsonOptions),
-            AdvertenciasJson = JsonSerializer.Serialize(row.Advertencias, SnakeCaseJsonOptions),
-            Fingerprint = row.Valida ? fingerprintsByIndex.GetValueOrDefault(row.Indice) : null
-        }));
 
+        // R-7: la cabecera del lote y sus filas de validacion (hasta 50.000)
+        // se escriben dentro de una transaccion explicita y por bloques: cada
+        // bloque tiene su propio SaveChanges, pero si un bloque falla se
+        // revierte todo y no queda un lote a medias.
+        var isRelational = _dbContext.Database.IsRelational();
+        IDbContextTransaction? loteTx = null;
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex) when (idempotencyKey is not null && IsImportacionIdempotencyUniqueViolation(ex))
-        {
-            // Dos requests pueden superar el SELECT previo a la vez. El indice
-            // unico decide el ganador; el perdedor recarga la respuesta creada
-            // por el ganador en vez de duplicar lote/filas.
-            _dbContext.ChangeTracker.Clear();
-            var concurrent = await _dbContext.ImportacionLotes
-                .AsNoTracking()
-                .SingleAsync(x => x.UsuarioCreadorId == usuarioId && x.IdempotencyKey == idempotencyKey, cancellationToken);
-            if (concurrent.CuentaId != cuenta.Id || !string.Equals(concurrent.Sha256, rawHash, StringComparison.Ordinal))
+            if (isRelational && _dbContext.Database.CurrentTransaction is null)
             {
-                throw new ImportacionException("La clave de idempotencia ya se uso con otro contenido", StatusCodes.Status409Conflict);
+                loteTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
             }
 
-            return await BuildLoteDetalleAsync(concurrent, cuenta.Nombre, cuenta.Divisa, cancellationToken);
-        }
-        await _auditService.LogAsync(
-            usuarioId,
-            "importacion_lote_creado",
-            "IMPORTACION_LOTES",
-            lote.Id,
-            httpContext,
-            JsonSerializer.Serialize(new
+            try
             {
-                lote.CuentaId,
-                lote.TipoOrigen,
-                lote.NombreArchivo,
-                lote.TamanioBytes,
-                lote.Sha256,
-                lote.LoteHash,
-                lote.FilasTotal,
-                lote.FilasValidas,
-                lote.FilasError,
-                lote.FilasAdvertencia
-            }, SnakeCaseJsonOptions),
-            cancellationToken);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (idempotencyKey is not null && IsImportacionIdempotencyUniqueViolation(ex))
+            {
+                // Dos requests pueden superar el SELECT previo a la vez. El indice
+                // unico decide el ganador; el perdedor recarga la respuesta creada
+                // por el ganador en vez de duplicar lote/filas.
+                if (loteTx is not null)
+                {
+                    await loteTx.RollbackAsync(CancellationToken.None);
+                    await loteTx.DisposeAsync();
+                    loteTx = null;
+                }
 
-        return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cuenta.Divisa, cancellationToken);
+                _dbContext.ChangeTracker.Clear();
+                var concurrent = await _dbContext.ImportacionLotes
+                    .AsNoTracking()
+                    .SingleAsync(x => x.UsuarioCreadorId == usuarioId && x.IdempotencyKey == idempotencyKey, cancellationToken);
+                if (concurrent.CuentaId != cuenta.Id || !string.Equals(concurrent.Sha256, rawHash, StringComparison.Ordinal))
+                {
+                    throw new ImportacionException("La clave de idempotencia ya se uso con otro contenido", StatusCodes.Status409Conflict);
+                }
+
+                return await BuildLoteDetalleAsync(concurrent, cuenta.Nombre, cuenta.Divisa, cancellationToken);
+            }
+
+            for (var inicio = 0; inicio < validationRows.Count; inicio += TamanoBloqueInsercion)
+            {
+                var fin = Math.Min(inicio + TamanoBloqueInsercion, validationRows.Count);
+                var bloque = new List<ImportacionLoteFila>(fin - inicio);
+                for (var i = inicio; i < fin; i++)
+                {
+                    var row = validationRows[i];
+                    bloque.Add(new ImportacionLoteFila
+                    {
+                        Id = Guid.NewGuid(),
+                        LoteId = lote.Id,
+                        Indice = row.Indice,
+                        Valida = row.Valida,
+                        SeleccionadaDefault = row.Valida && row.Advertencias.Count == 0,
+                        Estado = ResolveLoteFilaEstado(row),
+                        DatosJson = JsonSerializer.Serialize(row.Datos, SnakeCaseJsonOptions),
+                        ErroresJson = JsonSerializer.Serialize(row.Errores, SnakeCaseJsonOptions),
+                        AdvertenciasJson = JsonSerializer.Serialize(row.Advertencias, SnakeCaseJsonOptions),
+                        Fingerprint = row.Valida ? fingerprintsByIndex.GetValueOrDefault(row.Indice) : null
+                    });
+                }
+
+                _dbContext.ImportacionLoteFilas.AddRange(bloque);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+
+                // El bloque ya esta en la BD: se suelta del ChangeTracker para
+                // no tener las 50.000 filas vivas a la vez.
+                foreach (var fila in bloque)
+                {
+                    _dbContext.Entry(fila).State = EntityState.Detached;
+                }
+            }
+
+            if (loteTx is not null)
+            {
+                await loteTx.CommitAsync(cancellationToken);
+                await loteTx.DisposeAsync();
+                loteTx = null;
+            }
+
+            await _auditService.LogAsync(
+                usuarioId,
+                "importacion_lote_creado",
+                "IMPORTACION_LOTES",
+                lote.Id,
+                httpContext,
+                JsonSerializer.Serialize(new
+                {
+                    lote.CuentaId,
+                    lote.TipoOrigen,
+                    lote.NombreArchivo,
+                    lote.TamanioBytes,
+                    lote.Sha256,
+                    lote.LoteHash,
+                    lote.FilasTotal,
+                    lote.FilasValidas,
+                    lote.FilasError,
+                    lote.FilasAdvertencia
+                }, SnakeCaseJsonOptions),
+                cancellationToken);
+
+            return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cuenta.Divisa, cancellationToken);
+        }
+        catch
+        {
+            if (loteTx is not null)
+            {
+                await loteTx.RollbackAsync(CancellationToken.None);
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (loteTx is not null)
+            {
+                await loteTx.DisposeAsync();
+            }
+        }
     }
 
     public async Task<ImportacionLoteDetalleResponse> ObtenerLoteAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken)
@@ -395,11 +467,19 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Ver, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.Ver, cancellationToken);
         return await BuildLoteDetalleAsync(lote, cuenta.Nombre, cuenta.Divisa, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(Guid usuarioId, string rol, Guid id, CancellationToken cancellationToken)
+    public async Task<PaginatedResponse<ImportacionLoteFilaResponse>> ListarLoteFilasAsync(
+        Guid usuarioId,
+        string rol,
+        Guid id,
+        int page,
+        int pageSize,
+        string sortBy,
+        string sortDir,
+        CancellationToken cancellationToken)
     {
         var lote = await _dbContext.ImportacionLotes.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (lote is null)
@@ -407,13 +487,81 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Ver, cancellationToken);
-        var filas = await _dbContext.ImportacionLoteFilas
+        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.Ver, cancellationToken);
+
+        // R-3 (seccion 9): el listado de filas pasa a paging. Antes devolvia el
+        // lote entero (hasta 50.000 filas) en un unico array.
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 500);
+
+        var query = _dbContext.ImportacionLoteFilas
             .AsNoTracking()
-            .Where(x => x.LoteId == id)
-            .OrderBy(x => x.Indice)
+            .Where(x => x.LoteId == id);
+
+        // El total cuenta TODAS las filas del lote, no solo las de la pagina.
+        var total = await query.CountAsync(cancellationToken);
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+        var filas = await ApplyLoteFilaSorting(query, sortBy, desc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken);
-        return filas.Select(MapLoteFila).ToList();
+
+        return new PaginatedResponse<ImportacionLoteFilaResponse>
+        {
+            Data = filas.Select(MapLoteFila).ToList(),
+            Total = total,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = (int)Math.Ceiling(total / (double)pageSize)
+        };
+    }
+
+    // R-3 (seccion 9): ordenacion de los lotes del historial. El caso por
+    // defecto es fecha de creacion descendente, el que ya devolvia el listado.
+    private static IOrderedQueryable<ImportacionLote> ApplyLoteSorting(IQueryable<ImportacionLote> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("estado", true) => query.OrderByDescending(x => x.Estado),
+            ("estado", false) => query.OrderBy(x => x.Estado),
+            ("nombre_archivo", true) => query.OrderByDescending(x => x.NombreArchivo),
+            ("nombre_archivo", false) => query.OrderBy(x => x.NombreArchivo),
+            ("filas_total", true) => query.OrderByDescending(x => x.FilasTotal),
+            ("filas_total", false) => query.OrderBy(x => x.FilasTotal),
+            ("tipo_origen", true) => query.OrderByDescending(x => x.TipoOrigen),
+            ("tipo_origen", false) => query.OrderBy(x => x.TipoOrigen),
+            ("fecha_creacion", true) => query.OrderByDescending(x => x.FechaCreacion),
+            ("fecha_creacion", false) => query.OrderBy(x => x.FechaCreacion),
+            _ => desc
+                ? query.OrderByDescending(x => x.FechaCreacion)
+                : query.OrderBy(x => x.FechaCreacion)
+        };
+
+        // B-15 (LOTE 5): desempate estable por clave primaria. Sin el, dos
+        // lotes con la misma fecha de creacion pueden aparecer en paginas
+        // distintas o ser omitidos.
+        return ((IOrderedQueryable<ImportacionLote>)ordered).ThenBy(x => x.Id);
+    }
+
+    // R-3 (seccion 9): ordenacion de las filas de un lote. El caso por
+    // defecto es el indice ascendente, el que ya devolvia el listado.
+    private static IOrderedQueryable<ImportacionLoteFila> ApplyLoteFilaSorting(IQueryable<ImportacionLoteFila> query, string sortBy, bool desc)
+    {
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
+        {
+            ("estado", true) => query.OrderByDescending(x => x.Estado),
+            ("estado", false) => query.OrderBy(x => x.Estado),
+            ("valida", true) => query.OrderByDescending(x => x.Valida),
+            ("valida", false) => query.OrderBy(x => x.Valida),
+            ("indice", true) => query.OrderByDescending(x => x.Indice),
+            ("indice", false) => query.OrderBy(x => x.Indice),
+            _ => desc
+                ? query.OrderByDescending(x => x.Indice)
+                : query.OrderBy(x => x.Indice)
+        };
+
+        // B-15: desempate estable por clave primaria.
+        return ((IOrderedQueryable<ImportacionLoteFila>)ordered).ThenBy(x => x.Id);
     }
 
     public async Task<ImportacionConfirmarResponse> ConfirmarLoteAsync(
@@ -457,7 +605,7 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Aprobar, cancellationToken);
+        await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.AprobarImportacion, cancellationToken);
         var confirmationKey = NormalizeIdempotencyKey(httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault());
         if (lote.Estado == "confirmado" &&
             confirmationKey is not null &&
@@ -537,11 +685,6 @@ public sealed class ImportacionService : IImportacionService
         lote.AdvertenciasAceptadas = request.AceptaAdvertencias;
         lote.ConfirmacionIdempotencyKey = confirmationKey;
 
-        foreach (var fila in filas.Where(x => x.Valida))
-        {
-            fila.Estado = filasAImportar.Contains(fila.Indice) ? "confirmada" : "omitida";
-        }
-
         var warnings = new List<string>();
         if (lote.UsuarioCreadorId == usuarioId)
         {
@@ -554,7 +697,22 @@ public sealed class ImportacionService : IImportacionService
 
         response.Advertencias = warnings;
         lote.ConfirmacionResponseJson = JsonSerializer.Serialize(response, SnakeCaseJsonOptions);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // R-7: el estado de las filas del lote (hasta 50.000) se actualiza por
+        // bloques, cada uno con su propio SaveChanges, dentro de la transaccion
+        // del lote: mismo resultado, sin un comando gigante.
+        var filasValidas = filas.Where(x => x.Valida).ToList();
+        for (var inicio = 0; inicio < filasValidas.Count; inicio += TamanoBloqueInsercion)
+        {
+            var fin = Math.Min(inicio + TamanoBloqueInsercion, filasValidas.Count);
+            for (var i = inicio; i < fin; i++)
+            {
+                var fila = filasValidas[i];
+                fila.Estado = filasAImportar.Contains(fila.Indice) ? "confirmada" : "omitida";
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
         await _auditService.LogAsync(
             usuarioId,
             "importacion_lote_confirmado",
@@ -637,70 +795,161 @@ public sealed class ImportacionService : IImportacionService
         var lote = await _dbContext.ImportacionLotes.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (lote is null)
         {
+            // 404: el lote no existe. Distinto del 403 de abajo (el lote
+            // existe pero el actor no tiene permiso para revertirlo).
             throw new ImportacionException("Lote no encontrado", StatusCodes.Status404NotFound);
         }
 
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, ImportacionPermissionMode.Aprobar, cancellationToken);
+        // S-3: revertir un lote es un borrado masivo de los extractos del
+        // lote, asi que exige `puede_eliminar_lineas` (no basta con
+        // `puede_importar` ni con `puede_aprobar_importaciones`).
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, lote.CuentaId, UserAccessAction.EliminarLineas, cancellationToken);
         if (lote.Estado == "revertido")
         {
             throw new ImportacionException("El lote ya fue revertido", StatusCodes.Status409Conflict);
         }
 
         var now = DateTime.UtcNow;
-        // V-02-05 (MED-15): ExecuteUpdate en lugar de cargar 50k entidades a memoria
-        // solo para marcarlas. Un UPDATE con WHERE filtro, sin materializacion.
-        int updateCount;
-        // V-02.07: el filtro lleva tambien CuentaId. Filtrar solo por
-        // ImportacionLoteId permitia que una fila etiquetada con este lote desde
-        // otra cuenta se borrase de rebote al revertir. EnsureLotePerteneceACuentaAsync
-        // corta el origen del problema; esto acota el radio por si quedan filas
-        // mal etiquetadas de antes del fix.
-        var extractosARevertir = _dbContext.Extractos
-            .IgnoreQueryFilters()
-            .Where(x => x.ImportacionLoteId == lote.Id && x.CuentaId == cuenta.Id && x.DeletedAt == null);
-        if (_dbContext.Database.IsRelational())
+        var isRelational = _dbContext.Database.IsRelational();
+        IDbContextTransaction? tx = null;
+        try
         {
-            updateCount = await extractosARevertir.ExecuteUpdateAsync(
-                s => s.SetProperty(e => e.DeletedAt, now).SetProperty(e => e.DeletedById, (Guid?)usuarioId),
-                cancellationToken);
-        }
-        else
-        {
-            var extractos = await extractosARevertir.ToListAsync(cancellationToken);
-            foreach (var extracto in extractos)
+            if (isRelational)
             {
-                extracto.DeletedAt = now;
-                extracto.DeletedById = usuarioId;
+                // B-4 (LOTE 5): el borrado de extractos y el guardado del lote van
+                // en la misma transaccion; si algo falla, no queda medio borrado.
+                // El advisory lock por cuenta serializa reversiones concurrentes
+                // (y contra una confirmacion de la misma cuenta).
+                tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+                var lockBytes = cuenta.Id.ToByteArray();
+                var lockKey = BitConverter.ToInt64(lockBytes, 0) ^ BitConverter.ToInt64(lockBytes, 8);
+                await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
+
+                // Relee el lote con el lock ya tomado: su estado pudo cambiar
+                // entre la lectura inicial y ahora.
+                await _dbContext.Entry(lote).ReloadAsync(cancellationToken);
             }
-            updateCount = extractos.Count;
-        }
 
-        var filas = await _dbContext.ImportacionLoteFilas.Where(x => x.LoteId == lote.Id).ToListAsync(cancellationToken);
-        foreach (var fila in filas.Where(x => x.Estado == "confirmada"))
-        {
-            fila.Estado = "revertida";
-        }
-
-        lote.Estado = "revertido";
-        lote.FechaReversion = now;
-        lote.RevertidoPorId = usuarioId;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await _auditService.LogAsync(
-            usuarioId,
-            "importacion_lote_revertido",
-            "IMPORTACION_LOTES",
-            lote.Id,
-            httpContext,
-            JsonSerializer.Serialize(new
+            // B-4: solo un lote confirmado es reversible. Cualquier otro estado es
+            // un error de dominio (409), no un 500.
+            if (lote.Estado != "confirmado")
             {
-                lote.CuentaId,
-                extractos_revertidos = updateCount,
-                motivo = NormalizeOptionalText(request.Motivo)
-            }, SnakeCaseJsonOptions),
-            cancellationToken);
+                throw new ImportacionException(
+                    $"El lote esta en estado '{lote.Estado}' y no se puede revertir",
+                    StatusCodes.Status409Conflict);
+            }
 
-        return MapLote(lote, cuenta.Nombre, cuenta.Divisa);
+            // B-4: conciliaciones de los extractos que se van a borrar. Se leen
+            // ANTES del borrado, mientras los extractos siguen vivos.
+            var conciliacionesAInvalidar = await _dbContext.Conciliaciones
+                .Where(c => c.ExtractoId != null &&
+                            c.Estado != "excepcion" &&
+                            c.Estado != "resuelta" &&
+                            _dbContext.Extractos.IgnoreQueryFilters().Any(e =>
+                                e.Id == c.ExtractoId &&
+                                e.ImportacionLoteId == lote.Id &&
+                                e.CuentaId == cuenta.Id &&
+                                e.DeletedAt == null))
+                .ToListAsync(cancellationToken);
+
+            // V-02-05 (MED-15): ExecuteUpdate en lugar de cargar 50k entidades a memoria
+            // solo para marcarlas. Un UPDATE con WHERE filtro, sin materializacion.
+            int updateCount;
+            // V-02.07: el filtro lleva tambien CuentaId. Filtrar solo por
+            // ImportacionLoteId permitia que una fila etiquetada con este lote desde
+            // otra cuenta se borrase de rebote al revertir. EnsureLotePerteneceACuentaAsync
+            // corta el origen del problema; esto acota el radio por si quedan filas
+            // mal etiquetadas de antes del fix.
+            var extractosARevertir = _dbContext.Extractos
+                .IgnoreQueryFilters()
+                .Where(x => x.ImportacionLoteId == lote.Id && x.CuentaId == cuenta.Id && x.DeletedAt == null);
+            if (isRelational)
+            {
+                updateCount = await extractosARevertir.ExecuteUpdateAsync(
+                    s => s.SetProperty(e => e.DeletedAt, now).SetProperty(e => e.DeletedById, (Guid?)usuarioId),
+                    cancellationToken);
+            }
+            else
+            {
+                var extractos = await extractosARevertir.ToListAsync(cancellationToken);
+                foreach (var extracto in extractos)
+                {
+                    extracto.DeletedAt = now;
+                    extracto.DeletedById = usuarioId;
+                }
+                updateCount = extractos.Count;
+            }
+
+            // B-4: invalidar las conciliaciones de los extractos borrados. Se usa
+            // el estado "excepcion" que ya existe en el dominio (ConciliacionService
+            // lo usa para marcar una conciliacion que no cuadra): deja la
+            // conciliacion visible y accionable en vez de borrarla, y el
+            // movimiento esperado vuelve a "pendiente" para poder volver a
+            // sugerirse cuando el extracto se reimporte.
+            foreach (var conciliacion in conciliacionesAInvalidar)
+            {
+                conciliacion.Estado = "excepcion";
+                conciliacion.Observacion = "Extracto revertido por la reversion del lote de importacion.";
+                conciliacion.FechaModificacion = now;
+            }
+
+            var movimientoIds = conciliacionesAInvalidar
+                .Select(c => c.MovimientoEsperadoId)
+                .Distinct()
+                .ToList();
+            if (movimientoIds.Count > 0)
+            {
+                var movimientos = await _dbContext.MovimientosEsperados
+                    .Where(m => movimientoIds.Contains(m.Id))
+                    .ToListAsync(cancellationToken);
+                foreach (var movimiento in movimientos)
+                {
+                    movimiento.Estado = "pendiente";
+                    movimiento.FechaModificacion = now;
+                    movimiento.UsuarioModificacionId = usuarioId;
+                }
+            }
+
+            var filas = await _dbContext.ImportacionLoteFilas.Where(x => x.LoteId == lote.Id).ToListAsync(cancellationToken);
+            foreach (var fila in filas.Where(x => x.Estado == "confirmada"))
+            {
+                fila.Estado = "revertida";
+            }
+
+            lote.Estado = "revertido";
+            lote.FechaReversion = now;
+            lote.RevertidoPorId = usuarioId;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _auditService.LogAsync(
+                usuarioId,
+                "importacion_lote_revertido",
+                "IMPORTACION_LOTES",
+                lote.Id,
+                httpContext,
+                JsonSerializer.Serialize(new
+                {
+                    lote.CuentaId,
+                    extractos_revertidos = updateCount,
+                    conciliaciones_invalidadas = conciliacionesAInvalidar.Count,
+                    motivo = NormalizeOptionalText(request.Motivo)
+                }, SnakeCaseJsonOptions),
+                cancellationToken);
+
+            if (tx is not null)
+            {
+                await tx.CommitAsync(cancellationToken);
+            }
+
+            return MapLote(lote, cuenta.Nombre, cuenta.Divisa);
+        }
+        finally
+        {
+            if (tx is not null)
+            {
+                await tx.DisposeAsync();
+            }
+        }
     }
 
     public Task<ImportacionConfirmarResponse> ConfirmarAsync(Guid usuarioId, string rol, ImportacionConfirmarRequest request, HttpContext httpContext, CancellationToken cancellationToken)
@@ -714,7 +963,7 @@ public sealed class ImportacionService : IImportacionService
         CancellationToken cancellationToken,
         IReadOnlyList<FilaValidacionResponse>? persistedValidationRows)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, UserAccessAction.Importar, cancellationToken);
         await EnsureLotePerteneceACuentaAsync(request.LoteId, cuenta.Id, cancellationToken);
         EnsureNotPlazoFijoForFormattedImport(cuenta);
         var normalizedMap = NormalizeMap(request.Mapeo);
@@ -784,8 +1033,12 @@ public sealed class ImportacionService : IImportacionService
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
+        // B-3 (LOTE 5): los extractos con soft delete NO cuentan como duplicados.
+        // Sin IgnoreQueryFilters el filtro global de AppDbContext deja fuera las
+        // filas revertidas, de modo que un lote revertido se puede reimportar.
+        // El indice unico de huella tambien debe filtrar deleted_at (lo resuelve
+        // la parte de base de datos de B-3, en AppDbContext + Migrations).
         var existingFingerprints = await _dbContext.Extractos
-            .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(e => e.CuentaId == cuenta.Id &&
                         e.ImportacionFingerprint != null &&
@@ -826,68 +1079,90 @@ public sealed class ImportacionService : IImportacionService
             };
         }
 
-        var extractos = new List<Extracto>(rowsToImport.Count);
-        var extras = new List<ExtractoColumnaExtra>(rowsToImport.Count * Math.Max(1, normalizedMap.ColumnasExtra.Count));
-
-        foreach (var candidate in rowsToImport)
-        {
-            var row = candidate.Row;
-            maxFila += 1;
-
-            var fecha = ParseDate(row.Datos["fecha"], out _, out var parsedDate)
-                ? parsedDate
-                : throw new InvalidOperationException("Fila validada sin fecha parseable.");
-
-            var monto = TryParseDecimalSmart(row.Datos["monto"], out var parsedMonto)
-                ? parsedMonto
-                : throw new InvalidOperationException("Fila validada sin monto parseable.");
-
-            var saldo = TryParseDecimalSmart(row.Datos["saldo"], out var parsedSaldo)
-                ? parsedSaldo
-                : throw new InvalidOperationException("Fila validada sin saldo parseable.");
-
-            var extracto = new Extracto
-            {
-                Id = Guid.NewGuid(),
-                CuentaId = cuenta.Id,
-                Fecha = fecha,
-                Concepto = string.IsNullOrWhiteSpace(row.Datos["concepto"]) ? null : row.Datos["concepto"]!.Trim(),
-                Monto = monto,
-                Saldo = saldo,
-                FilaNumero = maxFila,
-                ImportacionFingerprint = candidate.Fingerprint,
-                ImportacionLoteHash = loteHash,
-                ImportacionLoteId = request.LoteId,
-                ImportacionFilaOrigen = row.Indice,
-                FechaImportacion = now,
-                UsuarioCreacionId = usuarioId,
-                FechaCreacion = now
-            };
-            extractos.Add(extracto);
-
-            foreach (var pair in row.Datos.Where(d => d.Key.StartsWith("extra:", StringComparison.OrdinalIgnoreCase)))
-            {
-                if (string.IsNullOrWhiteSpace(pair.Value))
-                {
-                    continue;
-                }
-
-                var columnName = pair.Key["extra:".Length..];
-                extras.Add(new ExtractoColumnaExtra
-                {
-                    Id = Guid.NewGuid(),
-                    ExtractoId = extracto.Id,
-                    NombreColumna = columnName,
-                    Valor = pair.Value!.Trim()
-                });
-            }
-        }
-
-        _dbContext.Extractos.AddRange(extractos);
-        _dbContext.ExtractosColumnasExtra.AddRange(extras);
+        // R-7: los extractos (hasta 50.000) y sus columnas extra se insertan
+        // por bloques, cada uno con su propio SaveChanges, dentro de la
+        // transaccion ya abierta: mismo resultado, sin un comando gigante.
+        var totalExtractos = 0;
         try
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            for (var inicio = 0; inicio < rowsToImport.Count; inicio += TamanoBloqueInsercion)
+            {
+                var fin = Math.Min(inicio + TamanoBloqueInsercion, rowsToImport.Count);
+                var extractos = new List<Extracto>(fin - inicio);
+                var extras = new List<ExtractoColumnaExtra>();
+
+                for (var i = inicio; i < fin; i++)
+                {
+                    var candidate = rowsToImport[i];
+                    var row = candidate.Row;
+                    maxFila += 1;
+
+                    var fecha = ParseDate(row.Datos["fecha"], out _, out var parsedDate)
+                        ? parsedDate
+                        : throw new InvalidOperationException("Fila validada sin fecha parseable.");
+
+                    var monto = TryParseDecimalSmart(row.Datos["monto"], out var parsedMonto)
+                        ? parsedMonto
+                        : throw new InvalidOperationException("Fila validada sin monto parseable.");
+
+                    var saldo = TryParseDecimalSmart(row.Datos["saldo"], out var parsedSaldo)
+                        ? parsedSaldo
+                        : throw new InvalidOperationException("Fila validada sin saldo parseable.");
+
+                    var extracto = new Extracto
+                    {
+                        Id = Guid.NewGuid(),
+                        CuentaId = cuenta.Id,
+                        Fecha = fecha,
+                        Concepto = string.IsNullOrWhiteSpace(row.Datos["concepto"]) ? null : row.Datos["concepto"]!.Trim(),
+                        Monto = monto,
+                        Saldo = saldo,
+                        FilaNumero = maxFila,
+                        ImportacionFingerprint = candidate.Fingerprint,
+                        ImportacionLoteHash = loteHash,
+                        ImportacionLoteId = request.LoteId,
+                        ImportacionFilaOrigen = row.Indice,
+                        FechaImportacion = now,
+                        UsuarioCreacionId = usuarioId,
+                        FechaCreacion = now
+                    };
+                    extractos.Add(extracto);
+
+                    foreach (var pair in row.Datos.Where(d => d.Key.StartsWith("extra:", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        if (string.IsNullOrWhiteSpace(pair.Value))
+                        {
+                            continue;
+                        }
+
+                        var columnName = pair.Key["extra:".Length..];
+                        extras.Add(new ExtractoColumnaExtra
+                        {
+                            Id = Guid.NewGuid(),
+                            ExtractoId = extracto.Id,
+                            NombreColumna = columnName,
+                            Valor = pair.Value!.Trim()
+                        });
+                    }
+                }
+
+                _dbContext.Extractos.AddRange(extractos);
+                _dbContext.ExtractosColumnasExtra.AddRange(extras);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                totalExtractos += extractos.Count;
+
+                // El bloque ya esta en la BD: se suelta del ChangeTracker para
+                // no tener las 50.000 filas vivas a la vez.
+                foreach (var extra in extras)
+                {
+                    _dbContext.Entry(extra).State = EntityState.Detached;
+                }
+
+                foreach (var extracto in extractos)
+                {
+                    _dbContext.Entry(extracto).State = EntityState.Detached;
+                }
+            }
         }
         catch (DbUpdateException ex) when (IsFilaNumeroUniqueViolation(ex))
         {
@@ -908,7 +1183,7 @@ public sealed class ImportacionService : IImportacionService
             cuenta = cuenta.Nombre,
             separador = HumanSeparator(separator),
             filas_procesadas = validationRows.Count,
-            filas_importadas = extractos.Count,
+            filas_importadas = totalExtractos,
             filas_duplicadas = duplicateRows,
             filas_con_error = validationRows.Count(r => !r.Valida),
             lote_hash = loteHash,
@@ -929,7 +1204,7 @@ public sealed class ImportacionService : IImportacionService
         return new ImportacionConfirmarResponse
         {
             FilasProcesadas = validationRows.Count,
-            FilasImportadas = extractos.Count,
+            FilasImportadas = totalExtractos,
             FilasDuplicadas = duplicateRows,
             FilasConError = validationRows.Count(r => !r.Valida),
             Errores = validationRows
@@ -953,7 +1228,7 @@ public sealed class ImportacionService : IImportacionService
 
     public async Task<ImportacionPlazoFijoMovimientoResponse> RegistrarMovimientoPlazoFijoAsync(Guid usuarioId, string rol, ImportacionPlazoFijoMovimientoRequest request, HttpContext httpContext, CancellationToken cancellationToken)
     {
-        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, ImportacionPermissionMode.Importar, cancellationToken);
+        var cuenta = await EnsureCuentaPermitidaAsync(usuarioId, rol, request.CuentaId ?? Guid.Empty, UserAccessAction.Importar, cancellationToken);
         if (ResolveTipoCuenta(cuenta) != TipoCuenta.PLAZO_FIJO)
         {
             throw new ImportacionException("Esta operacion solo aplica a cuentas de plazo fijo", StatusCodes.Status400BadRequest);
@@ -985,14 +1260,17 @@ public sealed class ImportacionService : IImportacionService
                 await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [lockKey], cancellationToken);
             }
 
+        // B-9 (LOTE 5): el saldo anterior se calcula sobre los extractos vivos.
+        // Las filas con soft delete (revertidas) no cuentan como saldo vigente.
         var latest = await _dbContext.Extractos
-            .IgnoreQueryFilters()
             .Where(e => e.CuentaId == cuenta.Id)
             .OrderByDescending(e => e.FilaNumero)
             .ThenByDescending(e => e.Fecha)
             .Select(e => new { e.Saldo })
             .FirstOrDefaultAsync(cancellationToken);
 
+        // El numero de fila SI sigue incluyendo las filas borradas: no se
+        // reutiliza un FilaNumero de un extracto revertido.
         var maxFila = await _dbContext.Extractos
             .IgnoreQueryFilters()
             .Where(e => e.CuentaId == cuenta.Id)
@@ -1065,7 +1343,7 @@ public sealed class ImportacionService : IImportacionService
         }
     }
 
-    private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, ImportacionPermissionMode permissionMode, CancellationToken cancellationToken)
+    private async Task<Cuenta> EnsureCuentaPermitidaAsync(Guid usuarioId, string rol, Guid cuentaId, UserAccessAction accion, CancellationToken cancellationToken)
     {
         var cuenta = await _dbContext.Cuentas
             .AsNoTracking()
@@ -1078,29 +1356,29 @@ public sealed class ImportacionService : IImportacionService
             throw new ImportacionException("Cuenta no encontrada o inactiva", StatusCodes.Status404NotFound);
         }
 
-        if (string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
+        // S-9/M-3: la regla de cada accion vive en UserAccessService. El ADMIN
+        // conserva su bypass (el scope lo marca como IsAdmin).
+        var scope = await _userAccessService.GetScopeAsync(usuarioId, rol, cancellationToken);
+        if (scope.IsAdmin)
         {
             return cuenta;
         }
 
-        var permisos = await _dbContext.PermisosUsuario
-            .AsNoTracking()
-            .Where(p => p.UsuarioId == usuarioId)
-            .ToListAsync(cancellationToken);
-
-        var hasPermission = permisos.Any(p =>
-            GrantsImportacionPermission(p, permissionMode) &&
-            (p.PaisId is null || p.PaisId == cuenta.PaisId) &&
-            (p.CuentaId is null || p.CuentaId == cuenta.Id) &&
-            (p.TitularId is null || p.TitularId == cuenta.TitularId));
-
+        var hasPermission = await _userAccessService.CanCuentaAsync(accion, cuentaId, scope, cancellationToken);
         if (!hasPermission)
         {
-            throw new ImportacionException("No tienes permisos para importar en esta cuenta", StatusCodes.Status403Forbidden);
+            throw new ImportacionException(PermissionDeniedMessage(accion), StatusCodes.Status403Forbidden);
         }
 
         return cuenta;
     }
+
+    private static string PermissionDeniedMessage(UserAccessAction accion) => accion switch
+    {
+        // S-3: revertir un lote borra masivamente los extractos del lote.
+        UserAccessAction.EliminarLineas => "No tienes permisos para eliminar lineas en esta cuenta",
+        _ => "No tienes permisos para importar en esta cuenta"
+    };
 
     // V-02.07: request.LoteId llegaba del cliente y se escribia tal cual en
     // Extracto.ImportacionLoteId sin comprobar que el lote fuera de la cuenta
@@ -1127,20 +1405,6 @@ public sealed class ImportacionService : IImportacionService
         }
     }
 
-    private static bool GrantsImportacionPermission(PermisoUsuario permiso, ImportacionPermissionMode permissionMode)
-    {
-        return permissionMode switch
-        {
-            ImportacionPermissionMode.Importar => permiso.PuedeImportar,
-            ImportacionPermissionMode.Aprobar => permiso.PuedeAprobarImportaciones || permiso.PuedeImportar,
-            ImportacionPermissionMode.Ver => permiso.PuedeVerCuentas ||
-                                             permiso.PuedeImportar ||
-                                             permiso.PuedeRevisarLineas ||
-                                             permiso.PuedeAprobarImportaciones,
-            _ => false
-        };
-    }
-
     private async Task<ImportacionLoteDetalleResponse> BuildLoteDetalleAsync(ImportacionLote lote, string? cuentaNombre, string? cuentaDivisa, CancellationToken cancellationToken)
     {
         var filas = await _dbContext.ImportacionLoteFilas
@@ -1159,6 +1423,7 @@ public sealed class ImportacionService : IImportacionService
                 FilasOk = filaResponses.Count(x => x.Valida),
                 FilasError = filaResponses.Count(x => !x.Valida),
                 SeparadorDetectado = lote.Separador,
+                Advertencias = DetectarOrdenDeFilas(filaResponses),
                 Filas = filaResponses.Select(x => new FilaValidacionResponse
                 {
                     Indice = x.Indice,
@@ -1497,10 +1762,17 @@ public sealed class ImportacionService : IImportacionService
         // Usamos hashtext para convertir el string a bigint.
         try
         {
+            // B-3 (LOTE 5): pg_try_advisory_xact_lock devuelve BOOLEAN. Leerlo
+            // como int hacia que Npgsql lanzase InvalidCastException ("Reading
+            // as 'System.Int32' is not supported for fields having DataTypeName
+            // 'boolean'"), el catch fail-closed devolvia false y la
+            // confirmacion de un lote respondia SIEMPRE 409 "El lote esta
+            // siendo procesado por otra operacion" contra PostgreSQL real:
+            // el camino de reimportar un lote revertido era inutilizable.
             var result = await _dbContext.Database
-                .SqlQueryRaw<int>("SELECT pg_try_advisory_xact_lock(hashtext({0})) AS \"Value\"", lockKey)
+                .SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock(hashtext({0})) AS \"Value\"", lockKey)
                 .ToListAsync(cancellationToken);
-            return result.Count > 0 && result[0] == 1;
+            return result.Count > 0 && result[0];
         }
         catch (Exception ex)
         {
@@ -1964,6 +2236,78 @@ public sealed class ImportacionService : IImportacionService
         return validation;
     }
 
+    /// <summary>
+    /// B-17 (LOTE 5): comprueba el ORDEN de las filas pegadas. Atlas Balance
+    /// numera las filas de abajo arriba, de modo que la linea superior del
+    /// bloque pegado es la ultima del lote (el `fila_numero` mas alto) y de ahi
+    /// se toma el "saldo actual". Eso supone que el banco exporta de mas
+    /// reciente a mas antiguo (la linea mas reciente va ARRIBA del todo).
+    ///
+    /// Si las fechas del fichero suben al bajar por el bloque, el usuario ha
+    /// pegado el extracto del mas antiguo al mas reciente y el saldo actual se
+    /// calcularia con la fila mas antigua. Se avisa, pero NO se cambia el
+    /// criterio: eso es una decision de producto.
+    ///
+    /// Solo avisa cuando el orden es inequivoco (fechas estrictamente
+    /// crecientes y al menos dos fechas distintas). Con una sola fecha, con
+    /// fechas repetidas o con fechas mezcladas no se puede saber, y en ese
+    /// caso no se dice nada para no meter ruido en cada importacion.
+    /// </summary>
+    private static IReadOnlyList<string> DetectarOrdenDeFilas(IReadOnlyList<FilaValidacionResponse> validationRows)
+        => ConstruirAvisoDeOrden(validationRows.Select(x => (x.Indice, x.Valida, x.Datos?["fecha"])));
+
+    private static IReadOnlyList<string> DetectarOrdenDeFilas(IReadOnlyList<ImportacionLoteFilaResponse> loteFilas)
+        => ConstruirAvisoDeOrden(loteFilas.Select(x => (x.Indice, x.Valida, x.Datos?["fecha"])));
+
+    private static IReadOnlyList<string> ConstruirAvisoDeOrden(IEnumerable<(int Indice, bool Valida, string? Fecha)> filas)
+    {
+        var fechas = new List<DateOnly>();
+        foreach (var fila in filas.Where(x => x.Valida).OrderBy(x => x.Indice))
+        {
+            if (ParseDate(fila.Fecha, out _, out var fecha))
+            {
+                fechas.Add(fecha);
+            }
+        }
+
+        // Fechas repetidas no dicen nada del orden: se colapsan las consecutivas
+        // iguales y se mira la secuencia de fechas distintas.
+        var distintas = new List<DateOnly>();
+        foreach (var fecha in fechas)
+        {
+            if (distintas.Count == 0 || distintas[^1] != fecha)
+            {
+                distintas.Add(fecha);
+            }
+        }
+
+        if (distintas.Count < 2)
+        {
+            return [];
+        }
+
+        var sube = true;
+        for (var i = 1; i < distintas.Count; i++)
+        {
+            if (distintas[i] <= distintas[i - 1])
+            {
+                sube = false;
+                break;
+            }
+        }
+
+        if (!sube)
+        {
+            return [];
+        }
+
+        return
+        [
+            "Las filas del fichero van de mas antiguo a mas reciente (la primera linea es la mas antigua). " +
+            "Atlas Balance espera la linea mas reciente arriba del todo: si continues asi, el saldo actual de la cuenta se calculara con la fila mas antigua del fichero."
+        ];
+    }
+
     private static bool IsBlankAmountRow(params string?[] values) =>
         values.All(string.IsNullOrWhiteSpace);
 
@@ -2245,6 +2589,15 @@ public sealed class ImportacionService : IImportacionService
         }
 
         if (!HasDigitsOnlyIgnoringSign(parts[0]) || parts[0].TrimStart('+', '-').Length is < 1 or > 3)
+        {
+            return false;
+        }
+
+        // B-13 (LOTE 5): una parte entera a cero no es una agrupacion de miles.
+        // "0,500" es 0,5 (coma decimal), no 500. El resto ("1,500", "12,345")
+        // conserva el comportamiento actual.
+        var integerPart = parts[0].TrimStart('+', '-');
+        if (int.TryParse(integerPart, NumberStyles.None, CultureInfo.InvariantCulture, out var integerValue) && integerValue == 0)
         {
             return false;
         }

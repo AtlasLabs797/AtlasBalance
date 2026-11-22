@@ -103,7 +103,7 @@ public sealed class SecurityAuditMiddleware
                 ? AuditActions.AuthnDenied
                 : AuditActions.AccesoBulk;
 
-        if (!DebeRegistrar(tipoAccion, usuarioId, ip, context.Request.Path))
+        if (!DebeRegistrar(tipoAccion, usuarioId, ip))
         {
             return;
         }
@@ -131,11 +131,15 @@ public sealed class SecurityAuditMiddleware
             cancellationToken: context.RequestAborted);
     }
 
-    private bool DebeRegistrar(string tipoAccion, Guid? usuarioId, string? ip, PathString path)
+    private bool DebeRegistrar(string tipoAccion, Guid? usuarioId, string? ip)
     {
+        // S-16: la clave ya NO incluye la ruta. Un escaner que probaba rutas
+        // distintas generaba una fila de auditoria por ruta y llenaba la tabla
+        // (el aviso de "muchos 401" sigue igual de visible). Ahora se
+        // deduplica por tipo de accion, IP y usuario dentro de la ventana.
         var clave = string.Create(
             CultureInfo.InvariantCulture,
-            $"secaudit:{tipoAccion}:{usuarioId}:{ip}:{path.Value}");
+            $"secaudit:{tipoAccion}:{usuarioId}:{ip}");
 
         if (_cache.TryGetValue(clave, out _))
         {

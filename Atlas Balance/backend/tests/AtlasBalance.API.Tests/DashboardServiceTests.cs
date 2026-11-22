@@ -271,6 +271,10 @@ public class DashboardServiceTests
             Id = Guid.NewGuid(),
             UsuarioId = managerId,
             TitularId = allowedTitularId,
+            // S-1: el permiso debe traer PuedeVerCuentas y PuedeVerDashboard para
+            // que el manager tenga acceso a un titular, asi el 403 se debe al
+            // titular bloqueado y no a la falta total de permisos.
+            PuedeVerCuentas = true,
             PuedeVerDashboard = true
         });
 
@@ -396,7 +400,10 @@ public class DashboardServiceTests
             UsuarioId = managerId,
             CuentaId = null,
             TitularId = null,
-            PuedeVerCuentas = true
+            PuedeVerCuentas = true,
+            // S-1: el dashboard exige tambien PuedeVerDashboard, tambien para GERENTE.
+            // Antes este test no lo fijaba y solo pasaba porque el rol lo ignoraba.
+            PuedeVerDashboard = true
         });
         db.Extractos.Add(new Extracto
         {

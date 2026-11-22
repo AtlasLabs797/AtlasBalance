@@ -201,9 +201,19 @@ public static class IaPlanValidator
 
     private static FinancialPlanEvaluation NormalizarTermino(FinancialOperation op, string? termino, string? concepto)
     {
+        // B-10: el planificador semantico devuelve el termino de busqueda
+        // en filtros.concepto. Sin este fallback, una busqueda con
+        // concepto se quedaba en "Aclarar: falta el termino de busqueda"
+        // aunque el modelo si habia dado el concepto.
+        var efectivo = termino;
+        if (string.IsNullOrWhiteSpace(efectivo) && op is FinancialOperation.Search)
+        {
+            efectivo = concepto;
+        }
+
         if (op is FinancialOperation.Search)
         {
-            if (string.IsNullOrWhiteSpace(termino))
+            if (string.IsNullOrWhiteSpace(efectivo))
             {
                 return Aclarar(
                     "Falta el termino de busqueda.",
@@ -214,7 +224,7 @@ public static class IaPlanValidator
                         new FinancialClarificationOption { Etiqueta = "Buscar por cuenta", Valor = "cuenta" }
                     });
             }
-            if (termino.Length > MaxSearchLength)
+            if (efectivo.Length > MaxSearchLength)
             {
                 return Rechazado($"El termino de busqueda no puede superar {MaxSearchLength} caracteres.");
             }
@@ -230,7 +240,7 @@ public static class IaPlanValidator
             Estado = FinancialPlanStatus.Ok,
             Plan = new FinancialQueryPlan
             {
-                TerminoBusqueda = string.IsNullOrWhiteSpace(termino) ? null : termino.Trim()
+                TerminoBusqueda = string.IsNullOrWhiteSpace(efectivo) ? null : efectivo.Trim()
             }
         };
     }

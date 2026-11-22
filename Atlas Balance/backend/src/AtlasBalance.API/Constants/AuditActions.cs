@@ -11,6 +11,18 @@ public static class AuditActions
     public const string MfaRevoked = "MFA_REVOKED";
     public const string MfaPolicyUpdated = "MFA_POLICY_UPDATED";
     public const string AccountLocked = "ACCOUNT_LOCKED";
+
+    /// <summary>S-13: la sesion supero su vida maxima y se ha cerrado.</summary>
+    public const string SessionExpired = "SESSION_EXPIRED";
+
+    /// <summary>A-2: un administrador desbloquea una cuenta bloqueada por intentos fallidos.</summary>
+    public const string AccountUnlocked = "ACCOUNT_UNLOCKED";
+
+    /// <summary>
+    /// S-15: reuso de un refresh token ya rotado dentro de la ventana de gracia
+    /// (dos pestanas que presentan el mismo token a la vez). No es un robo.
+    /// </summary>
+    public const string RefreshTokenReuseBenign = "REFRESH_TOKEN_REUSE_BENIGN";
     public const string PasswordChanged = "PASSWORD_CHANGED";
     public const string PasswordReset = "PASSWORD_RESET";
     public const string RefreshTokenReuseDetected = "REFRESH_TOKEN_REUSE_DETECTED";
@@ -64,4 +76,7 @@ public static class AuditActions
 
     /// <summary>La verificacion de integridad de AUDITORIAS encontro firmas invalidas o huecos.</summary>
     public const string AuditoriaIntegridadFallida = "AUDITORIA_INTEGRIDAD_FALLIDA";
+
+    /// <summary>S-7: un administrador exporto el historico de auditoria a CSV.</summary>
+    public const string AuditoriaExportacionCsv = "AUDITORIA_EXPORTACION_CSV";
 }

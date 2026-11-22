@@ -1,12 +1,38 @@
 import { create } from 'zustand';
 import { getBrowserStorage } from '@/utils/sessionScope';
+import {
+  applyThemeToDocument,
+  resolveInitialTheme,
+  systemPrefersDark,
+  type Theme,
+} from '@/utils/theme';
+import {
+  applyDensityToDocument,
+  DENSITY_STORAGE_KEY,
+  resolveInitialDensity,
+  type Density,
+} from '@/utils/density';
 
 const MAX_TOASTS = 5;
 
-type Theme = 'light' | 'dark';
+function initialTheme(): Theme {
+  let stored: string | null;
+  try {
+    stored = getBrowserStorage('localStorage')?.getItem('theme') ?? null;
+  } catch {
+    stored = null;
+  }
+  return resolveInitialTheme(stored, systemPrefersDark());
+}
 
-function normalizeTheme(value: string | null): Theme {
-  return value === 'dark' || value === 'light' ? value : 'light';
+function initialDensity(): Density {
+  let stored: string | null;
+  try {
+    stored = getBrowserStorage('localStorage')?.getItem(DENSITY_STORAGE_KEY) ?? null;
+  } catch {
+    stored = null;
+  }
+  return resolveInitialDensity(stored);
 }
 
 interface Toast {
@@ -17,6 +43,7 @@ interface Toast {
 
 interface UiState {
   theme: Theme;
+  density: Density;
   sidebarCollapsed: boolean;
   activeModal: string | null;
   blockingOverlayCount: number;
@@ -25,6 +52,7 @@ interface UiState {
   // Actions
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
+  setDensity: (density: Density) => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   openModal: (modalId: string) => void;
@@ -39,7 +67,8 @@ interface UiState {
 const storage = () => getBrowserStorage('localStorage');
 
 export const useUiStore = create<UiState>((set) => ({
-  theme: normalizeTheme(storage()?.getItem('theme') ?? null),
+  theme: initialTheme(),
+  density: initialDensity(),
   sidebarCollapsed: false,
   activeModal: null,
   blockingOverlayCount: 0,
@@ -49,14 +78,24 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => {
       const newTheme = state.theme === 'light' ? 'dark' : 'light';
       storage()?.setItem('theme', newTheme);
-      document.documentElement.setAttribute('data-theme', newTheme);
+      applyThemeToDocument(newTheme);
       return { theme: newTheme };
     }),
 
   setTheme: (theme) => {
     storage()?.setItem('theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
+    applyThemeToDocument(theme);
     set({ theme });
+  },
+
+  setDensity: (density) => {
+    try {
+      storage()?.setItem(DENSITY_STORAGE_KEY, density);
+    } catch {
+      // Sin almacenamiento: la densidad solo dura la sesion.
+    }
+    applyDensityToDocument(density);
+    set({ density });
   },
 
   toggleSidebar: () =>

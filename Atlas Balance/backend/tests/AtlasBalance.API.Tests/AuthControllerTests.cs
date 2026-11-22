@@ -69,6 +69,81 @@ public sealed class AuthControllerTests
         setCookie.Should().NotContain("__Host-atlas-mfa-trusted=");
     }
 
+    // S-14: en produccion las cookies de sesion se emiten con el prefijo
+    // "__Host-" (Secure, Path=/, sin Domain). La legacy sin Secure la puede
+    // fijar un subdominio comprometido o un atacante en la LAN, asi que en
+    // produccion no puede valer como credencial.
+    [Fact]
+    public async Task RefreshToken_Should_Ignore_LegacyCookie_In_Production()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+
+        var authService = new CapturingRefreshAuthService();
+        var controller = new AuthController(
+            authService,
+            new CsrfService(),
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            TestAuditService.Create(db));
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Cookie = "refresh_token=legacy";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        await controller.RefreshToken(CancellationToken.None);
+
+        authService.RefreshToken.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RefreshToken_Should_Read_HostPrefixedCookie_In_Production()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+
+        var authService = new CapturingRefreshAuthService();
+        var controller = new AuthController(
+            authService,
+            new CsrfService(),
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            TestAuditService.Create(db));
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Cookie = "__Host-atlas-refresh-token=host";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        await controller.RefreshToken(CancellationToken.None);
+
+        authService.RefreshToken.Should().Be("host");
+    }
+
+    // En Development el frontend corre sobre HTTP plano y las cookies se
+    // emiten sin el prefijo: las dos se aceptan.
+    [Fact]
+    public async Task RefreshToken_Should_Read_LegacyCookie_In_Development()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AppDbContext(options);
+
+        var authService = new CapturingRefreshAuthService();
+        var controller = new AuthController(
+            authService,
+            new CsrfService(),
+            new TestWebHostEnvironment { EnvironmentName = "Development" },
+            TestAuditService.Create(db));
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Cookie = "refresh_token=legacy";
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        await controller.RefreshToken(CancellationToken.None);
+
+        authService.RefreshToken.Should().Be("legacy");
+    }
+
     private sealed class LogoutOnlyAuthService : IAuthService
     {
         public Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null, string? userAgent = null) =>
@@ -96,6 +171,45 @@ public sealed class AuthControllerTests
             throw new NotSupportedException();
 
         public Task<bool> RevokeCurrentTrustedMfaDeviceAsync(Guid userId, string? currentTrustedMfaToken, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Captura el refresh token que lee el controller para poder comprobar
+    /// que cookie se acepta en cada entorno (S-14).
+    /// </summary>
+    private sealed class CapturingRefreshAuthService : IAuthService
+    {
+        public string RefreshToken { get; private set; } = string.Empty;
+
+        public Task<AuthResult> LoginAsync(string email, string password, string? ipAddress, CancellationToken cancellationToken, string? trustedMfaToken = null, string? userAgent = null) =>
+            throw new NotSupportedException();
+
+        public Task<AuthResult> VerifyMfaAsync(string challengeId, string code, bool rememberDevice, string? ipAddress, CancellationToken cancellationToken, string? userAgent = null) =>
+            throw new NotSupportedException();
+
+        public Task<AuthResult> RefreshTokenAsync(string refreshToken, string? ipAddress, CancellationToken cancellationToken)
+        {
+            RefreshToken = refreshToken;
+            return Task.FromResult(new AuthResult());
+        }
+
+        public Task<Guid?> LogoutAsync(string? refreshToken, CancellationToken cancellationToken) =>
+            Task.FromResult<Guid?>(null);
+
+        public Task<AuthResult> GetCurrentAsync(Guid userId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<AuthResult> ChangePasswordAsync(Guid userId, string passwordActual, string passwordNueva, string? ipAddress, string? currentRefreshToken, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<TrustedMfaDeviceResponse>> GetTrustedMfaDevicesAsync(Guid userId, string? currentMfaToken, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> RevokeTrustedMfaDeviceAsync(Guid userId, Guid deviceId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> RevokeCurrentTrustedMfaDeviceAsync(Guid userId, string? currentMfaToken, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 

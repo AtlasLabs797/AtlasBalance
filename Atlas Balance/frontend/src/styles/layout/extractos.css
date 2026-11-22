@@ -1,8 +1,4 @@
-.extractos-page {
-  display: grid;
-  gap: var(--space-5);
-  min-width: 0;
-}
+
 
 .extractos-header {
   display: grid;
@@ -14,22 +10,6 @@
 .extractos-header h1,
 .extractos-filters {
   min-width: 0;
-}
-
-.extractos-heading {
-  display: grid;
-  gap: var(--space-1);
-  min-width: min(100%, 24rem);
-}
-
-.extractos-heading h1 {
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-heavy);
-}
-
-.extractos-heading p {
-  margin: 0;
-  color: var(--color-text-secondary);
 }
 
 .extractos-mode-toggle {
@@ -70,9 +50,9 @@
   max-width: min(100%, 68rem);
   justify-self: end;
   padding: var(--space-3);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 82%, transparent);
 }
 
 .extractos-date-field {
@@ -83,17 +63,12 @@
 
 .extractos-date-field > span {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
 }
 
 .extractos-date-field .date-picker-trigger {
   min-height: 2.625rem;
-}
-
-.extractos-clear-period {
-  min-height: 2.625rem;
-  white-space: nowrap;
 }
 
 .add-row-field {
@@ -103,24 +78,24 @@
 }
 
 .add-row-field > span {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
 }
 
 .extracto-table-section {
-  --sheet-grid: color-mix(in srgb, var(--border-soft) 78%, var(--text-secondary) 22%);
-  --sheet-grid-strong: color-mix(in srgb, var(--border-soft) 55%, var(--text-secondary) 45%);
-  --sheet-head-bg: color-mix(in srgb, var(--surface-bg-sunken) 88%, var(--bg-surface) 12%);
-  --sheet-row-hover: var(--bg-hover);
+  --sheet-grid: color-mix(in srgb, var(--border-default) 78%, var(--text-secondary) 22%);
+  --sheet-grid-strong: color-mix(in srgb, var(--border-default) 55%, var(--text-secondary) 45%);
+  --sheet-head-bg: color-mix(in srgb, var(--surface-sunken) 88%, var(--surface-card) 12%);
+  --sheet-row-hover: var(--surface-hover);
   --sheet-selected: var(--accent-solid);
   --sheet-row-height: 56px;
   --sheet-head-height: 48px;
   --sheet-filter-height: 40px;
   --extracto-sheet-width: 100%;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   min-width: 0;
   overflow: hidden;
 }
@@ -133,7 +108,7 @@
   min-height: 3.5rem;
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--sheet-grid-strong);
-  background: var(--bg-surface);
+  background: var(--surface-card);
 }
 
 .extracto-table-toolbar > div:first-child {
@@ -143,14 +118,14 @@
 
 .extracto-table-toolbar strong {
   color: var(--text-primary);
-  font-family: var(--font-family-heading);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-heavy);
+  font-family: var(--font-display);
+  font-size: var(--text-17);
+  font-weight: var(--weight-bold);
 }
 
 .extracto-table-toolbar span {
   color: var(--text-secondary);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
 }
 
 .extracto-table-actions {
@@ -197,7 +172,7 @@
   align-items: center;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--sheet-grid-strong);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
 }
 
 .column-visibility-panel-actions {
@@ -211,7 +186,18 @@
 .column-visibility-panel-actions button {
   min-height: 2.25rem;
   border-radius: var(--radius-control);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
+}
+
+.column-visibility-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.column-visibility-item button {
+  min-width: 2rem;
+  min-height: 2rem;
 }
 
 .column-visibility-panel label {
@@ -220,10 +206,10 @@
   gap: var(--space-1);
   min-height: 2.75rem;
   padding: 0 var(--space-2);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-primary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   text-transform: none;
   cursor: pointer;
   border-radius: var(--radius-control);
@@ -231,12 +217,12 @@
 }
 
 .column-visibility-panel label:hover {
-  background: var(--bg-hover);
+  background: var(--surface-hover);
 }
 
 .column-visibility-panel label.column-visibility-panel-fixed {
   color: var(--text-secondary);
-  background: color-mix(in srgb, var(--bg-surface-soft) 82%, var(--bg-surface));
+  background: color-mix(in srgb, var(--surface-muted) 82%, var(--surface-card));
   cursor: default;
 }
 
@@ -244,11 +230,17 @@
   cursor: not-allowed;
 }
 
+.extracto-top-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
 .extracto-table-viewport {
   height: min(560px, calc(100dvh - var(--topbar-height) - 14rem));
   overflow: auto;
   position: relative;
-  background: var(--bg-surface);
+  background: var(--surface-card);
   scrollbar-gutter: stable;
 }
 
@@ -279,10 +271,11 @@
   height: var(--sheet-filter-height);
   min-height: var(--sheet-filter-height);
   padding: 0 var(--space-2);
-  background: var(--bg-surface);
+  background: var(--surface-card);
 }
 
 .extracto-filter-search {
+  container-type: inline-size;
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -292,13 +285,13 @@
   padding: 0 var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-full);
-  background: var(--control-bg);
+  background: var(--surface-card);
   color: var(--text-secondary);
 }
 
 .extracto-filter-search:focus-within {
-  border-color: var(--color-border-focus);
-  box-shadow: var(--shadow-focus);
+  border-color: var(--accent-solid);
+  box-shadow: var(--ring-focus);
 }
 
 .extracto-filter-search input {
@@ -311,7 +304,14 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
+}
+
+/* P2-13: en columnas estrechas la lupa se oculta para que "Filtrar" no se corte. */
+@container (max-width: 96px) {
+  .extracto-filter-search > svg {
+    display: none;
+  }
 }
 
 .extracto-filter-search input:focus {
@@ -337,7 +337,7 @@
   height: 1.8rem;
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .extracto-table-filter-row .date-picker-trigger svg {
@@ -360,9 +360,9 @@
   min-height: 2.5rem;
   padding: 0 var(--space-4);
   border-top: 1px solid var(--sheet-grid-strong);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .extracto-table-spacer {
@@ -397,12 +397,20 @@
   grid-template-columns: repeat(7, 120px);
   align-items: stretch;
   height: var(--sheet-row-height);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   transition: background-color var(--transition-fast);
 }
 
 .extracto-row:hover {
   background: var(--sheet-row-hover);
+}
+
+.extracto-row.flagged > .cell:first-child {
+  box-shadow: inset 2px 0 0 var(--status-warning-solid);
+}
+
+.extracto-row.flagged > .cell--fila_numero:first-child {
+  box-shadow: inset 2px 0 0 var(--status-warning-solid), 1px 0 0 var(--sheet-grid-strong);
 }
 
 .extracto-row.flagged .cell--flagged::before {
@@ -479,7 +487,7 @@
 .cell.head button small {
   color: var(--text-link);
   font-size: var(--text-10);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 .extracto-column-label {
@@ -496,14 +504,14 @@
   width: 100%;
   min-height: 1.85rem;
   border-radius: 0;
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .cell-edit-button {
   width: 100%;
   text-align: left;
   background: transparent;
-  color: var(--color-text-primary);
+  color: var(--text-primary);
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -538,16 +546,16 @@
 
 .cell-save-state {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
   line-height: 1;
 }
 
 .cell-save-state--ok {
-  color: var(--success-text);
+  color: var(--status-success-text);
 }
 
 .cell-save-state--error {
-  color: var(--danger-text);
+  color: var(--status-danger-text);
 }
 
 .cell-audit-button {
@@ -561,9 +569,9 @@
   padding: 0 var(--space-1);
   border: 1px solid var(--sheet-grid-strong);
   border-radius: var(--radius-control);
-  background: var(--surface-bg-raised);
+  background: var(--surface-raised);
   color: var(--text-link);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
   transition:
     opacity var(--transition-fast),
     transform var(--transition-fast);
@@ -581,11 +589,13 @@
 .cell--saldo {
   justify-content: flex-end;
   text-align: right;
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
 }
 
 .cell--fecha {
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
+  letter-spacing: 0;
 }
 
 .cell--comentarios .cell-edit-button {
@@ -599,8 +609,8 @@
   overflow: visible;
   background: var(--sheet-head-bg);
   box-shadow: 1px 0 0 var(--sheet-grid-strong);
-  font-family: var(--font-family-mono);
-  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   justify-content: flex-end;
 }
@@ -610,11 +620,11 @@
 }
 
 .cell-edit-button.signed-amount--positive {
-  color: var(--color-amount-positive);
+  color: var(--amount-positive);
 }
 
 .cell-edit-button.signed-amount--negative {
-  color: var(--color-amount-negative);
+  color: var(--amount-negative);
 }
 
 .flag-cell {
@@ -638,9 +648,9 @@
   height: 1.45rem;
   min-height: 1.45rem;
   padding: 0;
-  border-color: color-mix(in srgb, var(--accent-primary) 30%, var(--border-soft));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--bg-surface) 92%, var(--accent-primary) 8%);
+  border-color: color-mix(in srgb, var(--accent-solid) 30%, var(--border-default));
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--surface-card) 92%, var(--accent-solid) 8%);
   color: var(--text-link);
   opacity: 0.38;
   pointer-events: auto;
@@ -653,8 +663,8 @@
 }
 
 .extracto-row-insert-trigger:hover:not(:disabled) {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
   color: var(--text-inverse);
 }
 
@@ -680,7 +690,7 @@
   gap: var(--space-3);
   padding: var(--space-3);
   border-bottom: 1px solid var(--sheet-grid-strong);
-  background: color-mix(in srgb, var(--accent-primary) 5%, var(--bg-surface));
+  background: color-mix(in srgb, var(--accent-solid) 5%, var(--surface-card));
 }
 
 .extracto-insert-grid {
@@ -717,9 +727,9 @@
   padding: 0 var(--space-2);
   border: 1px solid var(--sheet-grid-strong);
   border-radius: var(--radius-control);
-  background: var(--bg-surface-soft);
+  background: var(--surface-muted);
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
+  font-size: var(--text-12);
 }
 
 .desglose-cell-button span,
@@ -730,13 +740,13 @@
 }
 
 .desglose-cell-button--cuadrado {
-  border-color: color-mix(in srgb, var(--success-text) 34%, var(--sheet-grid-strong));
-  color: var(--success-text);
+  border-color: color-mix(in srgb, var(--status-success-text) 34%, var(--sheet-grid-strong));
+  color: var(--status-success-text);
 }
 
 .desglose-cell-button--descuadrado {
-  border-color: color-mix(in srgb, var(--danger-text) 34%, var(--sheet-grid-strong));
-  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--status-danger-text) 34%, var(--sheet-grid-strong));
+  color: var(--status-danger-text);
 }
 
 .extracto-table-section--compact {
@@ -770,83 +780,18 @@
 .extracto-table-section .cell > input:not([type="checkbox"]):focus,
 .extracto-table-section .cell .flag-cell input:not([type="checkbox"]):focus {
   border-color: transparent;
-  background: var(--bg-surface);
+  background: var(--surface-card);
   box-shadow: inset 0 0 0 2px var(--sheet-selected);
 }
 
 .extracto-empty {
   padding: var(--space-4);
-  color: var(--color-text-secondary);
+  color: var(--text-secondary);
 }
 
 .extracto-empty .page-placeholder {
   box-shadow: none;
   margin: 0;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--scrim);
-  backdrop-filter: var(--blur-overlay);
-  -webkit-backdrop-filter: var(--blur-overlay);
-  z-index: var(--z-modal-backdrop);
-  display: grid;
-  place-items: center;
-}
-
-.audit-modal {
-  width: min(960px, 95vw);
-  max-height: 80vh;
-  overflow: auto;
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-modal);
-  box-shadow: var(--shadow-xl);
-  padding: var(--space-3);
-}
-
-.audit-modal-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.audit-modal table {
-  min-width: 640px;
-}
-
-.audit-modal td {
-  overflow-wrap: anywhere;
-}
-
-.desglose-modal {
-  width: min(1040px, 96vw);
-  max-height: 86vh;
-  overflow: auto;
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-modal);
-  box-shadow: var(--shadow-xl);
-  padding: var(--space-3);
-}
-
-.desglose-modal-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.desglose-modal-header h3 {
-  margin: 0;
-}
-
-.desglose-modal-header p {
-  margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
 }
 
 .desglose-summary {
@@ -855,8 +800,8 @@
   gap: var(--space-2);
   padding: var(--space-2);
   margin-bottom: var(--space-3);
-  border: 1px solid var(--border-soft);
-  background: var(--bg-surface-soft);
+  border: 1px solid var(--border-default);
+  background: var(--surface-muted);
 }
 
 .desglose-summary span {
@@ -867,15 +812,15 @@
 .desglose-summary strong {
   display: block;
   color: var(--text-primary);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
 }
 
 .desglose-summary--cuadrado {
-  border-color: color-mix(in srgb, var(--success-text) 30%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--status-success-text) 30%, var(--border-default));
 }
 
 .desglose-summary--descuadrado {
-  border-color: color-mix(in srgb, var(--danger-text) 34%, var(--border-soft));
+  border-color: color-mix(in srgb, var(--status-danger-text) 34%, var(--border-default));
 }
 
 .desglose-lines {
@@ -892,8 +837,8 @@
 
 .desglose-line--head {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
 }
 
@@ -910,8 +855,8 @@
 .desglose-field > span {
   display: none;
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
 }
 
 .desglose-field input {
@@ -931,33 +876,15 @@
   place-items: center;
 }
 
-.desglose-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-
-.desglose-modal-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-@media (max-width: 1200px) {
-  .extractos-header {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 1199.98px) {
 
   .extractos-mode-toggle,
   .extractos-filters {
     justify-self: stretch;
     justify-content: flex-start;
-  }
-}
+  }}
 
-@media (max-width: 900px) {
+@media (max-width: 1023.98px) {
   .desglose-summary {
     grid-template-columns: 1fr;
   }
@@ -965,7 +892,7 @@
   .desglose-line {
     grid-template-columns: 1fr;
     padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-default);
   }
 
   .desglose-line--head {
@@ -992,8 +919,7 @@
   .extractos-date-field {
     min-width: min(100%, 12rem);
     flex: 1 1 12rem;
-  }
-}
+  }}
 
 @media (hover: none), (pointer: coarse) {
   .extracto-table-section {
@@ -1002,6 +928,12 @@
 
   .extracto-table-section--compact {
     --sheet-head-height: 48px;
+  }
+
+  /* Fila de filtros a 44px; el virtualizador solo estima filas */
+  .extracto-table-section,
+  .extracto-table-section--compact {
+    --sheet-filter-height: var(--control-height);
   }
 
   .extractos-date-field .date-picker-trigger,
@@ -1036,7 +968,7 @@
 
   .cell-audit-button::before {
     content: "Hist.";
-    font-size: var(--font-size-xs);
+    font-size: var(--text-12);
   }
 
   .extracto-row-insert-trigger {
@@ -1055,71 +987,32 @@
 
   .cell--fila_numero > span:not(.cell-edit-shell) {
     padding-left: calc(var(--control-height) + var(--space-1));
-  }
-}
-
-/* V-03.01: Extractos — jerarquía de página y rejilla densa de movimientos. */
-.extractos-page {
-  gap: var(--space-9);
-  padding-bottom: var(--space-9);
-}
+  }}
 
 .extractos-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-7);
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
-.extractos-heading {
-  gap: var(--space-2);
-}
-
-.extractos-eyebrow,
-.extractos-filter-eyebrow {
-  color: var(--accent-text);
-  font: var(--type-overline);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-}
-
-.extractos-heading h1 {
-  margin: 0;
-  color: var(--text-primary);
-  font: var(--type-title-1);
-  letter-spacing: var(--tracking-display);
-}
-
-.extractos-heading p {
-  max-width: 62ch;
-  color: var(--text-secondary);
-  font: var(--type-body-sm);
-}
-
-.extractos-header-actions {
-  display: flex;
-  align-items: center;
-  flex: none;
 }
 
 .extractos-mode-toggle {
-  min-height: var(--control-height);
-  gap: var(--space-2);
-  padding: var(--space-1);
+  width: fit-content;
+  gap: var(--space-1);
+  padding: 3px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-full);
   background: var(--surface-sunken);
 }
 
+/* P2-6: mismo control segmentado que periodo/divisa del dashboard (tab 34px, label 14px). */
 .extractos-mode-toggle button {
-  min-height: calc(var(--control-height) - 8px);
-  padding: 0 var(--space-6);
+  min-height: 34px;
+  padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-full);
   color: var(--text-secondary);
-  font: var(--type-caption);
+  font: var(--type-label);
 }
 
 .extractos-mode-toggle button:hover:not(:disabled) {
@@ -1128,44 +1021,9 @@
 }
 
 .extractos-mode-toggle button.active {
-  border-color: var(--border-default);
+  border-color: transparent;
   background: var(--surface-card);
   color: var(--text-primary);
-}
-
-.extractos-filter-bar {
-  display: grid;
-  gap: var(--space-6);
-  padding: var(--pad-card-compact);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-card);
-}
-
-.extractos-filter-bar-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-7);
-}
-
-.extractos-filter-bar-head > div {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.extractos-filter-bar h2 {
-  margin: 0;
-  color: var(--text-primary);
-  font: var(--type-title-3);
-  letter-spacing: var(--tracking-heading);
-}
-
-.extractos-filter-summary {
-  color: var(--text-tertiary);
-  font: var(--type-mono);
-  font-size: var(--text-12);
-  white-space: nowrap;
 }
 
 .extractos-filters {
@@ -1198,58 +1056,19 @@
 }
 
 .extractos-filters .app-select-trigger,
-.extractos-filters .date-picker-trigger {
-  min-height: var(--control-height);
+.extractos-filters .date-picker-trigger,
+.extractos-filters .searchable-select-control {
+  box-sizing: border-box;
   height: var(--control-height);
-  border-color: var(--border-strong);
+  min-height: var(--control-height);
+  border-color: var(--border-control);
   background: var(--surface-card);
-  font: var(--type-body-sm);
+  font-size: var(--text-14);
+  line-height: 1.2;
 }
 
 .extractos-filters .date-picker-trigger {
   padding-inline: var(--space-5);
-}
-
-.searchable-select-control {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  min-height: var(--control-height);
-  height: var(--control-height);
-  gap: var(--space-2);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface-card);
-  color: var(--text-primary);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
-}
-
-.searchable-select-control:hover {
-  background: var(--surface-hover);
-}
-
-.searchable-select-control:focus-within {
-  border-color: var(--accent-500);
-  box-shadow: var(--ring-focus);
-}
-
-.searchable-select-input {
-  flex: 1 1 auto;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: inherit;
-  font: var(--type-body-sm);
-}
-
-.searchable-select-input::placeholder {
-  color: var(--text-tertiary);
 }
 
 .searchable-select-control .app-select-chevron {
@@ -1259,67 +1078,6 @@
 .searchable-select[data-state='open'] .app-select-chevron {
   transform: translateY(0.12rem) rotate(225deg);
   opacity: 1;
-}
-
-.extractos-searchable-select-popover {
-  position: fixed;
-  z-index: var(--z-dropdown);
-  display: grid;
-  gap: 0.15rem;
-  max-height: min(18rem, 54vh);
-  overflow: auto;
-  padding: var(--space-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-overlay);
-}
-
-.extractos-searchable-select-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: var(--control-height-compact);
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font: var(--type-body-sm);
-  cursor: pointer;
-  user-select: none;
-}
-
-.extractos-searchable-select-option:hover,
-.extractos-searchable-select-option[data-active='true'] {
-  background: var(--surface-hover);
-}
-
-.extractos-searchable-select-option[aria-selected='true'] {
-  color: var(--accent-text);
-  font-weight: var(--font-weight-semibold);
-}
-
-.extractos-searchable-select-empty {
-  padding: var(--space-3);
-  color: var(--text-tertiary);
-  font: var(--type-caption);
-}
-
-.extractos-clear-period {
-  align-self: end;
-  min-height: var(--control-height);
-  padding-inline: var(--space-5);
-  border-color: transparent;
-  background: transparent;
-  color: var(--accent-text);
-  font: var(--type-label);
-  white-space: nowrap;
-}
-
-.extractos-clear-period:hover:not(:disabled) {
-  border-color: var(--accent-soft-border);
-  background: var(--accent-soft);
-  color: var(--accent-text);
 }
 
 .extracto-table-section {
@@ -1456,7 +1214,7 @@
 
 .extracto-filter-search {
   height: var(--control-height-sm);
-  padding-inline: var(--space-4);
+  padding-inline: var(--space-3);
   border-color: var(--border-strong);
   background: var(--surface-card);
 }
@@ -1529,6 +1287,16 @@
   background: var(--surface-card);
 }
 
+.extracto-row.flagged,
+.extracto-row.flagged .cell--fila_numero {
+  background: var(--status-warning-bg);
+}
+
+.extracto-row.flagged:hover,
+.extracto-row.flagged:hover .cell--fila_numero {
+  background: color-mix(in srgb, var(--status-warning-bg) 85%, var(--status-warning-solid));
+}
+
 .cell.head.cell--fila_numero {
   background: var(--surface-card);
 }
@@ -1571,6 +1339,52 @@
   min-height: 40px;
 }
 
+/* Densidad de la tabla (uiStore.density -> <html data-density>).
+   "comodo" (por defecto) = valores de .extracto-table-section--compact: filas 44px.
+   "compacto" = filas 36px; la celda sigue siendo --type-body-sm (14px).
+   Mantener 44/36 sincronizado con src/utils/density.ts (virtualizador). */
+:root[data-density="compacto"] .extracto-table-section--compact {
+  --sheet-row-height: 36px;
+  --sheet-head-height: 36px;
+  --sheet-filter-height: 32px;
+}
+
+:root[data-density="compacto"] .extracto-table-section--compact .cell.head,
+:root[data-density="compacto"] .extracto-table-section--compact .cell.head button,
+:root[data-density="compacto"] .extracto-table-section--compact .extracto-column-label {
+  min-height: var(--sheet-head-height);
+}
+
+/* En 36px, boton (20px de texto) + etiqueta Guardando/Guardado (12px) deben caber
+   sin recorte: el boton pierde su min-height solo mientras hay etiqueta. */
+:root[data-density="compacto"] .cell-edit-shell:has(.cell-save-state) .cell-edit-button {
+  min-height: 0;
+}
+
+:root[data-density="compacto"] .cell-save-state:not(.cell-save-state--error) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Objetivos tactiles: en puntero grueso el modo compacto no baja de 44px. */
+@media (hover: none), (pointer: coarse) {
+  :root[data-density="compacto"] .extracto-table-section--compact {
+    --sheet-row-height: var(--row-height-compact);
+    --sheet-head-height: 48px;
+    --sheet-filter-height: var(--control-height);
+  }
+
+  :root[data-density="compacto"] .extracto-table-section--compact .cell.head,
+  :root[data-density="compacto"] .extracto-table-section--compact .cell.head button,
+  :root[data-density="compacto"] .extracto-table-section--compact .extracto-column-label {
+    min-height: 44px;
+  }
+
+  :root[data-density="compacto"] .cell-edit-shell:has(.cell-save-state) .cell-edit-button {
+    min-height: calc(var(--sheet-row-height) - 2px);
+  }}
+
 .extracto-table-footer {
   min-height: 44px;
   padding-inline: var(--pad-card-compact);
@@ -1580,42 +1394,13 @@
   font: var(--type-caption);
 }
 
-.extractos-page > .users-pagination {
-  margin-top: calc(var(--space-9) * -1 + var(--space-4));
-  padding: var(--space-4) var(--pad-card-compact);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  background: var(--surface-card);
-}
-
-.extractos-page > .users-pagination span {
-  color: var(--text-tertiary);
-  font: var(--type-caption);
-}
-
-@media (max-width: 1180px) {
-  .extractos-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .extractos-header-actions {
-    width: 100%;
-  }
+@media (max-width: 1199.98px) {
 
   .extractos-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+  }}
 
-@media (max-width: 720px) {
-  .extractos-page {
-    gap: var(--space-7);
-  }
-
-  .extractos-heading h1 {
-    font-size: var(--text-28);
-  }
+@media (max-width: 767.98px) {
 
   .extractos-header-actions,
   .extractos-mode-toggle {
@@ -1626,26 +1411,8 @@
     flex: 1;
   }
 
-  .extractos-filter-bar {
-    padding: var(--space-6);
-  }
-
-  .extractos-filter-bar-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .extractos-filter-summary {
-    white-space: normal;
-  }
-
   .extractos-filters {
     grid-template-columns: 1fr;
-  }
-
-  .extractos-clear-period {
-    justify-self: start;
   }
 
   .extracto-table-toolbar {
@@ -1682,10 +1449,25 @@
   .extracto-table-footer {
     flex-wrap: wrap;
     padding-block: var(--space-4);
-  }
+  }}
 
-  .extractos-page > .users-pagination {
-    margin-top: calc(var(--space-7) * -1 + var(--space-4));
-    flex-wrap: wrap;
-  }
+/* Alto Contraste: el inset box-shadow de la celda activa desaparece; se pinta con outline del sistema */
+@media (forced-colors: active) {
+  .cell:focus,
+  .cell:focus-within,
+  .cell[aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }}
+
+/* D-5 (LOTE 8): coherencia de superficies de esta hoja. Movida desde
+   layout/system-coherence.css (que se cargaba la ultima); al final de la hoja
+   conserva la precedencia que tenia sobre las reglas de la propia hoja. */
+.extracto-table-section {
+  border-color: var(--border-default);
+  background: var(--surface-raised);
+}
+
+.extracto-table-section {
+  overflow: clip;
 }

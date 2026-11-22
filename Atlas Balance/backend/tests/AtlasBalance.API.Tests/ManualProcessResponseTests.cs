@@ -385,11 +385,6 @@ public class ManualProcessResponseTests
             return Task.FromResult(true);
         }
 
-        public Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_canWriteCuenta);
-        }
-
         public Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
         {
             return Task.FromResult(_canWriteCuenta);
@@ -398,6 +393,28 @@ public class ManualProcessResponseTests
         public Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
         {
             return Task.FromResult(_canWriteCuenta);
+        }
+
+        // S-9/M-3: miembros anadidos a IUserAccessService.
+        public Task<UserAccessScope> GetScopeAsync(Guid usuarioId, string rol, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new UserAccessScope
+            {
+                UserId = usuarioId,
+                IsAdmin = true,
+                HasPermissions = true,
+                HasGlobalAccess = true
+            });
+        }
+
+        public Task<bool> CanCuentaAsync(UserAccessAction accion, Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlySet<Guid>> GetCuentasAccesiblesAsync(UserAccessAction accion, Guid usuarioId, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlySet<Guid>>(new HashSet<Guid>());
         }
     }
 

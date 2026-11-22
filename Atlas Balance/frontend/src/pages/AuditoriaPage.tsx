@@ -4,6 +4,7 @@ import { AppSelect } from '@/components/common/AppSelect';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import api from '@/services/api';
 import { IntegrationAuditTable } from '@/components/auditoria/IntegrationAuditTable';
@@ -14,6 +15,7 @@ import { usePaisScopeStore } from '@/stores/paisScopeStore';
 import type { AuditoriaFiltros, AuditoriaListItem, PaginatedResponse } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
 import { formatDateTime } from '@/utils/formatters';
+import '@/styles/layout/routes/auditoria.css';
 
 type ExpandedRowsState = Record<string, boolean>;
 type AuditTab = 'sistema' | 'integraciones';
@@ -217,20 +219,27 @@ export default function AuditoriaPage() {
   };
 
   return (
-    <section className="auditoria-page">
-      <header className="auditoria-header">
-        <div>
-          <h1>Auditoría</h1>
-          <p className="dashboard-subtitle">Historial completo con filtros combinados y exportación CSV</p>
+    <section className="auditoria-page page">
+      <header className="auditoria-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Auditoría</h1>
+          <p className="page-header__subtitle">Historial completo con filtros combinados y exportación CSV</p>
         </div>
+        {tab === 'sistema' ? (
+          <div className="page-header__actions">
+            <button type="button" className="button-primary" onClick={exportCsv} disabled={exporting || loading}>
+              {exporting ? 'Exportando...' : 'Exportar CSV'}
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <div className="config-tabs">
         <button type="button" className={tab === 'sistema' ? 'config-tab config-tab--active' : 'config-tab'} onClick={() => setTab('sistema')}>
-          Auditoría Sistema
+          Auditoría del sistema
         </button>
         <button type="button" className={tab === 'integraciones' ? 'config-tab config-tab--active' : 'config-tab'} onClick={() => setTab('integraciones')}>
-          Auditoría Integraciones
+          Auditoría de integraciones
         </button>
       </div>
 
@@ -238,12 +247,6 @@ export default function AuditoriaPage() {
 
       {tab === 'sistema' ? (
         <>
-          <div className="auditoria-header auditoria-actions-header">
-            <button type="button" onClick={exportCsv} disabled={exporting || loading}>
-              {exporting ? 'Exportando...' : 'Exportar CSV'}
-            </button>
-          </div>
-
           <div className="auditoria-filtros">
             <AppSelect
               label="Usuario"
@@ -314,7 +317,7 @@ export default function AuditoriaPage() {
               />
             </div>
 
-            <button type="button" onClick={resetFiltros}>
+            <button type="button" className="button-secondary" onClick={resetFiltros}>
               Limpiar filtros
             </button>
           </div>
@@ -322,38 +325,35 @@ export default function AuditoriaPage() {
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
           <div className="users-table-card auditoria-table-card">
-            {loading ? <p className="import-muted">Cargando auditoría...</p> : null}
+            {loading ? <PageSkeleton variant="table" rows={5} columns={8} label="Cargando auditoría..." /> : null}
             {!loading && rows.length === 0 ? (
               <EmptyState
+                headingLevel="h2"
                 title="Sin registros para los filtros seleccionados."
                 subtitle="Amplía el rango de fechas o quita algún filtro para ver más resultados."
               />
             ) : null}
             {!loading && rows.length > 0 ? (
               <>
-                <div className="users-table-scroll">
+                <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de auditoría">
                   <table>
+                    <caption className="sr-only">Registro de auditoría</caption>
                     <thead>
                       <tr>
-                        <th />
-                        <th>Fecha</th>
-                        <th>Usuario</th>
-                        <th>Acción</th>
-                        <th>Cuenta</th>
-                        <th>Celda</th>
-                        <th>Columna</th>
-                        <th>IP</th>
+                        <th scope="col">Fecha</th>
+                        <th scope="col">Usuario</th>
+                        <th scope="col">Acción</th>
+                        <th scope="col">Cuenta</th>
+                        <th scope="col">Celda</th>
+                        <th scope="col">Columna</th>
+                        <th scope="col">IP</th>
+                        <th scope="col">Detalle</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((row) => (
                         <Fragment key={row.id}>
                           <tr>
-                            <td>
-                              <button type="button" onClick={() => toggleExpanded(row.id)}>
-                                {expandedRows[row.id] ? 'Ocultar' : 'Ver'}
-                              </button>
-                            </td>
                             <td>{formatDateTime(row.timestamp)}</td>
                             <td>{row.usuario_nombre ?? 'Sistema'}</td>
                             <td>{row.tipo_accion}</td>
@@ -361,6 +361,11 @@ export default function AuditoriaPage() {
                             <td>{row.celda_referencia ?? 'Sin celda'}</td>
                             <td>{mapColumnaNombre(row.columna_nombre)}</td>
                             <td>{row.ip_address ?? 'Sin IP'}</td>
+                            <td className="users-row-actions">
+                              <button type="button" className="button-secondary" onClick={() => toggleExpanded(row.id)}>
+                                {expandedRows[row.id] ? 'Ocultar' : 'Ver'}
+                              </button>
+                            </td>
                           </tr>
 
                           {expandedRows[row.id] ? (
@@ -372,16 +377,16 @@ export default function AuditoriaPage() {
                                   </div>
                                   <div>
                                     <strong>Valor anterior:</strong>{' '}
-                                    {isAmountColumn(row.columna_nombre) && row.valor_anterior !== null ? (
-                                      <SignedAmount value={row.valor_anterior} showSign>{row.valor_anterior}</SignedAmount>
+                                    {isAmountColumn(row.columna_nombre) && row.valor_anterior != null ? (
+                                      <SignedAmount value={row.valor_anterior}>{row.valor_anterior}</SignedAmount>
                                     ) : (
                                       row.valor_anterior ?? 'Sin valor'
                                     )}
                                   </div>
                                   <div>
                                     <strong>Valor nuevo:</strong>{' '}
-                                    {isAmountColumn(row.columna_nombre) && row.valor_nuevo !== null ? (
-                                      <SignedAmount value={row.valor_nuevo} showSign>{row.valor_nuevo}</SignedAmount>
+                                    {isAmountColumn(row.columna_nombre) && row.valor_nuevo != null ? (
+                                      <SignedAmount value={row.valor_nuevo}>{row.valor_nuevo}</SignedAmount>
                                     ) : (
                                       row.valor_nuevo ?? 'Sin valor'
                                     )}

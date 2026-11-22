@@ -58,6 +58,7 @@ public sealed class CuentasController : ControllerBase
         [FromQuery] TipoTitular? tipoTitular = null,
         [FromQuery] TipoCuenta? tipoCuenta = null,
         [FromQuery] bool incluirEliminados = false,
+        [FromQuery] bool soloEliminados = false,
         CancellationToken cancellationToken = default)
     {
         // SEC V-02.09: cota del filtro libre que viaja a LIKE/ILike; evita
@@ -71,15 +72,23 @@ public sealed class CuentasController : ControllerBase
         if (!scope.IsAdmin)
         {
             incluirEliminados = false;
+            soloEliminados = false;
         }
 
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
-        IQueryable<Cuenta> query = incluirEliminados
+        IQueryable<Cuenta> query = incluirEliminados || soloEliminados
             ? _dbContext.Cuentas.IgnoreQueryFilters()
             : _dbContext.Cuentas;
+
+        // F-2: el filtro de solo eliminados se aplica ANTES de contar y paginar,
+        // de modo que "total" y las paginas cubren unicamente la papelera.
+        if (soloEliminados)
+        {
+            query = query.Where(c => c.DeletedAt != null);
+        }
 
         query = _userAccessService.ApplyCuentaScope(query, scope);
 
@@ -110,7 +119,8 @@ public sealed class CuentasController : ControllerBase
                 c.Nombre.ToLower().Contains(term) ||
                 (c.BancoNombre != null && c.BancoNombre.ToLower().Contains(term)) ||
                 (c.NumeroCuenta != null && c.NumeroCuenta.ToLower().Contains(term)) ||
-                (c.Iban != null && c.Iban.ToLower().Contains(term)) ||
+                // Solo ADMIN busca por IBAN completo; si no, la busqueda seria un oraculo del valor enmascarado.
+                (scope.IsAdmin && c.Iban != null && c.Iban.ToLower().Contains(term)) ||
                 (c.PaisId != null && _dbContext.Paises.IgnoreQueryFilters().Any(p => p.Id == c.PaisId && p.Nombre.ToLower().Contains(term))) ||
                 (c.Notas != null && c.Notas.ToLower().Contains(term)));
         }
@@ -212,7 +222,7 @@ public sealed class CuentasController : ControllerBase
             TitularTipo = titular?.Tipo.ToString() ?? string.Empty,
             Nombre = cuenta.Nombre,
             NumeroCuenta = cuenta.NumeroCuenta,
-            Iban = cuenta.Iban,
+            Iban = scope.IsAdmin ? cuenta.Iban : PiiMasking.MaskIban(cuenta.Iban),
             BancoNombre = cuenta.BancoNombre,
             Divisa = cuenta.Divisa,
             FormatoId = cuenta.FormatoId,
@@ -422,6 +432,14 @@ public sealed class CuentasController : ControllerBase
             return NotFound(new { error = "Cuenta no encontrada" });
         }
 
+        // Un IBAN enmascarado (contiene '*') significa "sin cambio": se conserva el
+        // guardado y no se valida ni se sobrescribe.
+        var ibanEnmascarado = request.Iban?.Contains('*') == true;
+        if (ibanEnmascarado)
+        {
+            request.Iban = null;
+        }
+
         var validation = await ValidateCuentaRequestAsync(request, id, cancellationToken);
         if (validation.Error is not null)
         {
@@ -434,10 +452,25 @@ public sealed class CuentasController : ControllerBase
             return BadRequest(new { error = "No se puede convertir una cuenta de plazo fijo a otro tipo; crea una cuenta nueva" });
         }
 
+        // B-14: los extractos no guardan divisa propia, asi que cambiar la de la
+        // cuenta reinterpreta todos sus importes en otra moneda. Si la cuenta
+        // tiene extractos vivos (no borrados) el cambio se rechaza con 409.
+        if (!string.Equals(cuenta.Divisa, validation.Divisa, StringComparison.OrdinalIgnoreCase))
+        {
+            var tieneExtractos = await _dbContext.Extractos.AnyAsync(e => e.CuentaId == cuenta.Id, cancellationToken);
+            if (tieneExtractos)
+            {
+                return Conflict(new { error = "La cuenta tiene extractos: no se puede cambiar su divisa. Crea una cuenta nueva o elimina los extractos de esta cuenta antes de cambiarla." });
+            }
+        }
+
         cuenta.TitularId = request.TitularId;
         cuenta.Nombre = request.Nombre.Trim();
         cuenta.NumeroCuenta = validation.NumeroCuenta;
-        cuenta.Iban = validation.Iban;
+        if (!(ibanEnmascarado && validation.TipoCuenta == TipoCuenta.NORMAL))
+        {
+            cuenta.Iban = validation.Iban;
+        }
         cuenta.BancoNombre = validation.BancoNombre;
         cuenta.Divisa = validation.Divisa!;
         cuenta.FormatoId = SupportsFormatoImportacion(validation.TipoCuenta) ? request.FormatoId : null;
@@ -594,7 +627,7 @@ public sealed class CuentasController : ControllerBase
 
     private static IQueryable<Cuenta> ApplySorting(IQueryable<Cuenta> query, string sortBy, bool desc)
     {
-        return (sortBy.ToLowerInvariant(), desc) switch
+        var ordered = (sortBy.ToLowerInvariant(), desc) switch
         {
             ("nombre", true) => query.OrderByDescending(c => c.Nombre),
             ("nombre", false) => query.OrderBy(c => c.Nombre),
@@ -604,8 +637,16 @@ public sealed class CuentasController : ControllerBase
             ("fecha_creacion", false) => query.OrderBy(c => c.FechaCreacion),
             ("activa", true) => query.OrderByDescending(c => c.Activa),
             ("activa", false) => query.OrderBy(c => c.Activa),
-            _ => query.OrderByDescending(c => c.FechaCreacion)
+            // R-3 (seccion 9): el caso por defecto tambien respeta `sortDir`.
+            // Antes ignoraba `desc`, asi que un `sortBy` desconocido salia
+            // siempre en descendente por fecha de creacion.
+            _ => desc
+                ? query.OrderByDescending(c => c.FechaCreacion)
+                : query.OrderBy(c => c.FechaCreacion)
         };
+
+        // B-15: desempate estable por clave primaria, despues del campo pedido.
+        return ((IOrderedQueryable<Cuenta>)ordered).ThenBy(c => c.Id);
     }
 
     private Guid? GetCurrentUserId()

@@ -11,6 +11,14 @@ namespace AtlasBalance.API.Services;
 public interface IUserAccessService
 {
     Task<UserAccessScope> GetScopeAsync(ClaimsPrincipal user, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// S-9/M-3: mismo scope que la variante con principal, pero construido a
+    /// partir de (usuarioId, rol). La necesitan los servicios que reciben esas
+    /// dos piezas en vez de un ClaimsPrincipal (ConciliacionService,
+    /// ImportacionService).
+    /// </summary>
+    Task<UserAccessScope> GetScopeAsync(Guid usuarioId, string rol, CancellationToken cancellationToken);
     IQueryable<Titular> ApplyTitularScope(IQueryable<Titular> query, UserAccessScope scope);
     IQueryable<Cuenta> ApplyCuentaScope(IQueryable<Cuenta> query, UserAccessScope scope);
     Task<bool> CanAccessTitularAsync(Guid titularId, UserAccessScope scope, CancellationToken cancellationToken);
@@ -18,9 +26,21 @@ public interface IUserAccessService
     Task<bool> CanWriteCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanEditCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanReviewCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
-    Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
     Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// S-9/M-3: chequeo booleano de una accion sobre una cuenta, con el
+    /// predicado de <see cref="UserAccessAction"/>.
+    /// </summary>
+    Task<bool> CanCuentaAsync(UserAccessAction accion, Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// S-9/M-3: conjunto de cuentas accesibles para una accion, resuelto en UNA
+    /// query (no un chequeo por cuenta). Usa el mismo predicado que el chequeo
+    /// booleano, asi que las dos rutas comparten la definicion de la regla.
+    /// </summary>
+    Task<IReadOnlySet<Guid>> GetCuentasAccesiblesAsync(UserAccessAction accion, Guid usuarioId, CancellationToken cancellationToken);
 }
 
 public sealed class UserAccessScope
@@ -34,6 +54,42 @@ public sealed class UserAccessScope
     public IReadOnlyList<Guid> CuentaIds { get; init; } = [];
 }
 
+/// <summary>
+/// S-9/M-3 (LOTE 6): acciones con permiso sobre una cuenta. Cada accion tiene
+/// UN predicado, definido en <see cref="UserAccessService"/>. Los servicios
+/// (ConciliacionService, ImportacionService) consultan esa definicion en lugar
+/// de reimplementar la regla.
+/// </summary>
+public enum UserAccessAction
+{
+    /// <summary>Conciliar: estricto, `puede_conciliar`.</summary>
+    Conciliar,
+
+    /// <summary>Cerrar conciliacion: estricto, `puede_cerrar_conciliacion`.</summary>
+    CerrarConciliacion,
+
+    /// <summary>
+    /// Alcance general de conciliacion (lectura de movimientos y
+    /// conciliaciones): `puede_conciliar` o `puede_cerrar_conciliacion`.
+    /// </summary>
+    AlcanceConciliacion,
+
+    /// <summary>Importar: `puede_importar`.</summary>
+    Importar,
+
+    /// <summary>Ver una cuenta en el ambito de importacion.</summary>
+    Ver,
+
+    /// <summary>Revisar lineas: `puede_revisar_lineas` o `puede_editar_lineas`.</summary>
+    Revisar,
+
+    /// <summary>Aprobar una importacion: `puede_aprobar_importaciones` o `puede_importar`.</summary>
+    AprobarImportacion,
+
+    /// <summary>Eliminar lineas (borrado masivo, p. ej. revertir un lote): `puede_eliminar_lineas`.</summary>
+    EliminarLineas
+}
+
 public sealed class UserAccessService : IUserAccessService
 {
     internal const string Namespace = "user_access_scope";
@@ -41,6 +97,26 @@ public sealed class UserAccessService : IUserAccessService
     private readonly AppDbContext _dbContext;
     private readonly ICacheService _cacheService;
     private readonly CachingOptions _cachingOptions;
+
+    // S-9/M-3: definicion unica de las reglas de permiso por accion. El
+    // predicado se evalua contra PERMISOS_USUARIO y se acota despues por
+    // pais/titular/cuenta. Tanto el chequeo booleano por cuenta como el
+    // conjunto de cuentas accesibles salen de aqui.
+    private static readonly IReadOnlyDictionary<UserAccessAction, Expression<Func<PermisoUsuario, bool>>> PermissionPredicates =
+        new Dictionary<UserAccessAction, Expression<Func<PermisoUsuario, bool>>>
+        {
+            [UserAccessAction.Conciliar] = p => p.PuedeConciliar,
+            [UserAccessAction.CerrarConciliacion] = p => p.PuedeCerrarConciliacion,
+            [UserAccessAction.AlcanceConciliacion] = p => p.PuedeConciliar || p.PuedeCerrarConciliacion,
+            [UserAccessAction.Importar] = p => p.PuedeImportar,
+            [UserAccessAction.Ver] = p => p.PuedeVerCuentas ||
+                                         p.PuedeImportar ||
+                                         p.PuedeRevisarLineas ||
+                                         p.PuedeAprobarImportaciones,
+            [UserAccessAction.Revisar] = p => p.PuedeRevisarLineas || p.PuedeEditarLineas,
+            [UserAccessAction.AprobarImportacion] = p => p.PuedeAprobarImportaciones || p.PuedeImportar,
+            [UserAccessAction.EliminarLineas] = p => p.PuedeEliminarLineas
+        };
 
     public UserAccessService(
         AppDbContext dbContext,
@@ -64,7 +140,18 @@ public sealed class UserAccessService : IUserAccessService
             };
         }
 
-        if (user.IsInRole(nameof(RolUsuario.ADMIN)))
+        var rol = user.IsInRole(nameof(RolUsuario.ADMIN)) ? RolUsuario.ADMIN.ToString() : string.Empty;
+        return await GetScopeAsync(userId, rol, cancellationToken);
+    }
+
+    /// <summary>
+    /// S-9/M-3: construye el scope a partir de (usuarioId, rol). Es la misma
+    /// fuente que la variante con principal: mismo bypass de ADMIN y mismo
+    /// cache (namespace + TTL de CachingOptions.UserScopeTtl).
+    /// </summary>
+    public async Task<UserAccessScope> GetScopeAsync(Guid usuarioId, string rol, CancellationToken cancellationToken)
+    {
+        if (string.Equals(rol, RolUsuario.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             // Admin bypass: no tocamos el cache porque el resultado es trivial
             // (no requiere queries) y no queremos que el TTL oculte cambios de
@@ -72,17 +159,27 @@ public sealed class UserAccessService : IUserAccessService
             // SecurityStamp ya invalida el JWT en el middleware.
             return new UserAccessScope
             {
-                UserId = userId,
+                UserId = usuarioId,
                 IsAdmin = true,
                 HasPermissions = true,
                 HasGlobalAccess = true
             };
         }
 
+        if (usuarioId == Guid.Empty)
+        {
+            return new UserAccessScope
+            {
+                UserId = Guid.Empty,
+                IsAdmin = false,
+                HasPermissions = false
+            };
+        }
+
         return await _cacheService.GetOrLoadAsync(
             new CacheNamespace(Namespace),
-            userId.ToString("N"),
-            ct => LoadScopeFromDatabaseAsync(userId, ct),
+            usuarioId.ToString("N"),
+            ct => LoadScopeFromDatabaseAsync(usuarioId, ct),
             _cachingOptions.UserScopeTtl,
             cancellationToken);
     }
@@ -304,35 +401,59 @@ public sealed class UserAccessService : IUserAccessService
         return HasCuentaPermissionAsync(
             cuentaId,
             scope,
-            permiso => permiso.PuedeRevisarLineas || permiso.PuedeEditarLineas,
-            cancellationToken);
-    }
-
-    public Task<bool> CanApproveImportacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
-    {
-        return HasCuentaPermissionAsync(
-            cuentaId,
-            scope,
-            permiso => permiso.PuedeAprobarImportaciones || permiso.PuedeImportar,
+            PermissionPredicates[UserAccessAction.Revisar],
             cancellationToken);
     }
 
     public Task<bool> CanConciliarCuentaAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
     {
-        return HasCuentaPermissionAsync(
-            cuentaId,
-            scope,
-            permiso => permiso.PuedeConciliar || permiso.PuedeEditarLineas || permiso.PuedeImportar,
-            cancellationToken);
+        return CanCuentaAsync(UserAccessAction.Conciliar, cuentaId, scope, cancellationToken);
     }
 
     public Task<bool> CanCerrarConciliacionAsync(Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
     {
-        return HasCuentaPermissionAsync(
-            cuentaId,
-            scope,
-            permiso => permiso.PuedeCerrarConciliacion || permiso.PuedeConciliar,
-            cancellationToken);
+        return CanCuentaAsync(UserAccessAction.CerrarConciliacion, cuentaId, scope, cancellationToken);
+    }
+
+    /// <summary>
+    /// S-9/M-3: unico chequeo por accion. El predicado sale del mapa
+    /// <see cref="PermissionPredicates"/>, asi que no puede divergir del que
+    /// usa el conjunto de cuentas accesibles.
+    /// </summary>
+    public Task<bool> CanCuentaAsync(UserAccessAction accion, Guid cuentaId, UserAccessScope scope, CancellationToken cancellationToken)
+    {
+        return HasCuentaPermissionAsync(cuentaId, scope, PermissionPredicates[accion], cancellationToken);
+    }
+
+    /// <summary>
+    /// S-9/M-3: cuentas accesibles para una accion, resueltas en UNA query
+    /// (permisos x cuentas x titulares). Es la version de conjunto de la misma
+    /// regla que usa <see cref="CanCuentaAsync"/>: evita el N+1 de preguntar
+    /// cuenta por cuenta.
+    /// </summary>
+    public async Task<IReadOnlySet<Guid>> GetCuentasAccesiblesAsync(UserAccessAction accion, Guid usuarioId, CancellationToken cancellationToken)
+    {
+        var predicate = PermissionPredicates[accion];
+
+        // V-02.08: las cuentas ya excluyen borradas por el query filter global
+        // ISoftDelete, pero faltaba exigir TITULAR activo (mismo criterio que
+        // UserAccessService.ApplyActiveTitularCuentaScope); sin ello, un
+        // usuario seguia viendo movimientos/conciliaciones de cuentas cuyo
+        // titular fue eliminado logicamente.
+        var rows = await (
+                from permiso in _dbContext.PermisosUsuario.AsNoTracking().Where(predicate)
+                where permiso.UsuarioId == usuarioId
+                from cuenta in _dbContext.Cuentas.AsNoTracking()
+                join titular in _dbContext.Titulares.AsNoTracking() on cuenta.TitularId equals titular.Id
+                where (permiso.PaisId == null || permiso.PaisId == cuenta.PaisId)
+                   && (permiso.TitularId == null || permiso.TitularId == cuenta.TitularId)
+                   && (permiso.CuentaId == null || permiso.CuentaId == cuenta.Id)
+                   && titular.DeletedAt == null
+                select cuenta.Id)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return new HashSet<Guid>(rows);
     }
 
     private async Task<bool> HasCuentaPermissionAsync(

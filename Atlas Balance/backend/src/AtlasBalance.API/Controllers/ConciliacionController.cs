@@ -22,6 +22,10 @@ public sealed class ConciliacionController : ControllerBase
     public async Task<IActionResult> ListarMovimientosEsperados(
         [FromQuery] Guid? cuentaId = null,
         [FromQuery] string? estado = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 500,
+        [FromQuery] string sortBy = "fecha_esperada",
+        [FromQuery] string sortDir = "desc",
         CancellationToken cancellationToken = default)
     {
         if (!TryGetActor(out var userId, out var rol))
@@ -31,7 +35,9 @@ public sealed class ConciliacionController : ControllerBase
 
         try
         {
-            return Ok(await _conciliacionService.ListarMovimientosEsperadosAsync(userId, rol, cuentaId, estado, cancellationToken));
+            // R-3 (seccion 9): la respuesta pasa a ser paginada
+            // ({ data, total, page, page_size, total_pages }).
+            return Ok(await _conciliacionService.ListarMovimientosEsperadosAsync(userId, rol, cuentaId, estado, page, pageSize, sortBy, sortDir, cancellationToken));
         }
         catch (ConciliacionException ex)
         {
@@ -61,6 +67,10 @@ public sealed class ConciliacionController : ControllerBase
     public async Task<IActionResult> ListarConciliaciones(
         [FromQuery] Guid? cuentaId = null,
         [FromQuery] string? estado = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 500,
+        [FromQuery] string sortBy = "fecha_creacion",
+        [FromQuery] string sortDir = "desc",
         CancellationToken cancellationToken = default)
     {
         if (!TryGetActor(out var userId, out var rol))
@@ -70,7 +80,9 @@ public sealed class ConciliacionController : ControllerBase
 
         try
         {
-            return Ok(await _conciliacionService.ListarConciliacionesAsync(userId, rol, cuentaId, estado, cancellationToken));
+            // R-3 (seccion 9): la respuesta pasa a ser paginada
+            // ({ data, total, page, page_size, total_pages }).
+            return Ok(await _conciliacionService.ListarConciliacionesAsync(userId, rol, cuentaId, estado, page, pageSize, sortBy, sortDir, cancellationToken));
         }
         catch (ConciliacionException ex)
         {

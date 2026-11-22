@@ -63,6 +63,24 @@ public sealed class RateLimitingOptions
     /// <summary>Fallos por IP contra cualquier cuenta antes de devolver 429.</summary>
     public int LoginMaxFailuresPerIp { get; set; } = 7;
 
+    /// <summary>
+    /// S-11: fallos por IP contra cuentas EXISTENTES antes de devolver 429.
+    /// Umbral propio y mas alto que <see cref="LoginMaxFailuresPerIp"/> a
+    /// proposito: la aplicacion es on-premise y, detras de un proxy inverso,
+    /// toda la oficina comparte IP. Con el mismo umbral que las cuentas
+    /// inexistentes, un error de tecleo en bloque dejaria fuera a usuarios
+    /// legitimos. El limite por (IP,email) sigue siendo el que protege cada
+    /// cuenta individual.
+    /// </summary>
+    public int LoginMaxFailuresPerIpExistingUser { get; set; } = 20;
+
+    /// <summary>
+    /// S-15: ventana de gracia, en segundos, para el reuso benigno de un
+    /// refresh token ya rotado (dos pestanas que presentan el mismo token a la
+    /// vez). Fuera de la ventana, el reuso se trata como robo.
+    /// </summary>
+    public int RefreshReuseGraceSeconds { get; set; } = 30;
+
     /// <summary>Ventana de los contadores de fallo de login, en minutos.</summary>
     public int LoginFailureWindowMinutes { get; set; } = 15;
 

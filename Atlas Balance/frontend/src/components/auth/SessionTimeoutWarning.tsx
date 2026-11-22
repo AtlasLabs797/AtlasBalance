@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
+import Modal from '@/components/common/Modal';
 
 interface SessionTimeoutWarningProps {
   open: boolean;
@@ -15,41 +15,39 @@ export const SessionTimeoutWarning: React.FC<SessionTimeoutWarningProps> = ({
   onLogout,
 }) => {
   const continueButtonRef = useRef<HTMLButtonElement | null>(null);
-  const dialogRef = useDialogFocus<HTMLDivElement>(open, {
-    initialFocus: () => continueButtonRef.current,
-  });
-
-  if (!open) return null;
 
   return (
-    <div className="modal-backdrop">
-      <div
-        ref={dialogRef}
-        className="users-confirm-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="session-timeout-title"
-        aria-describedby="session-timeout-message"
-      >
-        <h2 id="session-timeout-title">Sesión a punto de expirar</h2>
-        <p id="session-timeout-message">
-          Tu sesión expirará en <strong>{remainingSeconds}</strong> segundos por inactividad.
-        </p>
+    <Modal
+      open={open}
+      // El aviso no se descarta cerrando: hay que elegir "Continuar sesion" o
+      // "Cerrar sesion". Por eso el fondo y Escape no hacen nada.
+      onClose={() => {}}
+      titleId="session-timeout-title"
+      title="Sesión a punto de expirar"
+      descriptionId="session-timeout-message"
+      panelClassName="users-confirm-modal"
+      headerClassName=""
+      showCloseButton={false}
+      bareBody
+      initialFocus={() => continueButtonRef.current}
+    >
+      <p id="session-timeout-message">
+        Tu sesión expirará en <strong>{remainingSeconds}</strong> segundos por inactividad.
+      </p>
 
-        <div className="session-timeout-meter" aria-hidden="true">
-          <div className="session-timeout-count">{remainingSeconds}</div>
-          <div className="session-timeout-label">segundos</div>
-        </div>
-
-        <div className="users-form-actions">
-          <button type="button" onClick={onLogout}>
-            Cerrar sesión
-          </button>
-          <button ref={continueButtonRef} type="button" onClick={onContinue}>
-            Continuar sesión
-          </button>
-        </div>
+      <div className="session-timeout-meter" aria-hidden="true">
+        <div className="session-timeout-count">{remainingSeconds}</div>
+        <div className="session-timeout-label">segundos</div>
       </div>
-    </div>
+
+      <div className="users-form-actions">
+        <button type="button" onClick={onLogout}>
+          Cerrar sesión
+        </button>
+        <button ref={continueButtonRef} type="button" onClick={onContinue}>
+          Continuar sesión
+        </button>
+      </div>
+    </Modal>
   );
 };

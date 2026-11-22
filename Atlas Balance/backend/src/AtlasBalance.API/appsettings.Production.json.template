@@ -6,7 +6,8 @@
   "JwtSettings": {
     "Secret": "GENERAR-CLAVE-SECRETA-MINIMO-32-CARACTERES-AQUI",
     "AccessTokenExpMinutes": 60,
-    "RefreshTokenExpDays": 7
+    "RefreshTokenExpDays": 7,
+    "MaxSessionDays": 30
   },
   "SeedAdmin": {
     "Email": "admin@atlasbalance.local",
@@ -78,6 +79,8 @@
       "LoginLockMinutes": 30,
       "LoginMaxFailuresPerIpAndEmail": 3,
       "LoginMaxFailuresPerIp": 7,
+      "LoginMaxFailuresPerIpExistingUser": 20,
+      "RefreshReuseGraceSeconds": 30,
       "LoginFailureWindowMinutes": 15
     }
   },

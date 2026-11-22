@@ -20,6 +20,11 @@ public sealed class RevisionQueryRequest
     public Guid? PaisId { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 50;
+    // R-3 (seccion 9): ordenacion del listado. La resuelve el servicio en SQL
+    // (no trayendo todas las filas al controller). Un `SortBy` desconocido cae
+    // en el criterio por defecto (fecha) y `SortDir` decide el sentido.
+    public string? SortBy { get; set; }
+    public string? SortDir { get; set; }
 }
 
 public sealed class RevisionComisionItemResponse

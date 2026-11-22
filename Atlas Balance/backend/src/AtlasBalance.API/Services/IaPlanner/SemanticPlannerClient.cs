@@ -32,11 +32,11 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         CancellationToken cancellationToken,
         AiPseudonymMap? pseudonyms = null)
     {
-        var config = await _dbContext.Configuraciones.AsNoTracking()
-            .Where(x => x.Clave == "ai_provider" || x.Clave == "ai_model" ||
-                        x.Clave == "openrouter_api_key" || x.Clave == "openai_api_key" ||
-                        x.Clave == "minimax_api_key")
-            .ToDictionaryAsync(x => x.Clave, x => x.Valor, cancellationToken);
+        var config = await AiConfigSnapshot.GetAsync(
+            _dbContext,
+            async () => await _dbContext.Configuraciones.AsNoTracking()
+                .ToDictionaryAsync(x => x.Clave, x => x.Valor, StringComparer.OrdinalIgnoreCase, cancellationToken),
+            cancellationToken);
         var provider = AiConfiguration.NormalizeProvider(Get(config, "ai_provider", "OPENROUTER"));
         var model = AiConfiguration.NormalizeStoredModel(provider, Get(config, "ai_model"));
         if (!AiConfiguration.IsSupportedProvider(provider) || !AiConfiguration.IsAllowedModel(provider, model))
@@ -81,18 +81,7 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         {
             request.Headers.TryAddWithoutValidation("X-OpenRouter-Title", "Atlas Balance");
         }
-        request.Content = JsonContent.Create(new
-        {
-            model = provider == "OPENROUTER" ? AiConfiguration.ResolveOpenRouterRuntimeModel(model) : model,
-            temperature = 0,
-            max_tokens = 500,
-            stream = false,
-            messages = new object[]
-            {
-                new { role = "system", content = BuildSystemInstruction(allowedOperations) },
-                new { role = "user", content = JsonSerializer.Serialize(safeQuestion.Texto) }
-            }
-        });
+        request.Content = JsonContent.Create(BuildPayload(provider, model, safeQuestion, allowedOperations));
 
         // V-02.08: a partir de aqui la llamada de red se dispatcha de verdad
         // (es facturable), asi que Dispatched=true incluso si la respuesta
@@ -103,11 +92,45 @@ public sealed class SemanticPlannerClient : ISemanticPlannerClient
         return new SemanticPlanResponse(ExtractContent(payload), true);
     }
 
+    // A-5: el payload del planificador aplica el MISMO bloque de privacidad
+    // que la llamada principal (AiConfiguration.OpenRouterPrivacyProvider):
+    // ZDR y data_collection=deny para OpenRouter con modelo de pago, y nada
+    // para los modelos gratuitos (no compatibles con esas restricciones).
+    private static Dictionary<string, object?> BuildPayload(
+        string provider,
+        string model,
+        DlpScanResult safeQuestion,
+        IReadOnlyList<string> allowedOperations)
+    {
+        var runtimeModel = provider == "OPENROUTER" ? AiConfiguration.ResolveOpenRouterRuntimeModel(model) : model;
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = runtimeModel,
+            ["temperature"] = 0,
+            ["max_tokens"] = 500,
+            ["stream"] = false,
+            ["messages"] = new object[]
+            {
+                new { role = "system", content = BuildSystemInstruction(allowedOperations) },
+                new { role = "user", content = JsonSerializer.Serialize(safeQuestion.Texto) }
+            }
+        };
+
+        var privacy = AiConfiguration.OpenRouterPrivacyProvider(provider, runtimeModel);
+        if (privacy is not null)
+        {
+            payload["provider"] = privacy;
+        }
+
+        return payload;
+    }
+
     private static string BuildSystemInstruction(IReadOnlyList<string> operations) =>
         "Devuelve exclusivamente un objeto JSON sin markdown con operacion, metrica y filtros. " +
         "No uses SQL, tablas, expresiones ni campos no listados. Operaciones permitidas: " +
         string.Join(", ", operations) + ". " +
-        "filtros solo puede tener divisas (array de strings), concepto (texto libre) y periodo. " +
+        "filtros solo puede tener divisas (array de strings), concepto (texto libre), " +
+        "importe_minimo e importe_maximo (numeros, importes en valor absoluto) y periodo. " +
         "periodo es {\"tipo\": \"mes_actual|mes_anterior|trimestre_actual|ano_actual|ultimos_30_dias\"} " +
         "o, para un rango explicito, {\"desde\": \"YYYY-MM-DD\", \"hasta\": \"YYYY-MM-DD\"}.";
 

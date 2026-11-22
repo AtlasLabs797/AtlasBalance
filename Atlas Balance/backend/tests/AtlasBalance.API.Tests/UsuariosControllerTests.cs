@@ -156,6 +156,10 @@ public class UsuariosControllerTests
             Rol = user.Rol,
             Activo = true,
             PrimerLogin = false,
+            // S-5: el PUT exige el cuerpo completo; "puede_usar_ia" es
+            // obligatorio (si no, el 400 por campo ausente enmascararia el
+            // comportamiento que este test comprueba).
+            PuedeUsarIa = false,
             PasswordNueva = "Cambio-Seguro-9471!",
             Emails = new[] { user.Email },
             Permisos = Array.Empty<SavePermisoUsuarioRequest>()
@@ -219,6 +223,43 @@ public class UsuariosControllerTests
         persisted.SecurityStamp.Should().NotBe("old-stamp");
         (await db.RefreshTokens.SingleAsync(x => x.UsuarioId == user.Id)).RevocadoEn.Should().NotBeNull();
         (await db.Auditorias.AnyAsync(x => x.EntidadId == user.Id && x.TipoAccion == AuditActions.CambioPermisos)).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task GuardarPermisos_Should_Preserve_Column_Order(bool individualAccount, bool sendColumns)
+    {
+        await using var db = BuildDbContext();
+        var controller = new UsuariosController(db, TestAuditService.Create(db));
+        controller.ControllerContext = BuildControllerContext(Guid.NewGuid());
+        var usuarioId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+        db.Usuarios.Add(new Usuario { Id = usuarioId, Email = "orden@test.local", NombreCompleto = "Usuario", PasswordHash = "hash", Rol = RolUsuario.EMPLEADO, Activo = true });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular", Tipo = TipoTitular.EMPRESA });
+        db.Cuentas.Add(new Cuenta { Id = cuentaId, TitularId = titularId, Nombre = "Cuenta", Divisa = "EUR", Activa = true });
+        db.PreferenciasUsuarioCuenta.Add(new PreferenciaUsuarioCuenta
+        {
+            Id = Guid.NewGuid(), UsuarioId = usuarioId, TitularId = titularId, CuentaId = cuentaId,
+            ColumnasVisibles = "[\"fecha\",\"monto\"]", OrdenColumnas = "[\"monto\",\"fecha\",\"concepto\"]"
+        });
+        await db.SaveChangesAsync();
+
+        var request = new SavePermisoUsuarioRequest
+        {
+            CuentaId = cuentaId, TitularId = titularId, PuedeVerCuentas = true,
+            ColumnasVisibles = sendColumns ? ["fecha", "monto"] : null
+        };
+        var result = individualAccount
+            ? await controller.GuardarPermisoCuenta(usuarioId, cuentaId, request, CancellationToken.None)
+            : await controller.GuardarPermisos(usuarioId, [request], CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
+        var preference = await db.PreferenciasUsuarioCuenta.SingleAsync(p => p.UsuarioId == usuarioId);
+        preference.OrdenColumnas.Should().Be("[\"monto\",\"fecha\",\"concepto\"]");
     }
 
     [Fact]
@@ -305,6 +346,7 @@ public class UsuariosControllerTests
             Rol = RolUsuario.ADMIN,
             Activo = false,
             PrimerLogin = false,
+            PuedeUsarIa = false,
             Emails = new[] { admin.Email },
             Permisos = Array.Empty<SavePermisoUsuarioRequest>()
         };
@@ -333,6 +375,7 @@ public class UsuariosControllerTests
             Rol = RolUsuario.GERENTE,
             Activo = true,
             PrimerLogin = false,
+            PuedeUsarIa = false,
             Emails = new[] { actor.Email },
             Permisos = Array.Empty<SavePermisoUsuarioRequest>()
         };

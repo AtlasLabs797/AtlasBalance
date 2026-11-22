@@ -1,0 +1,138 @@
+/* Componente de pestanas de configuracion (Configuracion, Auditoria, Papelera y
+   Revision). D-6: bloque movido desde layout/system-coherence.css sin cambiar el
+   resultado computado; el orden interno de las reglas y de sus media queries
+   se conserva. */
+
+.config-tabs {
+  width: 100%;
+  max-width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--surface-sunken) 82%, var(--surface-card) 18%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Las pestanas de ajustes no se parten en filas (dejaba una huerfana): una sola
+   fila con scroll horizontal cuando no caben. */
+.config-tabs--settings {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.config-tabs--settings .config-tab {
+  flex: 0 0 auto;
+}
+
+.config-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  min-width: 0;
+  border-color: transparent;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--duration-instant) var(--ease-premium);
+}
+
+.config-tabs--settings .config-tab {
+  justify-content: flex-start;
+}
+
+.config-tab > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: currentColor;
+  opacity: 0.86;
+}
+
+.config-tab:disabled {
+  color: var(--text-disabled);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.config-tab:hover:not(:disabled) {
+  border-color: var(--border-control-hover);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.config-tab--active {
+  border-color: color-mix(in srgb, var(--accent-solid) 24%, var(--border-default));
+  background: var(--accent-soft);
+  color: var(--text-link);
+}
+
+.config-tab:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+}
+
+/* P2-6: control segmentado compacto (Revision). Mismo lenguaje que periodo/divisa
+   del dashboard y modo/densidad de Extractos: pildora con borde, tab 34px. */
+.config-tabs--seg {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  gap: var(--space-1);
+  border-color: var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  flex-wrap: nowrap;
+}
+
+.config-tabs--seg .config-tab {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-full);
+  font: var(--type-label);
+}
+
+.config-tabs--seg .config-tab--active {
+  border-color: transparent;
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+@media (max-width: 767.98px) {
+  .config-tabs {
+    width: 100%;
+  }
+
+  .config-tab {
+    flex: 1 1 auto;
+  }
+
+  .config-tabs--seg {
+    width: 100%;
+  }
+
+  .config-tabs--seg .config-tab {
+    flex: 1 1 0;
+  }
+}

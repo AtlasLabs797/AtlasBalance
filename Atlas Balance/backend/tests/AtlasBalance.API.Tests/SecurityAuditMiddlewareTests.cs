@@ -116,11 +116,12 @@ public sealed class SecurityAuditMiddlewareTests
         (await db.Auditorias.CountAsync()).Should().Be(1);
     }
 
+    // S-16: la deduplicacion ya no incluye la ruta. Un escaner que prueba
+    // rutas distintas generaba una fila de auditoria por ruta y llenaba la
+    // tabla (el aviso de "muchos 401" sigue igual de visible).
     [Fact]
-    public async Task Should_Not_Deduplicate_Across_Different_Resources()
+    public async Task Should_Deduplicate_Across_Different_Resources_For_The_Same_User_And_Ip()
     {
-        // La deduplicacion no puede tapar un barrido: probar 3 recursos
-        // distintos son 3 senales, no una repetida.
         var userId = Guid.NewGuid();
         await using var db = BuildDbContext();
         var cache = new MemoryCache(new MemoryCacheOptions());
@@ -128,10 +129,25 @@ public sealed class SecurityAuditMiddlewareTests
 
         foreach (var id in new[] { "1", "2", "3" })
         {
-            await middleware.InvokeAsync(BuildContext(db, $"/api/extractos/{id}", userId));
+            await middleware.InvokeAsync(BuildContext(db, $"/api/extractos/{id}", userId, ip: "10.0.0.5"));
         }
 
-        (await db.Auditorias.CountAsync()).Should().Be(3);
+        (await db.Auditorias.CountAsync()).Should().Be(1);
+    }
+
+    // El mismo barrido desde IPs distintas son dos senales distintas: cada
+    // origen mantiene su propia ventana de deduplicacion.
+    [Fact]
+    public async Task Should_Not_Deduplicate_Across_Different_Ips()
+    {
+        await using var db = BuildDbContext();
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var middleware = BuildMiddleware(StatusCodes.Status401Unauthorized, cache);
+
+        await middleware.InvokeAsync(BuildContext(db, "/api/cuentas", usuarioId: null, ip: "10.0.0.5"));
+        await middleware.InvokeAsync(BuildContext(db, "/api/extractos", usuarioId: null, ip: "10.0.0.6"));
+
+        (await db.Auditorias.CountAsync()).Should().Be(2);
     }
 
     [Fact]
@@ -182,7 +198,7 @@ public sealed class SecurityAuditMiddlewareTests
             NullLogger<SecurityAuditMiddleware>.Instance);
     }
 
-    private static DefaultHttpContext BuildContext(AppDbContext db, string path, Guid? usuarioId, string query = "")
+    private static DefaultHttpContext BuildContext(AppDbContext db, string path, Guid? usuarioId, string query = "", string? ip = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(db);
@@ -196,6 +212,10 @@ public sealed class SecurityAuditMiddlewareTests
         context.Request.Path = path;
         context.Request.QueryString = new QueryString(query);
         context.Request.Method = "GET";
+        if (ip is not null)
+        {
+            context.Connection.RemoteIpAddress = System.Net.IPAddress.Parse(ip);
+        }
 
         if (usuarioId.HasValue)
         {

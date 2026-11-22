@@ -4,7 +4,7 @@
 // La jerarquia es Pais > Titular > Cuenta. Cada dimension null = "todas" en esa
 // dimension; un valor concreto limita el alcance a esa dimension.
 
-export interface CatalogCuenta {
+interface CatalogCuenta {
   id: string;
   nombre: string;
   titular_id: string;
@@ -14,18 +14,12 @@ export interface CatalogCuenta {
   activa?: boolean;
 }
 
-export interface CatalogTitular {
+interface CatalogTitular {
   id: string;
   nombre: string;
 }
 
-export interface CatalogPais {
-  id: string;
-  nombre: string;
-  codigo_iso2?: string | null;
-}
-
-export interface PermisoDraft {
+interface PermisoDraft {
   pais_id: string;
   titular_id: string;
   cuenta_id: string;
@@ -37,7 +31,69 @@ export interface PermisoDraft {
   puede_ver_dashboard?: boolean;
 }
 
-export type CoherenceState = 'coherent' | 'partial' | 'dangling';
+type CoherenceState = 'coherent' | 'partial' | 'dangling';
+
+// V-03.02: fila editable de la matriz de permisos y su equivalente en API.
+// Se movieron aqui desde UsuarioModal para poder testear el payload sin React.
+
+export interface PermisoFormRow {
+  key: string;
+  pais_id: string;
+  titular_id: string;
+  cuenta_id: string;
+  puede_ver_cuentas: boolean;
+  puede_agregar_lineas: boolean;
+  puede_editar_lineas: boolean;
+  puede_eliminar_lineas: boolean;
+  puede_importar: boolean;
+  puede_ver_dashboard: boolean;
+  puede_revisar_lineas: boolean;
+  puede_aprobar_importaciones: boolean;
+  puede_conciliar: boolean;
+  puede_cerrar_conciliacion: boolean;
+  columnas_visibles: string;
+  columnas_editables: string;
+}
+
+// Fila tal y como la devuelve la API. Los flags son opcionales porque el
+// backend puede omitir los que no aplica.
+export interface PermisoApiRow {
+  pais_id?: string | null;
+  titular_id?: string | null;
+  cuenta_id?: string | null;
+  puede_ver_cuentas?: boolean;
+  puede_agregar_lineas?: boolean;
+  puede_editar_lineas?: boolean;
+  puede_eliminar_lineas?: boolean;
+  puede_importar?: boolean;
+  puede_ver_dashboard?: boolean;
+  puede_revisar_lineas?: boolean;
+  puede_aprobar_importaciones?: boolean;
+  puede_conciliar?: boolean;
+  puede_cerrar_conciliacion?: boolean;
+  columnas_visibles?: string[];
+  columnas_editables?: string[];
+}
+
+// Payload de una fila de permisos. El backend reemplaza la matriz entera con
+// lo que llega, asi que todos los flags se envian siempre.
+export interface PermisoPayloadRow {
+  cuenta_id: string | null;
+  titular_id: string | null;
+  pais_id: string | null;
+  puede_ver_cuentas: boolean;
+  puede_agregar_lineas: boolean;
+  puede_editar_lineas: boolean;
+  puede_eliminar_lineas: boolean;
+  puede_importar: boolean;
+  puede_ver_dashboard: boolean;
+  puede_revisar_lineas: boolean;
+  puede_aprobar_importaciones: boolean;
+  puede_conciliar: boolean;
+  puede_cerrar_conciliacion: boolean;
+  columnas_visibles: string[] | undefined;
+  columnas_editables: string[] | undefined;
+}
 
 // Estado de coherencia entre pais/titular/cuenta seleccionados en una fila.
 // - coherent: vacio todo, o las tres dimensiones son compatibles.
@@ -137,3 +193,98 @@ export function titularDropdownPlaceholder(tienePais: boolean): string {
 export const cuentaDropdownPlaceholder = 'Sin cuenta específica';
 
 export const paisDropdownPlaceholder = 'Todos los países';
+
+// Convierte una fila de la API en la fila editable del formulario. Los flags
+// que no llegan se leen como false.
+export function mapPermisoApiRow(permiso: PermisoApiRow, key: string): PermisoFormRow {
+  return {
+    key,
+    pais_id: permiso.pais_id ?? '',
+    titular_id: permiso.titular_id ?? '',
+    cuenta_id: permiso.cuenta_id ?? '',
+    puede_ver_cuentas: permiso.puede_ver_cuentas ?? false,
+    puede_agregar_lineas: permiso.puede_agregar_lineas ?? false,
+    puede_editar_lineas: permiso.puede_editar_lineas ?? false,
+    puede_eliminar_lineas: permiso.puede_eliminar_lineas ?? false,
+    puede_importar: permiso.puede_importar ?? false,
+    puede_ver_dashboard: permiso.puede_ver_dashboard ?? false,
+    puede_revisar_lineas: permiso.puede_revisar_lineas ?? false,
+    puede_aprobar_importaciones: permiso.puede_aprobar_importaciones ?? false,
+    puede_conciliar: permiso.puede_conciliar ?? false,
+    puede_cerrar_conciliacion: permiso.puede_cerrar_conciliacion ?? false,
+    columnas_visibles: (permiso.columnas_visibles ?? []).join(', '),
+    columnas_editables: (permiso.columnas_editables ?? []).join(', '),
+  };
+}
+
+// Parsea las columnas separadas por coma. Devuelve undefined si no hay
+// ninguna, para no mandar listas vacias.
+function parsePermisoColumns(value: string): string[] | undefined {
+  const parsed = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return parsed.length > 0 ? parsed : undefined;
+}
+
+// Indica si la fila tiene algun flag de permiso activo.
+function permisoHasFlags(permiso: PermisoFormRow): boolean {
+  return (
+    permiso.puede_ver_cuentas ||
+    permiso.puede_agregar_lineas ||
+    permiso.puede_editar_lineas ||
+    permiso.puede_eliminar_lineas ||
+    permiso.puede_importar ||
+    permiso.puede_ver_dashboard ||
+    permiso.puede_revisar_lineas ||
+    permiso.puede_aprobar_importaciones ||
+    permiso.puede_conciliar ||
+    permiso.puede_cerrar_conciliacion
+  );
+}
+
+// Construye el payload de permisos. Descarta las filas vacias (sin alcance,
+// sin flags y sin columnas) porque no conceden nada.
+export function buildPermisosPayload(permisos: PermisoFormRow[]): PermisoPayloadRow[] {
+  return permisos
+    .map((permiso) => {
+      const columnasVisibles = parsePermisoColumns(permiso.columnas_visibles);
+      const columnasEditables = parsePermisoColumns(permiso.columnas_editables);
+      const hasScope = !!permiso.cuenta_id || !!permiso.titular_id || !!permiso.pais_id;
+
+      if (!permisoHasFlags(permiso) && !hasScope && !columnasVisibles && !columnasEditables) {
+        return null;
+      }
+
+      return {
+        cuenta_id: permiso.cuenta_id || null,
+        titular_id: permiso.titular_id || null,
+        pais_id: permiso.pais_id || null,
+        puede_ver_cuentas: permiso.puede_ver_cuentas,
+        puede_agregar_lineas: permiso.puede_agregar_lineas,
+        puede_editar_lineas: permiso.puede_editar_lineas,
+        puede_eliminar_lineas: permiso.puede_eliminar_lineas,
+        puede_importar: permiso.puede_importar,
+        puede_ver_dashboard: permiso.puede_ver_dashboard,
+        puede_revisar_lineas: permiso.puede_revisar_lineas,
+        puede_aprobar_importaciones: permiso.puede_aprobar_importaciones,
+        puede_conciliar: permiso.puede_conciliar,
+        puede_cerrar_conciliacion: permiso.puede_cerrar_conciliacion,
+        columnas_visibles: columnasVisibles,
+        columnas_editables: columnasEditables,
+      };
+    })
+    .filter((item): item is PermisoPayloadRow => !!item);
+}
+
+// Fila totalmente vacia: sin alcance, sin flags y sin columnas.
+export function isPermisoRowBlank(permiso: PermisoFormRow): boolean {
+  return (
+    !permiso.pais_id &&
+    !permiso.titular_id &&
+    !permiso.cuenta_id &&
+    !permisoHasFlags(permiso) &&
+    !permiso.columnas_visibles &&
+    !permiso.columnas_editables
+  );
+}

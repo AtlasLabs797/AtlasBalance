@@ -2,8 +2,9 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { X } from 'lucide-react';
 import { IconAiFace, IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
+import { AlertBell } from '@/components/layout/AlertBell';
 import { CommandPalette } from '@/components/layout/CommandPalette';
-import { navigationItems } from '@/utils/navigation';
+import { navigationGroups, navigationItems } from '@/utils/navigation';
 import api, { clearSessionState } from '@/services/api';
 import { useAiChatStore } from '@/stores/aiChatStore';
 import { useIaAvailabilityStore } from '@/stores/iaAvailabilityStore';
@@ -29,21 +30,14 @@ export function TopBar() {
     ? '⌘K'
     : 'Ctrl K';
 
-  const pageContext = useMemo(() => {
-    const exact = navigationItems.find((item) => item.to === location.pathname);
-    if (exact) {
-      return { title: exact.label, breadcrumb: 'Atlas Balance' };
-    }
-
-    const section = navigationItems
-      .filter((item) => location.pathname.startsWith(`${item.to}/`))
+  // H4: el topbar muestra el grupo de navegacion como contexto ("Operación",
+  // "Control", "Sistema") y no el nombre de la pagina, que ya lo da el h1.
+  const sectionLabel = useMemo(() => {
+    const match = navigationItems
+      .filter((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`))
       .sort((a, b) => b.to.length - a.to.length)[0];
 
-    if (section) {
-      return { title: section.label, breadcrumb: 'Detalle' };
-    }
-
-    return { title: 'Atlas Balance', breadcrumb: 'Operación local' };
+    return match ? navigationGroups[match.group].label : 'Atlas Balance';
   }, [location.pathname]);
   const isIaPage = location.pathname === '/ia';
 
@@ -94,21 +88,21 @@ export function TopBar() {
             <IconMenu />
           </button>
           <div className="app-topbar-heading">
-            <span className="app-topbar-page">{pageContext.title}</span>
-            <span className="app-topbar-breadcrumb">{pageContext.breadcrumb}</span>
+            <span className="app-topbar-breadcrumb">{sectionLabel}</span>
           </div>
         </div>
         <button
           type="button"
           className="app-search"
           onClick={() => setPaletteOpen(true)}
-          aria-label="Buscar pantalla"
-          title="Buscar pantalla"
+          aria-label="Buscar pantalla, titular o cuenta"
+          title="Buscar pantalla, titular o cuenta"
         >
-          <span>Buscar pantalla...</span>
+          <span>Buscar pantalla, titular o cuenta...</span>
           <kbd className="app-kbd app-search-hint">{shortcutLabel}</kbd>
         </button>
         <div className="app-topbar-actions">
+          <AlertBell />
           <button
             type="button"
             className="theme-toggle"

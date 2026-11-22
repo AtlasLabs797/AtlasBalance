@@ -7,6 +7,8 @@ import { usePermisosStore } from '@/stores/permisosStore';
 import { useUiStore } from '@/stores/uiStore';
 import type { PermisoUsuario, Usuario } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
+import { decideErrorToast } from '@/utils/errorToast';
+import { isSessionInvalidatingError } from '@/utils/sessionErrors';
 import { clearQueryClient } from '@/services/queryClient';
 import { isSessionResponseCurrent, getSessionGeneration } from '@/utils/sessionScope';
 import {
@@ -170,17 +172,18 @@ api.interceptors.response.use(
       shouldSkipRefreshRetry(originalRequest.url)
     ) {
       if (status !== 401) {
-        if (!status) {
-          // Sin `status` hay dos casos muy distintos y solo uno es un fallo:
-          // el servidor no responde (red cortada, backend caido) o la peticion
-          // se cancelo a proposito. TanStack Query pasa un AbortSignal y aborta
-          // consultas al desmontar y al navegar, asi que sin este filtro cada
-          // cancelacion normal pintaba al usuario un error de conexion falso.
-          if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
-            return Promise.reject(error);
-          }
+        // V-03.02 (F-4): decideErrorToast decide si esta peticion pinta el
+        // toast global. Sin `status` hay dos casos muy distintos y solo uno es
+        // un fallo: el servidor no responde (red cortada, backend caido) o la
+        // peticion se cancelo a proposito. TanStack Query pasa un AbortSignal y
+        // aborta consultas al desmontar y al navegar, asi que sin ese filtro
+        // cada cancelacion normal pintaba al usuario un error de conexion
+        // falso. Los sondeos (skipErrorToast) consultan con la API caida a
+        // proposito: no deben pintar un toast cada 2,5 s.
+        const decision = decideErrorToast(error, { skipErrorToast: originalRequest?.skipErrorToast });
+        if (decision.kind === 'network') {
           pushErrorToast('No se puede conectar con el servidor. Espera un momento e inténtalo de nuevo.');
-        } else {
+        } else if (decision.kind === 'server') {
           pushErrorToast(extractErrorMessage(error, 'La operación no pudo completarse. Revisa los datos e inténtalo de nuevo.'));
         }
       }
@@ -207,9 +210,18 @@ api.interceptors.response.use(
       );
       return api(originalRequest);
     } catch (refreshError) {
-      clearSessionState();
-      pushErrorToast('Sesión expirada. Vuelve a iniciar sesión.');
-      redirectToLogin();
+      // V-03.02 (F-1): solo un 401/403 del refresh demuestra que la sesion ya
+      // no vale. Un error de red, un 5xx, un 429, un timeout o un error local
+      // no cierran la sesion: se rechaza la peticion original y se avisa.
+      if (isSessionInvalidatingError(refreshError)) {
+        clearSessionState();
+        pushErrorToast('Sesión expirada. Vuelve a iniciar sesión.');
+        redirectToLogin();
+      } else if (!originalRequest.skipErrorToast) {
+        // V-03.02 (F-4): un sondeo no debe pintar un toast cada 2,5 s cuando la
+        // API no responde y no se puede renovar la sesion.
+        pushErrorToast('No se pudo renovar la sesión. Revisa la conexión e inténtalo de nuevo.');
+      }
       return Promise.reject(refreshError);
     }
   }

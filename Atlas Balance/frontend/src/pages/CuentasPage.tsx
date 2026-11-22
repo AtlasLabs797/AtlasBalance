@@ -1,19 +1,21 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import { AppSelect } from '@/components/common/AppSelect';
-import { CloseIconButton } from '@/components/common/CloseIconButton';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import { DatePickerField } from '@/components/common/DatePickerField';
 import { EmptyState } from '@/components/common/EmptyState';
+import Modal from '@/components/common/Modal';
 import { PageSizeSelect } from '@/components/common/PageSizeSelect';
+import { PageSkeleton } from '@/components/common/PageSkeleton';
 import { SignedAmount } from '@/components/common/SignedAmount';
 import { DivisaSelector } from '@/components/dashboard/DivisaSelector';
+import { DivisasSinTipoCambioAviso } from '@/components/dashboard/DivisasSinTipoCambioAviso';
 import { PeriodoSelector } from '@/components/dashboard/PeriodoSelector';
 import { SaldoPorDivisaCard } from '@/components/dashboard/SaldoPorDivisaCard';
 import { useConfirmDialog } from '@/hooks/useConfirmDialog';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { useDialogFocus } from '@/hooks/useDialogFocus';
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import api from '@/services/api';
 import { QUERY_STALE_TIMES } from '@/services/queryClient';
@@ -33,7 +35,8 @@ import type {
   Titular,
 } from '@/types';
 import { extractErrorMessage } from '@/utils/errorMessage';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency, formatDate, parseStrictDecimal } from '@/utils/formatters';
+import '@/styles/layout/routes/cuentas.css';
 
 const EvolucionChart = lazy(() =>
   import('@/components/dashboard/EvolucionChart').then((module) => ({ default: module.EvolucionChart }))
@@ -253,6 +256,7 @@ export default function CuentasPage() {
   const [form, setForm] = useState<CuentaFormState>(emptyForm);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const formBaselineRef = useRef<string | null>(null);
+  const loadedIbanRef = useRef<string | null>(null);
   const { confirm: confirmDiscard, dialogProps: discardDialogProps } = useConfirmDialog();
   const isFormDirty = isFormModalOpen && formBaselineRef.current !== null && JSON.stringify(form) !== formBaselineRef.current;
   useUnsavedChanges(isFormDirty);
@@ -404,6 +408,7 @@ export default function CuentasPage() {
         title: 'Descartar cambios',
         message: 'Tienes cambios sin guardar en esta cuenta. Si cierras, se perderán. ¿Descartar?',
         confirmLabel: 'Descartar',
+        tone: 'reversible',
         cancelLabel: 'Seguir editando',
       });
       if (!discard) {
@@ -416,10 +421,6 @@ export default function CuentasPage() {
     setFormError(null);
     resetForm();
   };
-
-  const formDialogRef = useDialogFocus<HTMLDivElement>(isFormModalOpen, {
-    onEscape: saving ? undefined : () => void closeFormModal(),
-  });
 
   useEffect(() => {
     if (form.tipo_cuenta !== 'PLAZO_FIJO') {
@@ -473,12 +474,13 @@ export default function CuentasPage() {
         notas: data.notas ?? '',
         fecha_inicio: data.plazo_fijo?.fecha_inicio ?? '',
         fecha_vencimiento: data.plazo_fijo?.fecha_vencimiento ?? '',
-        interes_previsto: data.plazo_fijo?.interes_previsto?.toString() ?? '',
+        interes_previsto: data.plazo_fijo?.interes_previsto != null ? String(data.plazo_fijo.interes_previsto).replace('.', ',') : '',
         renovable: data.plazo_fijo?.renovable ?? false,
         cuenta_referencia_id: data.plazo_fijo?.cuenta_referencia_id ?? '',
         plazo_fijo_notas: data.plazo_fijo?.notas ?? '',
       };
       setForm(loadedForm);
+      loadedIbanRef.current = loadedForm.iban;
       formBaselineRef.current = JSON.stringify(loadedForm);
       setIsFormModalOpen(true);
     } catch (err) {
@@ -505,13 +507,27 @@ export default function CuentasPage() {
       return;
     }
 
+    // Interes previsto: texto con coma europea; vacio = sin interes (null)
+    let interesPrevisto: number | null = null;
+    if ((form.tipo_cuenta === 'PLAZO_FIJO' || renewingId) && form.interes_previsto.trim()) {
+      interesPrevisto = parseStrictDecimal(form.interes_previsto);
+      if (interesPrevisto === null || interesPrevisto < 0) {
+        setFormError('El interés previsto debe ser un número válido mayor o igual que 0.');
+        return;
+      }
+    }
+
     setSaving(true);
     setFormError(null);
     const payload = {
       titular_id: form.titular_id,
       nombre: form.nombre.trim(),
       numero_cuenta: form.numero_cuenta.trim() || null,
-      iban: form.iban.trim() || null,
+      // En edicion, un IBAN sin cambios se envia enmascarado ("sin cambio" para el backend)
+      // para no reenviar el valor completo; vaciarlo sigue enviando null.
+      iban: editingId && form.iban.trim() && form.iban.trim() === loadedIbanRef.current?.trim()
+        ? '*'
+        : (form.iban.trim() || null),
       banco_nombre: form.banco_nombre.trim() || null,
       divisa: form.divisa,
       formato_id: form.tipo_cuenta === 'PLAZO_FIJO' ? null : (form.formato_id || null),
@@ -523,7 +539,7 @@ export default function CuentasPage() {
       plazo_fijo: form.tipo_cuenta === 'PLAZO_FIJO' ? {
         fecha_inicio: form.fecha_inicio,
         fecha_vencimiento: form.fecha_vencimiento,
-        interes_previsto: form.interes_previsto ? Number(form.interes_previsto) : null,
+        interes_previsto: interesPrevisto,
         renovable: form.renovable,
         cuenta_referencia_id: form.cuenta_referencia_id || null,
         notas: form.plazo_fijo_notas.trim() || null,
@@ -535,7 +551,7 @@ export default function CuentasPage() {
         await api.post(`/cuentas/${renewingId}/plazo-fijo/renovar`, {
           nueva_fecha_inicio: form.fecha_inicio,
           nueva_fecha_vencimiento: form.fecha_vencimiento,
-          interes_previsto: form.interes_previsto ? Number(form.interes_previsto) : null,
+          interes_previsto: interesPrevisto,
           renovable: form.renovable,
           notas: form.plazo_fijo_notas.trim() || null,
         });
@@ -548,7 +564,13 @@ export default function CuentasPage() {
       setIsFormModalOpen(false);
       await loadData();
     } catch (err) {
-      setFormError(extractErrorMessage(err, 'No se pudo guardar cuenta'));
+      // B-14: 409 = conflicto de dominio (p. ej. cuenta con extractos y cambio
+      // de divisa). El mensaje del backend se muestra tal cual; el texto de
+      // reserva solo aparece si la respuesta no trae mensaje.
+      const fallback = axios.isAxiosError(err) && err.response?.status === 409
+        ? 'No se pudo guardar la cuenta: el cambio entra en conflicto con el estado actual.'
+        : 'No se pudo guardar cuenta';
+      setFormError(extractErrorMessage(err, fallback));
     } finally {
       setSaving(false);
     }
@@ -580,15 +602,15 @@ export default function CuentasPage() {
   };
 
   return (
-    <section className="phase2-page cuentas-page">
-      <header className="phase2-header">
-        <div>
-          <h1>Cuentas</h1>
-          <p className="dashboard-subtitle">Saldos, bancos y plazos fijos por titular.</p>
+    <section className="entity-page cuentas-page page">
+      <header className="entity-header page-header">
+        <div className="page-header__lead">
+          <h1 className="page-header__title">Cuentas</h1>
+          <p className="page-header__subtitle">Saldos, bancos y plazos fijos por titular.</p>
         </div>
         {isAdmin && (
           <button type="button" className="button-primary" onClick={openCreateModal} disabled={!accountCatalogsReady || saving}>
-            Nueva Cuenta
+            Nueva cuenta
           </button>
         )}
       </header>
@@ -607,7 +629,7 @@ export default function CuentasPage() {
           </header>
 
           {dashboardError ? <p className="auth-error" role="alert">{dashboardError}</p> : null}
-          {dashboardLoading ? <p className="import-muted">Cargando dashboard de cuentas...</p> : null}
+          {dashboardLoading ? <PageSkeleton variant="inline" label="Cargando dashboard de cuentas..." /> : null}
 
           {!dashboardLoading && !dashboardError && principal ? (
             <>
@@ -618,7 +640,7 @@ export default function CuentasPage() {
                     subtitle="Importa movimientos o revisa permisos para poblar este resumen."
                   />
                 ) : (
-                  <Suspense fallback={<p className="import-muted">Cargando gráfica...</p>}>
+                  <Suspense fallback={<PageSkeleton variant="inline" label="Cargando gráfica..." />}>
                     <TitularSaldoBarChart rows={chartRows} divisa={principal.divisa_principal} />
                   </Suspense>
                 )}
@@ -630,7 +652,7 @@ export default function CuentasPage() {
                     <h3>Evolución</h3>
                     <span className="dashboard-subtitle">Último punto: {evolucion.puntos.length ? formatDate(evolucion.puntos[evolucion.puntos.length - 1].fecha) : 'Sin dato'}</span>
                   </header>
-                  <Suspense fallback={<p className="import-muted">Cargando evolución...</p>}>
+                  <Suspense fallback={<PageSkeleton variant="inline" label="Cargando evolución..." />}>
                     <EvolucionChart
                       points={evolucion.puntos}
                       divisa={principal.divisa_principal}
@@ -682,7 +704,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
-                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin país'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -701,7 +723,7 @@ export default function CuentasPage() {
                         </span>
                       </span>
                       <span className="cuentas-balance-bank">{item.banco_nombre || 'Sin banco'}</span>
-                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin pais'}</span>
+                      <span className="cuentas-balance-bank">{item.pais_nombre || 'Sin país'}</span>
                       <span className="cuentas-balance-currency">{item.divisa}</span>
                       <SignedAmount value={item.saldo_actual}>
                         {formatCurrency(item.saldo_actual, item.divisa)}
@@ -713,18 +735,25 @@ export default function CuentasPage() {
               </div>
 
               {saldosDivisa ? (
-                <div className="titulares-divisa-banners">
-                  <SaldoPorDivisaCard items={saldosDivisa.divisas} divisaPrincipal={saldosDivisa.divisa_principal} />
-                </div>
+                <>
+                  <div className="titulares-divisa-banners">
+                    <SaldoPorDivisaCard items={saldosDivisa.divisas} divisaPrincipal={saldosDivisa.divisa_principal} />
+                  </div>
+                  <DivisasSinTipoCambioAviso divisas={saldosDivisa.divisas_sin_tipo_cambio} />
+                </>
               ) : null}
             </>
           ) : null}
         </section>
       ) : null}
 
-      <div className="phase2-filters">
+      <div className="entity-filters">
         <input
           type="search"
+          enterKeyHint="search"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           aria-label="Buscar cuentas por cuenta, banco o IBAN"
           placeholder="Buscar por cuenta, banco, IBAN..."
           value={search}
@@ -799,9 +828,13 @@ export default function CuentasPage() {
       {auxError ? <p className="auth-error" role="alert">{auxError}</p> : null}
       {error && <p className="auth-error" role="alert">{error}</p>}
 
-      <div className="phase2-grid">
-        <div className="phase2-cards">
-          {loading ? <p className="import-muted">Cargando cuentas...</p> : null}
+      <div className="entity-grid">
+        <div className="entity-cards">
+          {loading ? (
+            <div className="import-muted">
+              <PageSkeleton variant="table" rows={3} columns={3} label="Cargando cuentas..." />
+            </div>
+          ) : null}
           {!loading && items.length === 0 ? (
             <EmptyState
               title="No hay cuentas con estos filtros."
@@ -837,7 +870,7 @@ export default function CuentasPage() {
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">País</span>
-                    <strong className="cuenta-card-meta-value">{item.pais_nombre || 'Sin pais'}</strong>
+                    <strong className="cuenta-card-meta-value">{item.pais_nombre || 'Sin país'}</strong>
                   </div>
                   <div className="cuenta-card-meta-item">
                     <span className="cuenta-card-meta-label">Estado</span>
@@ -867,7 +900,7 @@ export default function CuentasPage() {
                   ) : null}
                 </div>
                 {(canSeeDashboard || isAdmin) ? (
-                  <div className="phase2-row-actions">
+                  <div className="entity-row-actions">
                     {canSeeDashboard && !item.deleted_at && canOpenDashboardCuenta ? (
                       <button
                         type="button"
@@ -914,57 +947,49 @@ export default function CuentasPage() {
         </div>
       </div>
 
-      {isAdmin && isFormModalOpen ? (
-        <div className="modal-backdrop users-modal-backdrop" onClick={() => void closeFormModal()}>
-          <div
-            ref={formDialogRef}
-            className="users-modal phase2-form-modal phase2-form-modal--wide"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cuentas-modal-title"
-            tabIndex={-1}
+      {isAdmin ? (
+        <Modal
+          open={isFormModalOpen}
+          onClose={() => void closeFormModal()}
+          titleId="cuentas-modal-title"
+          title={renewingId ? 'Renovar plazo fijo' : editingId ? 'Editar cuenta' : 'Nueva cuenta'}
+          subtitle="Alta y edición de cuentas bancarias o efectivo asociadas a un titular."
+          variant="fullscreen-mobile"
+          panelClassName="users-modal modal-form modal-form--wide"
+          headerClassName="users-modal-header"
+          bareBody
+          busy={saving}
+          closeButtonClassName="users-modal-close"
+          closeLabel="Cerrar modal de cuenta"
+        >
+          <form
+            className="users-modal-body modal-form-body"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save();
+            }}
           >
-            <div className="users-modal-header">
-              <div>
-                <h2 id="cuentas-modal-title">{renewingId ? 'Renovar plazo fijo' : editingId ? 'Editar cuenta' : 'Nueva cuenta'}</h2>
-                <p>Alta y edición de cuentas bancarias o efectivo asociadas a un titular.</p>
-              </div>
-              <CloseIconButton
-                className="users-modal-close"
-                onClick={() => void closeFormModal()}
-                disabled={saving}
-                ariaLabel="Cerrar modal de cuenta"
-              />
-            </div>
+            {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
 
-            <form
-              className="users-modal-body phase2-modal-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void save();
-              }}
-            >
-              {formError ? <p className="auth-error" role="alert">{formError}</p> : null}
+            <section className="users-modal-section">
+              <h3>Datos base</h3>
+              <div className="users-form-grid">
+                <AppSelect
+                  label="Titular"
+                  value={form.titular_id}
+                  options={[
+                    { value: '', label: 'Selecciona titular' },
+                    ...titulares.map((titular) => ({ value: titular.id, label: titular.nombre })),
+                  ]}
+                  onChange={(next) => setForm((f) => ({ ...f, titular_id: next }))}
+                />
 
-              <section className="users-modal-section">
-                <h3>Datos base</h3>
-                <div className="users-form-grid">
-                  <AppSelect
-                    label="Titular"
-                    value={form.titular_id}
-                    options={[
-                      { value: '', label: 'Selecciona titular' },
-                      ...titulares.map((titular) => ({ value: titular.id, label: titular.nombre })),
-                    ]}
-                    onChange={(next) => setForm((f) => ({ ...f, titular_id: next }))}
-                  />
+                <label>
+                  <span>Nombre</span>
+                  <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} />
+                </label>
 
-                  <label>
-                    <span>Nombre</span>
-                    <input value={form.nombre} onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))} />
-                  </label>
-
+                <div className="users-form-full">
                   <AppSelect
                     label="Divisa"
                     value={form.divisa}
@@ -974,153 +999,158 @@ export default function CuentasPage() {
                     }))}
                     onChange={(next) => setForm((f) => ({ ...f, divisa: next }))}
                   />
-
-                  <AppSelect
-                    label="País"
-                    value={form.pais_id}
-                    options={[
-                      { value: '', label: 'Sin país' },
-                      ...paises.map((pais) => ({
-                        value: pais.id,
-                        label: pais.codigo_iso2 ? `${pais.nombre} (${pais.codigo_iso2})` : pais.nombre,
-                      })),
-                    ]}
-                    onChange={(next) => setForm((f) => ({ ...f, pais_id: next }))}
-                  />
-
-                  <AppSelect
-                    label="Tipo de cuenta"
-                    value={form.tipo_cuenta}
-                    options={[
-                      { value: 'NORMAL', label: 'Normal' },
-                      { value: 'EFECTIVO', label: 'Efectivo' },
-                      { value: 'PLAZO_FIJO', label: 'Plazo fijo' },
-                    ]}
-                    onChange={(next) => setForm((f) => ({ ...f, tipo_cuenta: next as TipoCuenta }))}
-                  />
+                  {editingId && !renewingId ? (
+                    <p className="users-field-help">
+                      La divisa no se puede cambiar si la cuenta ya tiene extractos: crea una cuenta nueva.
+                    </p>
+                  ) : null}
                 </div>
 
+                <AppSelect
+                  label="País"
+                  value={form.pais_id}
+                  options={[
+                    { value: '', label: 'Sin país' },
+                    ...paises.map((pais) => ({
+                      value: pais.id,
+                      label: pais.codigo_iso2 ? `${pais.nombre} (${pais.codigo_iso2})` : pais.nombre,
+                    })),
+                  ]}
+                  onChange={(next) => setForm((f) => ({ ...f, pais_id: next }))}
+                />
+
+                <AppSelect
+                  label="Tipo de cuenta"
+                  value={form.tipo_cuenta}
+                  options={[
+                    { value: 'NORMAL', label: 'Normal' },
+                    { value: 'EFECTIVO', label: 'Efectivo' },
+                    { value: 'PLAZO_FIJO', label: 'Plazo fijo' },
+                  ]}
+                  onChange={(next) => setForm((f) => ({ ...f, tipo_cuenta: next as TipoCuenta }))}
+                />
+              </div>
+
+              <div className="users-check-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.activa}
+                    onChange={(e) => setForm((f) => ({ ...f, activa: e.target.checked }))}
+                  />
+                  Cuenta activa
+                </label>
+              </div>
+              <label className="users-form-full">
+                <span>Notas generales</span>
+                <textarea
+                  value={form.notas}
+                  onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
+                />
+              </label>
+            </section>
+
+            {form.tipo_cuenta !== 'PLAZO_FIJO' ? (
+              <section className="users-modal-section">
+                <h3>{form.tipo_cuenta === 'NORMAL' ? 'Datos bancarios' : 'Importación'}</h3>
+                <div className="users-form-grid">
+                  {form.tipo_cuenta === 'NORMAL' ? (
+                    <>
+                      <label>
+                        <span>Banco</span>
+                        <input value={form.banco_nombre} onChange={(e) => setForm((f) => ({ ...f, banco_nombre: e.target.value }))} />
+                      </label>
+
+                      <label>
+                        <span>Número de cuenta</span>
+                        <input value={form.numero_cuenta} onChange={(e) => setForm((f) => ({ ...f, numero_cuenta: e.target.value }))} />
+                      </label>
+
+                      <label>
+                        <span>IBAN</span>
+                        <input value={form.iban} onChange={(e) => setForm((f) => ({ ...f, iban: e.target.value }))} />
+                      </label>
+                    </>
+                  ) : null}
+
+                  <AppSelect
+                    label="Formato de importación"
+                    value={form.formato_id}
+                    options={[
+                      { value: '', label: 'Sin formato' },
+                      ...formatosDisponibles.map((formato) => ({
+                        value: formato.id,
+                        label: `${formato.nombre}${formato.banco_nombre ? ` (${formato.banco_nombre})` : ''}`,
+                      })),
+                    ]}
+                    onChange={(next) => setForm((f) => ({ ...f, formato_id: next }))}
+                  />
+                </div>
+              </section>
+            ) : (
+              <p className="import-muted">Las cuentas de plazo fijo no usan datos bancarios ni formato de importación.</p>
+            )}
+
+            {form.tipo_cuenta === 'PLAZO_FIJO' || renewingId ? (
+              <section className="users-modal-section">
+                <h3>Plazo fijo</h3>
+                <div className="users-form-grid">
+                  <div className="date-field">
+                    <span>Fecha inicio</span>
+                    <DatePickerField
+                      ariaLabel="Fecha inicio"
+                      value={form.fecha_inicio}
+                      onChange={(next) => setForm((f) => ({ ...f, fecha_inicio: next }))}
+                    />
+                  </div>
+                  <div className="date-field">
+                    <span>Fecha vencimiento</span>
+                    <DatePickerField
+                      ariaLabel="Fecha vencimiento"
+                      value={form.fecha_vencimiento}
+                      onChange={(next) => setForm((f) => ({ ...f, fecha_vencimiento: next }))}
+                    />
+                  </div>
+                  <label>
+                    <span>Interés previsto</span>
+                    <input type="text" inputMode="decimal" autoComplete="off" value={form.interes_previsto} onChange={(e) => setForm((f) => ({ ...f, interes_previsto: e.target.value }))} />
+                  </label>
+                  <AppSelect
+                    label="Cuenta de referencia"
+                    value={form.cuenta_referencia_id}
+                    options={[
+                      { value: '', label: 'Sin cuenta de referencia' },
+                      ...cuentaReferenciaOptions.map((cuenta) => ({
+                        value: cuenta.id,
+                        label: `${cuenta.titular_nombre} - ${cuenta.nombre}`,
+                      })),
+                    ]}
+                    onChange={(next) => setForm((f) => ({ ...f, cuenta_referencia_id: next }))}
+                  />
+                </div>
                 <div className="users-check-row">
                   <label>
                     <input
                       type="checkbox"
-                      checked={form.activa}
-                      onChange={(e) => setForm((f) => ({ ...f, activa: e.target.checked }))}
+                      checked={form.renovable}
+                      onChange={(e) => setForm((f) => ({ ...f, renovable: e.target.checked }))}
                     />
-                    Cuenta activa
+                    Renovable
                   </label>
                 </div>
                 <label className="users-form-full">
-                  <span>Notas generales</span>
-                  <textarea
-                    value={form.notas}
-                    onChange={(e) => setForm((f) => ({ ...f, notas: e.target.value }))}
-                  />
+                  <span>Notas de plazo fijo</span>
+                  <textarea value={form.plazo_fijo_notas} onChange={(e) => setForm((f) => ({ ...f, plazo_fijo_notas: e.target.value }))} />
                 </label>
               </section>
+            ) : null}
 
-              {form.tipo_cuenta !== 'PLAZO_FIJO' ? (
-                <section className="users-modal-section">
-                  <h3>{form.tipo_cuenta === 'NORMAL' ? 'Datos bancarios' : 'Importación'}</h3>
-                  <div className="users-form-grid">
-                    {form.tipo_cuenta === 'NORMAL' ? (
-                      <>
-                        <label>
-                          <span>Banco</span>
-                          <input value={form.banco_nombre} onChange={(e) => setForm((f) => ({ ...f, banco_nombre: e.target.value }))} />
-                        </label>
-
-                        <label>
-                          <span>Número de cuenta</span>
-                          <input value={form.numero_cuenta} onChange={(e) => setForm((f) => ({ ...f, numero_cuenta: e.target.value }))} />
-                        </label>
-
-                        <label>
-                          <span>IBAN</span>
-                          <input value={form.iban} onChange={(e) => setForm((f) => ({ ...f, iban: e.target.value }))} />
-                        </label>
-                      </>
-                    ) : null}
-
-                    <AppSelect
-                      label="Formato de importación"
-                      value={form.formato_id}
-                      options={[
-                        { value: '', label: 'Sin formato' },
-                        ...formatosDisponibles.map((formato) => ({
-                          value: formato.id,
-                          label: `${formato.nombre}${formato.banco_nombre ? ` (${formato.banco_nombre})` : ''}`,
-                        })),
-                      ]}
-                      onChange={(next) => setForm((f) => ({ ...f, formato_id: next }))}
-                    />
-                  </div>
-                </section>
-              ) : (
-                <p className="import-muted">Las cuentas de plazo fijo no usan datos bancarios ni formato de importación.</p>
-              )}
-
-              {form.tipo_cuenta === 'PLAZO_FIJO' || renewingId ? (
-                <section className="users-modal-section">
-                  <h3>Plazo fijo</h3>
-                  <div className="users-form-grid">
-                    <div className="date-field">
-                      <span>Fecha inicio</span>
-                      <DatePickerField
-                        ariaLabel="Fecha inicio"
-                        value={form.fecha_inicio}
-                        onChange={(next) => setForm((f) => ({ ...f, fecha_inicio: next }))}
-                      />
-                    </div>
-                    <div className="date-field">
-                      <span>Fecha vencimiento</span>
-                      <DatePickerField
-                        ariaLabel="Fecha vencimiento"
-                        value={form.fecha_vencimiento}
-                        onChange={(next) => setForm((f) => ({ ...f, fecha_vencimiento: next }))}
-                      />
-                    </div>
-                    <label>
-                      <span>Interés previsto</span>
-                      <input type="number" step="0.01" min="0" value={form.interes_previsto} onChange={(e) => setForm((f) => ({ ...f, interes_previsto: e.target.value }))} />
-                    </label>
-                    <AppSelect
-                      label="Cuenta de referencia"
-                      value={form.cuenta_referencia_id}
-                      options={[
-                        { value: '', label: 'Sin cuenta de referencia' },
-                        ...cuentaReferenciaOptions.map((cuenta) => ({
-                          value: cuenta.id,
-                          label: `${cuenta.titular_nombre} - ${cuenta.nombre}`,
-                        })),
-                      ]}
-                      onChange={(next) => setForm((f) => ({ ...f, cuenta_referencia_id: next }))}
-                    />
-                  </div>
-                  <div className="users-check-row">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={form.renovable}
-                        onChange={(e) => setForm((f) => ({ ...f, renovable: e.target.checked }))}
-                      />
-                      Renovable
-                    </label>
-                  </div>
-                  <label className="users-form-full">
-                    <span>Notas de plazo fijo</span>
-                    <textarea value={form.plazo_fijo_notas} onChange={(e) => setForm((f) => ({ ...f, plazo_fijo_notas: e.target.value }))} />
-                  </label>
-                </section>
-              ) : null}
-
-              <div className="users-form-actions phase2-modal-actions">
-                <button type="button" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
-                <button type="submit" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="users-form-actions modal-form-actions">
+              <button type="button" className="button-secondary" onClick={() => void closeFormModal()} disabled={saving}>Cancelar</button>
+              <button type="submit" className="button-primary" disabled={saving}>{saving ? 'Guardando...' : 'Guardar'}</button>
+            </div>
+          </form>
+        </Modal>
       ) : null}
 
       <ConfirmDialog
@@ -1132,6 +1162,7 @@ export default function CuentasPage() {
             : ''
         }
         confirmLabel="Confirmar eliminación"
+        tone="reversible"
         loadingLabel="Enviando..."
         loading={saving}
         onCancel={() => setDeleteCandidate(null)}

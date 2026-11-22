@@ -232,6 +232,17 @@ public sealed class AuthController : ControllerBase
     private string ReadCookie(string baseName)
     {
         var prod = $"__Host-atlas-{baseName.Replace("_", "-")}";
+
+        // S-14: en produccion solo se lee la cookie con prefijo __Host- (Secure,
+        // Path=/, sin Domain). La legacy la puede fijar un subdominio
+        // comprometido o un atacante en la LAN, asi que no vale como
+        // credencial. En Development se aceptan las dos porque el frontend de
+        // Vite corre en HTTP plano y las cookies se emiten sin el prefijo.
+        if (!_environment.IsDevelopment())
+        {
+            return Request.Cookies[prod] ?? string.Empty;
+        }
+
         return Request.Cookies[prod] ?? Request.Cookies[baseName] ?? string.Empty;
     }
 

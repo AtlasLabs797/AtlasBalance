@@ -787,6 +787,103 @@ public sealed class CuentasControllerTests
         item.NumeroCuenta.Should().Be("1234567890");
     }
 
+    private static async Task<(AppDbContext Db, CuentasController Controller, Guid CuentaId, Guid TitularId)> BuildIbanFixtureAsync(RolUsuario role)
+    {
+        var db = BuildDbContext();
+        var userId = Guid.NewGuid();
+        var titularId = Guid.NewGuid();
+        var cuentaId = Guid.NewGuid();
+
+        db.Usuarios.Add(new Usuario
+        {
+            Id = userId,
+            Email = $"{role}.iban@test.local".ToLowerInvariant(),
+            PasswordHash = "hash",
+            NombreCompleto = "Usuario Iban",
+            Rol = role,
+            Activo = true,
+            PrimerLogin = false
+        });
+        db.Titulares.Add(new Titular { Id = titularId, Nombre = "Titular Iban", Tipo = TipoTitular.EMPRESA });
+        db.DivisasActivas.Add(new DivisaActiva { Codigo = "EUR", Activa = true, EsBase = true });
+        db.Cuentas.Add(new Cuenta
+        {
+            Id = cuentaId,
+            TitularId = titularId,
+            Nombre = "Cuenta Iban",
+            Iban = "ES9121000418450200051332",
+            Divisa = "EUR",
+            Activa = true
+        });
+        if (role != RolUsuario.ADMIN)
+        {
+            db.PermisosUsuario.Add(new PermisoUsuario
+            {
+                Id = Guid.NewGuid(),
+                UsuarioId = userId,
+                TitularId = titularId,
+                PuedeVerCuentas = true
+            });
+        }
+        await db.SaveChangesAsync();
+
+        return (db, BuildController(db, userId, role), cuentaId, titularId);
+    }
+
+    [Theory]
+    [InlineData(RolUsuario.GERENTE)]
+    [InlineData(RolUsuario.EMPLEADO)]
+    public async Task Obtener_Should_Mask_Iban_For_NonAdmin(RolUsuario role)
+    {
+        var (db, controller, cuentaId, _) = await BuildIbanFixtureAsync(role);
+        await using var _ = db;
+
+        var result = await controller.Obtener(cuentaId, false, CancellationToken.None);
+
+        var item = result.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<CuentaListItemResponse>().Subject;
+        item.Iban.Should().Be("********************1332");
+    }
+
+    [Fact]
+    public async Task Actualizar_Should_Keep_Stored_Iban_When_Request_Iban_Is_Masked()
+    {
+        var (db, controller, cuentaId, titularId) = await BuildIbanFixtureAsync(RolUsuario.ADMIN);
+        await using var _ = db;
+
+        var result = await controller.Actualizar(cuentaId, new SaveCuentaRequest
+        {
+            TitularId = titularId,
+            Nombre = "Cuenta Iban renombrada",
+            Divisa = "EUR",
+            TipoCuenta = TipoCuenta.NORMAL,
+            Activa = true,
+            Iban = "********************1332"
+        }, CancellationToken.None);
+
+        result.Should().NotBeOfType<BadRequestObjectResult>();
+        var cuenta = await db.Cuentas.SingleAsync(c => c.Id == cuentaId);
+        cuenta.Iban.Should().Be("ES9121000418450200051332");
+        cuenta.Nombre.Should().Be("Cuenta Iban renombrada");
+    }
+
+    [Fact]
+    public async Task Listar_Search_By_Iban_Should_Match_Only_For_Admin()
+    {
+        var (adminDb, adminController, _, _) = await BuildIbanFixtureAsync(RolUsuario.ADMIN);
+        await using var _a = adminDb;
+        var (gerenteDb, gerenteController, _, _) = await BuildIbanFixtureAsync(RolUsuario.GERENTE);
+        await using var _g = gerenteDb;
+
+        var adminResult = await adminController.Listar(search: "0418450200", cancellationToken: CancellationToken.None);
+        var gerenteResult = await gerenteController.Listar(search: "0418450200", cancellationToken: CancellationToken.None);
+
+        adminResult.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<CuentaListItemResponse>>().Subject.Data.Should().HaveCount(1);
+        gerenteResult.Should().BeOfType<OkObjectResult>().Subject.Value
+            .Should().BeOfType<PaginatedResponse<CuentaListItemResponse>>().Subject.Data.Should().BeEmpty();
+    }
+
     private sealed class NoOpPlazoFijoService : IPlazoFijoService
     {
         public Task<int> ProcesarVencimientosAsync(DateOnly hoy, CancellationToken cancellationToken)

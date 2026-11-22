@@ -68,12 +68,6 @@ public sealed class UserStateMiddleware
             return;
         }
 
-        if (usuario.LockedUntil.HasValue && usuario.LockedUntil.Value > DateTime.UtcNow)
-        {
-            await RejectAsync(context, "Usuario bloqueado temporalmente por intentos fallidos");
-            return;
-        }
-
         if (!HasValidSecurityStamp(context.User, usuario))
         {
             await RejectAsync(context, "La sesion ya no es valida");

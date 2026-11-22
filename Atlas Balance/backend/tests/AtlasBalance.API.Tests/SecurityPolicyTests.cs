@@ -212,4 +212,46 @@ public class SecurityPolicyTests
     {
         SecurityPolicy.TryValidatePassword(password, out var error).Should().BeTrue(error);
     }
+
+    [Theory]
+    [InlineData("shippuden123")]
+    [InlineData("amdhd77902gb")]
+    public void TryValidatePassword_Should_Reject_Password_From_Embedded_List(string password)
+    {
+        SecurityPolicy.TryValidatePassword(password, out var error).Should().BeFalse();
+        error.Should().Contain("demasiado comun");
+    }
+
+    [Fact]
+    public void TryValidatePassword_Should_Reject_Embedded_List_Password_CaseInsensitive()
+    {
+        SecurityPolicy.TryValidatePassword("ShIpPuDeN123", out var error).Should().BeFalse();
+        error.Should().Contain("demasiado comun");
+    }
+
+    [Fact]
+    public void TryValidatePassword_Should_Accept_Long_Random_Password_Not_In_Lists()
+    {
+        SecurityPolicy.TryValidatePassword("vK7#qz9Lw2$Rm4Tx8Bn", out var error).Should().BeTrue(error);
+    }
+
+    [Fact]
+    public void EmbeddedCommonPasswords_Should_Load_More_Than_20000_Entries()
+    {
+        var entries = SecurityPolicy.LoadEmbeddedList(
+            typeof(SecurityPolicy).Assembly, SecurityPolicy.EmbeddedCommonPasswordsResource).ToList();
+
+        entries.Count.Should().BeGreaterThan(20_000);
+        entries.Should().NotContain(e => e.StartsWith('#') || e.Length == 0);
+        SecurityPolicy.CommonPasswordsView.Count.Should().BeGreaterThan(20_000);
+    }
+
+    [Fact]
+    public void LoadEmbeddedList_Should_Throw_When_Resource_Is_Missing()
+    {
+        // Fail-closed: sin recurso no se debe validar contra una lista vacia en silencio.
+        var act = () => SecurityPolicy.LoadEmbeddedList(typeof(SecurityPolicy).Assembly, "no.existe.txt");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*no.existe.txt*");
+    }
 }

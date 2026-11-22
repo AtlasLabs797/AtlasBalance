@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AtlasBalance.API.Constants;
 using AtlasBalance.API.Services;
+using Hangfire;
 
 namespace AtlasBalance.API.Jobs;
 
@@ -12,6 +13,8 @@ namespace AtlasBalance.API.Jobs;
 /// deteccion en algo que ocurre solo y deja rastro propio (que a su vez esta
 /// firmado y espejado al Windows Event Log).
 /// </summary>
+[DisableConcurrentExecution(timeoutInSeconds: 1800)]
+[AutomaticRetry(Attempts = 3, DelaysInSeconds = new[] { 60, 300, 900 })]
 public sealed class VerificacionIntegridadAuditoriaJob
 {
     /// <summary>

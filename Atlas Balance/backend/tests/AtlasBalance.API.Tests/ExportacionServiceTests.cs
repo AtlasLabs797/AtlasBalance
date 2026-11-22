@@ -4,6 +4,9 @@ using ClosedXML.Excel;
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace AtlasBalance.API.Tests;
@@ -60,7 +63,7 @@ public class ExportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         try
         {
@@ -137,7 +140,7 @@ public class ExportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         var act = () => service.ExportarCuentaAsync(cuentaId, TipoProceso.MANUAL, null, CancellationToken.None);
 
@@ -173,7 +176,7 @@ public class ExportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         var act = () => service.ExportarCuentaAsync(cuentaId, TipoProceso.MANUAL, null, CancellationToken.None);
 
@@ -214,7 +217,7 @@ public class ExportacionServiceTests
         });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         try
         {
@@ -296,7 +299,7 @@ public class ExportacionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         try
         {
@@ -362,7 +365,7 @@ public class ExportacionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         try
         {
@@ -444,7 +447,7 @@ public class ExportacionServiceTests
 
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         try
         {
@@ -536,7 +539,7 @@ public class ExportacionServiceTests
             });
         await db.SaveChangesAsync();
 
-        var service = new ExportacionService(db, TestAuditService.Create(db));
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
 
         try
         {
@@ -553,6 +556,409 @@ public class ExportacionServiceTests
             {
                 Directory.Delete(exportDirectory, recursive: true);
             }
+        }
+    }
+
+    /// <summary>
+    /// J-2: el fallo de una cuenta no puede abortar el lote mensual, pero
+    /// tampoco puede desaparecer: si la exportacion mensual falla para todas
+    /// las cuentas, el job terminaba "bien" y nadie se enteraba.
+    /// </summary>
+    [Fact]
+    public async Task ExportarMensualAsync_Should_Log_Warning_When_An_Account_Fails()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-monthly-log-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(exportDirectory);
+
+        var titularId = Guid.NewGuid();
+        var failingCuentaId = Guid.NewGuid();
+        var okCuentaId = Guid.NewGuid();
+
+        db.Configuraciones.AddRange(
+            new Configuracion
+            {
+                Clave = "export_path",
+                Valor = exportDirectory,
+                Tipo = "string",
+                Descripcion = "Ruta de exportaciones"
+            },
+            new Configuracion
+            {
+                Clave = "export_max_rows",
+                Valor = "1",
+                Tipo = "int",
+                Descripcion = "Limite de filas"
+            });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular QA",
+            Tipo = TipoTitular.EMPRESA
+        });
+        db.Cuentas.AddRange(
+            new Cuenta
+            {
+                Id = failingCuentaId,
+                TitularId = titularId,
+                Nombre = "Cuenta que falla",
+                Divisa = "EUR",
+                Activa = true
+            },
+            new Cuenta
+            {
+                Id = okCuentaId,
+                TitularId = titularId,
+                Nombre = "Cuenta correcta",
+                Divisa = "EUR",
+                Activa = true
+            });
+        // La cuenta que falla supera el limite de una fila; la otra no tiene
+        // extractos, asi que el limite no la bloquea.
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = failingCuentaId,
+                Fecha = new DateOnly(2026, 4, 15),
+                Concepto = "Movimiento 1",
+                Monto = 10m,
+                Saldo = 10m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = failingCuentaId,
+                Fecha = new DateOnly(2026, 4, 16),
+                Concepto = "Movimiento 2",
+                Monto = 20m,
+                Saldo = 30m,
+                FilaNumero = 2
+            });
+        await db.SaveChangesAsync();
+
+        var logger = new CapturingLogger<ExportacionService>();
+        var service = new ExportacionService(db, TestAuditService.Create(db), logger);
+
+        try
+        {
+            var success = await service.ExportarMensualAsync(CancellationToken.None);
+
+            success.Should().Be(1);
+            logger.Records.Should().Contain(r =>
+                r.Level == LogLevel.Warning &&
+                r.FormattedMessage.Contains(failingCuentaId.ToString()) &&
+                r.FormattedMessage.Contains("ExportacionTooLargeException"));
+            logger.Records.Should().NotContain(r =>
+                r.Level == LogLevel.Warning &&
+                r.FormattedMessage.Contains(okCuentaId.ToString()));
+            logger.Records.Should().Contain(r =>
+                r.Level == LogLevel.Information &&
+                r.FormattedMessage.Contains("1 exportaciones correctas") &&
+                r.FormattedMessage.Contains("1 fallos"));
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// R-1: la exportacion mensual reutiliza el mismo DbContext para todas las
+    /// cuentas. Sin AsNoTracking y sin limpiar entre cuentas, el ChangeTracker
+    /// acumula los extractos de todas ellas.
+    /// </summary>
+    [Fact]
+    public async Task ExportarMensualAsync_Should_Not_Leave_Extractos_Tracked_Between_Accounts()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-monthly-tracking-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(exportDirectory);
+
+        var titularId = Guid.NewGuid();
+        var firstCuentaId = Guid.NewGuid();
+        var secondCuentaId = Guid.NewGuid();
+
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "export_path",
+            Valor = exportDirectory,
+            Tipo = "string",
+            Descripcion = "Ruta de exportaciones"
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular QA",
+            Tipo = TipoTitular.EMPRESA
+        });
+        db.Cuentas.AddRange(
+            new Cuenta
+            {
+                Id = firstCuentaId,
+                TitularId = titularId,
+                Nombre = "Cuenta uno",
+                Divisa = "EUR",
+                Activa = true
+            },
+            new Cuenta
+            {
+                Id = secondCuentaId,
+                TitularId = titularId,
+                Nombre = "Cuenta dos",
+                Divisa = "EUR",
+                Activa = true
+            });
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = firstCuentaId,
+                Fecha = new DateOnly(2026, 4, 15),
+                Concepto = "Movimiento cuenta uno",
+                Monto = 10m,
+                Saldo = 10m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = Guid.NewGuid(),
+                CuentaId = secondCuentaId,
+                Fecha = new DateOnly(2026, 4, 16),
+                Concepto = "Movimiento cuenta dos",
+                Monto = 20m,
+                Saldo = 20m,
+                FilaNumero = 1
+            });
+        await db.SaveChangesAsync();
+
+        // Las entidades sembradas las rastrea el propio test: se limpian para
+        // que la comprobacion mida solo lo que deja la exportacion mensual.
+        db.ChangeTracker.Clear();
+
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
+
+        try
+        {
+            var success = await service.ExportarMensualAsync(CancellationToken.None);
+
+            success.Should().Be(2);
+            db.ChangeTracker.Entries<Extracto>().Should().BeEmpty();
+            db.ChangeTracker.Entries<ExtractoColumnaExtra>().Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// R-1: acortar el rango de filas que se usa para calcular el ancho de
+    /// columna no puede alterar el contenido del XLSX.
+    /// </summary>
+    [Fact]
+    public async Task ExportarMensualAsync_Should_Keep_Content_After_Limiting_Column_Width()
+    {
+        await using var db = BuildDbContext();
+        var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-monthly-width-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(exportDirectory);
+
+        var titularId = Guid.NewGuid();
+        var firstCuentaId = Guid.NewGuid();
+        var secondCuentaId = Guid.NewGuid();
+
+        db.Configuraciones.Add(new Configuracion
+        {
+            Clave = "export_path",
+            Valor = exportDirectory,
+            Tipo = "string",
+            Descripcion = "Ruta de exportaciones"
+        });
+        db.Titulares.Add(new Titular
+        {
+            Id = titularId,
+            Nombre = "Titular QA",
+            Tipo = TipoTitular.EMPRESA
+        });
+        db.Cuentas.AddRange(
+            new Cuenta
+            {
+                Id = firstCuentaId,
+                TitularId = titularId,
+                Nombre = "Cuenta uno",
+                Divisa = "EUR",
+                Activa = true
+            },
+            new Cuenta
+            {
+                Id = secondCuentaId,
+                TitularId = titularId,
+                Nombre = "Cuenta dos",
+                Divisa = "EUR",
+                Activa = true
+            });
+
+        // Las dos cuentas tienen la misma forma para que el contenido
+        // esperado sea identico en los dos XLSX.
+        var firstExtractoId = Guid.NewGuid();
+        var firstExtractoId2 = Guid.NewGuid();
+        var secondExtractoId = Guid.NewGuid();
+        var secondExtractoId2 = Guid.NewGuid();
+        db.Extractos.AddRange(
+            new Extracto
+            {
+                Id = firstExtractoId,
+                CuentaId = firstCuentaId,
+                Fecha = new DateOnly(2026, 4, 15),
+                Concepto = "Movimiento 1",
+                Monto = 10m,
+                Saldo = 10m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = firstExtractoId2,
+                CuentaId = firstCuentaId,
+                Fecha = new DateOnly(2026, 4, 16),
+                Concepto = "Movimiento 2",
+                Monto = 20m,
+                Saldo = 30m,
+                FilaNumero = 2
+            },
+            new Extracto
+            {
+                Id = secondExtractoId,
+                CuentaId = secondCuentaId,
+                Fecha = new DateOnly(2026, 4, 15),
+                Concepto = "Movimiento 1",
+                Monto = 10m,
+                Saldo = 10m,
+                FilaNumero = 1
+            },
+            new Extracto
+            {
+                Id = secondExtractoId2,
+                CuentaId = secondCuentaId,
+                Fecha = new DateOnly(2026, 4, 16),
+                Concepto = "Movimiento 2",
+                Monto = 20m,
+                Saldo = 30m,
+                FilaNumero = 2
+            });
+        db.ExtractosColumnasExtra.AddRange(
+            new ExtractoColumnaExtra
+            {
+                Id = Guid.NewGuid(),
+                ExtractoId = firstExtractoId2,
+                NombreColumna = "Extra QA",
+                Valor = "valor extra"
+            },
+            new ExtractoColumnaExtra
+            {
+                Id = Guid.NewGuid(),
+                ExtractoId = secondExtractoId2,
+                NombreColumna = "Extra QA",
+                Valor = "valor extra"
+            });
+        await db.SaveChangesAsync();
+
+        var service = new ExportacionService(db, TestAuditService.Create(db), NullLogger<ExportacionService>.Instance);
+
+        try
+        {
+            var success = await service.ExportarMensualAsync(CancellationToken.None);
+
+            success.Should().Be(2);
+            var files = Directory.GetFiles(exportDirectory, "*.xlsx");
+            files.Should().HaveCount(2);
+
+            foreach (var file in files)
+            {
+                using var workbook = new XLWorkbook(file);
+                var worksheet = workbook.Worksheet("Extractos");
+
+                // Cabecera estandar (8 columnas) mas la columna extra.
+                worksheet.LastRowUsed()!.RowNumber().Should().Be(3);
+                worksheet.Cell(1, 9).GetString().Should().Be("Extra QA");
+                worksheet.Cell(2, 2).Style.DateFormat.Format.Should().Be("dd/mm/yyyy");
+                worksheet.Cell(2, 4).Style.NumberFormat.Format.Should().Be("#,##0.00");
+                worksheet.Cell(2, 5).Style.NumberFormat.Format.Should().Be("#,##0.00");
+
+                // Orden descendente por numero de fila (igual que antes del
+                // cambio) y anchos calculados.
+                worksheet.Cell(2, 1).GetValue<int>().Should().Be(2);
+                worksheet.Cell(3, 1).GetValue<int>().Should().Be(1);
+                worksheet.Cell(2, 3).GetString().Should().Be("Movimiento 2");
+                worksheet.Cell(2, 4).GetValue<decimal>().Should().Be(20m);
+                worksheet.Cell(2, 9).GetString().Should().Be("valor extra");
+                worksheet.Column(4).Width.Should().BeGreaterThan(0);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(exportDirectory))
+            {
+                Directory.Delete(exportDirectory, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// J-2: anadir ILogger&lt;ExportacionService&gt; al constructor no puede
+    /// romper el registro de DI. El contenedor resuelve el servicio tal cual
+    /// lo registra Program.cs (AddScoped&lt;IExportacionService,
+    /// ExportacionService&gt;) y ILogger&lt;T&gt; lo resuelve el registro de
+    /// logging por defecto.
+    /// </summary>
+    [Fact]
+    public void ExportacionService_Should_Be_Resolvable_By_The_Dependency_Injection_Container()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        var db = BuildDbContext();
+        services.AddSingleton(db);
+        services.AddSingleton<IAuditService>(TestAuditService.Create(db));
+        services.AddScoped<IExportacionService, ExportacionService>();
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var service = scope.ServiceProvider.GetRequiredService<IExportacionService>();
+
+        service.Should().NotBeNull();
+        service.Should().BeOfType<ExportacionService>();
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        private readonly List<LogRecord> _records = new();
+
+        public IReadOnlyList<LogRecord> Records => _records;
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var formatted = formatter(state, exception);
+            _records.Add(new LogRecord(logLevel, eventId, formatted, exception));
+        }
+
+        public sealed record LogRecord(LogLevel Level, EventId EventId, string FormattedMessage, Exception? Exception);
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
         }
     }
 }

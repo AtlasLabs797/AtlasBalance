@@ -1,128 +1,16 @@
-.import-page {
-  display: grid;
-  gap: var(--space-5);
-}
 
-.import-header {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.import-header p {
-  color: var(--color-text-secondary);
-}
-
-.import-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.import-tabs button {
-  min-height: 2.4rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  padding: 0 var(--space-3);
-}
 
 .import-tabs button.active {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--accent-solid) 24%, var(--border-default));
+  color: var(--text-link);
   background: var(--accent-soft);
 }
 
-.import-steps {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.import-steps li {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.75rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
-  padding: var(--space-2) var(--space-3);
-  text-align: center;
-  background: var(--surface-bg-sunken);
-  color: var(--color-text-secondary);
-  font-weight: var(--font-weight-semibold);
-  line-height: 1.2;
-}
-
+/* Stepper sin aspecto de pestana: texto con linea inferior (el paso activo
+   lleva la linea de acento). */
 .import-steps li.active {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  background: var(--accent-soft);
-}
-
-.import-card {
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-card);
-  background: var(--bg-surface);
-  padding: var(--space-5);
-  display: grid;
-  gap: var(--space-3);
-}
-
-.import-card textarea {
-  width: 100%;
-  font-family: var(--font-family-mono);
-  min-height: 16rem;
-  line-height: 1.55;
-  resize: vertical;
-}
-
-.import-card > h3 {
-  margin: 0;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom-color: var(--accent-solid);
   color: var(--text-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-heavy);
-}
-
-.import-extra-row {
-  display: grid;
-  grid-template-columns: 1fr 120px auto;
-  gap: var(--space-2);
-}
-
-.import-plazo-grid {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr);
-  gap: var(--space-3);
-  align-items: end;
-}
-
-.import-plazo-grid label,
-.import-card > label {
-  display: grid;
-  gap: var(--space-1);
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-.import-plazo-grid input,
-.import-card > label input {
-  width: 100%;
-  color: var(--color-text-primary);
-  font-size: var(--font-size-base);
-}
-
-.import-preview-grid {
-  overflow: auto;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-card);
-  background: var(--bg-surface);
-  scrollbar-gutter: stable;
 }
 
 .import-preview-grid table,
@@ -131,14 +19,14 @@
   min-width: 760px;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
 }
 
 .import-preview-grid td,
 .import-validation-table th,
 .import-validation-table td {
-  border-right: 1px solid var(--border-soft);
-  border-bottom: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
   padding: var(--space-2);
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -157,8 +45,8 @@
 
 .import-validation-table th {
   color: var(--text-secondary);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -168,27 +56,27 @@
 .import-validation-table td:nth-last-child(2),
 .import-validation-table td:nth-last-child(3),
 .import-preview-grid td {
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .import-validation-table-wrap {
   overflow: auto;
   max-height: 420px;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  background: var(--surface-card);
   scrollbar-gutter: stable;
 }
 
 .import-validation-table tr.invalid td {
-  background: color-mix(in srgb, var(--danger-bg) 78%, var(--bg-surface) 22%);
-  color: var(--danger-text);
+  background: color-mix(in srgb, var(--status-danger-bg) 78%, var(--surface-card) 22%);
+  color: var(--status-danger-text);
 }
 
 .import-validation-table tr.warning td {
-  background: color-mix(in srgb, var(--warning-bg) 78%, var(--bg-surface) 22%);
-  color: var(--warning-text);
+  background: color-mix(in srgb, var(--status-warning-bg) 78%, var(--surface-card) 22%);
+  color: var(--status-warning-text);
 }
 
 .import-actions {
@@ -197,139 +85,16 @@
   gap: var(--space-2);
 }
 
-.import-history-header,
-.import-warning-accept {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.import-warning-accept {
-  justify-content: flex-start;
-  border: 1px solid color-mix(in srgb, var(--warning-text) 30%, var(--border-soft));
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--warning-bg) 74%, var(--bg-surface) 26%);
-  color: var(--warning-text);
-  padding: var(--space-2) var(--space-3);
-}
-
-.import-muted {
-  color: var(--color-text-secondary);
-}
-
-.import-result-box {
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-card);
-  padding: var(--space-3);
-  background: var(--bg-surface-soft);
-  display: grid;
-  gap: var(--space-1);
-}
-
-.import-result-box p {
-  margin: 0;
-}
-
 .import-success {
-  border: 1px solid color-mix(in srgb, var(--success-text) 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-success-text) 24%, transparent);
   border-radius: var(--radius-card);
   padding: var(--space-3);
-  background: var(--success-bg);
-  color: var(--success-text);
-  font-weight: var(--font-weight-medium);
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+  font-weight: var(--weight-semibold);
 }
 
-.import-validation-summary {
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-  background: color-mix(in srgb, var(--bg-surface) 78%, var(--surface-bg-sunken) 22%);
-}
-
-.import-validation-summary strong {
-  display: block;
-  color: var(--text-primary);
-  font-family: var(--font-family-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-heavy);
-  line-height: 1;
-}
-
-.import-validation-summary div:nth-child(1) strong,
-.import-validation-summary div:nth-child(4) strong {
-  color: var(--success-text);
-}
-
-.import-validation-summary div:nth-child(2) strong {
-  color: var(--danger-text);
-}
-
-.import-validation-summary div:nth-child(3) strong {
-  color: var(--warning-text);
-}
-
-.import-validation-summary span {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-
-.import-modal-backdrop {
-  z-index: calc(var(--z-modal-backdrop) + 2);
-  animation: modal-backdrop-in var(--duration-fast) var(--ease-premium);
-}
-
-.import-modal {
-  width: min(1280px, 96vw);
-  height: min(92vh, 940px);
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--radius-modal);
-  box-shadow: var(--shadow-xl);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  animation: modal-surface-in var(--duration-base) var(--ease-premium) both;
-}
-
-.import-modal-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border-bottom: 1px solid var(--color-border-primary);
-}
-
-.import-modal-close {
-  justify-self: end;
-}
-
-.import-modal-header h2 {
-  margin: 0;
-}
-
-.import-modal-header p {
-  margin: var(--space-1) 0 0;
-}
-
-.import-modal-body {
-  min-height: 0;
-}
-
-.import-modal-frame {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: var(--color-bg-primary);
-}
-
-@media (max-width: 760px) {
-  .import-plazo-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .import-card {
-    padding: var(--space-4);
-  }
+@media (max-width: 767.98px) {
 
   .import-actions {
     flex-direction: column;
@@ -339,8 +104,7 @@
   .import-actions a {
     width: 100%;
     justify-content: center;
-  }
-}
+  }}
 
 @media (hover: none), (pointer: coarse) {
   .import-validation-table input[type="checkbox"] {
@@ -348,5 +112,41 @@
     min-width: var(--control-height);
     height: var(--control-height);
     min-height: var(--control-height);
-  }
+  }}
+/* Lote 2 (B), P2-2: historial de lotes sin rejilla vertical, cabecera con la
+   misma gramatica que el resto de tablas y celdas que no se parten. */
+.import-history-table th,
+.import-history-table td {
+  border-right: 0;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.import-history-table th {
+  font: var(--type-overline);
+  letter-spacing: var(--tracking-caps);
+}
+
+.import-history-table td:nth-child(3) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-family: var(--font-ui, inherit);
+}
+
+/* Estado y cuenta en sans; solo filas/SHA llevan mono. */
+.import-history-table td:nth-child(2),
+.import-history-table td:nth-child(4) {
+  font-family: inherit;
+}
+
+.import-history-table td:nth-child(1),
+.import-history-table td:nth-child(5) {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.import-history-table code {
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
 }

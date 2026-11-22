@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using AtlasBalance.API.Constants;
@@ -20,6 +21,13 @@ namespace AtlasBalance.API.Tests;
 public sealed class SecurityAlertServiceTests
 {
     private static readonly DateTime Ahora = new(2026, 7, 30, 12, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>
+    /// Clave de CONFIGURACION con la marca de la ultima evaluacion correcta.
+    /// Va literal a proposito: si el servicio renombra la clave, el test
+    /// falla en vez de seguir validando la clave equivocada.
+    /// </summary>
+    private const string LastEvaluatedKey = "security_alerts_last_evaluated_utc";
 
     [Fact]
     public async Task Regla1_Should_Alert_When_Login_Failures_Exceed_Threshold_For_One_Account()
@@ -203,11 +211,115 @@ public sealed class SecurityAlertServiceTests
         alertas.Should().BeEmpty();
     }
 
+    // --- V-03.02 (J-1): la ventana de evaluacion no puede ser fija ---------
+    //
+    // Con la ventana fija [ahora - 5 min, ahora], un job retrasado (backup
+    // largo, exportacion, worker ocupado, reinicio del servicio) deja sin
+    // mirar el tramo entre la ultima pasada y el inicio de esa ventana. Ese
+    // hueco no se recupera nunca: los eventos que caen dentro no disparan
+    // ninguna alerta. La marca de la ultima evaluacion correcta es lo que
+    // encadena las pasadas.
+
+    [Fact]
+    public async Task Should_Evaluate_The_Gap_Left_By_A_Delayed_Job()
+    {
+        await using var db = BuildDbContext();
+        var reloj = new RelojMutable(new DateTime(2026, 7, 30, 9, 55, 0, DateTimeKind.Utc));
+        var servicio = CrearServicio(db, new AlertDispatcherEnMemoria(db, reloj), reloj);
+
+        // Primera pasada a las 09:55. No hay nada que avisar.
+        await servicio.EvaluarYNotificarAsync(CancellationToken.None);
+        (await LeerMarcaAsync(db)).Should().NotBeNullOrWhiteSpace();
+
+        // El job se retrasa 13 minutos: mas que la ventana de 5.
+        reloj.UtcNow = new DateTime(2026, 7, 30, 10, 8, 0, DateTimeKind.Utc);
+
+        // 6 fallos de login (umbral 5) dentro del hueco, a las 10:00. Con la
+        // ventana fija la segunda pasada miraba solo de las 10:03 a las 10:08
+        // y estos eventos no se veian nunca.
+        AddEventosEn(
+            db,
+            6,
+            AuditActions.LoginFailed,
+            ip: "10.0.0.9",
+            instante: new DateTime(2026, 7, 30, 10, 0, 0, DateTimeKind.Utc),
+            detalles: new { email = "victima@atlas.local" });
+        await db.SaveChangesAsync();
+
+        var alertas = await servicio.EvaluarYNotificarAsync(CancellationToken.None);
+
+        alertas.Should().Contain(a => a.Regla == SecurityAlertService.Reglas.LoginFallidosPorCuenta);
+        (await LeerMarcaAsync(db)).Should().Be(
+            reloj.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task Should_Not_Advance_The_Marker_When_The_Evaluation_Fails()
+    {
+        await using var db = BuildDbContext();
+        var reloj = new RelojMutable(new DateTime(2026, 7, 30, 9, 55, 0, DateTimeKind.Utc));
+        var servicio = CrearServicio(db, new AlertDispatcherEnMemoria(db, reloj), reloj);
+
+        await servicio.EvaluarYNotificarAsync(CancellationToken.None);
+        var marcaPrevia = await LeerMarcaAsync(db);
+        marcaPrevia.Should().NotBeNullOrWhiteSpace();
+
+        reloj.UtcNow = new DateTime(2026, 7, 30, 10, 8, 0, DateTimeKind.Utc);
+        AddEventosEn(
+            db,
+            6,
+            AuditActions.LoginFailed,
+            ip: "10.0.0.9",
+            instante: new DateTime(2026, 7, 30, 10, 0, 0, DateTimeKind.Utc),
+            detalles: new { email = "victima@atlas.local" });
+        await db.SaveChangesAsync();
+
+        // El despacho falla (SMTP caido): la evaluacion no termina bien.
+        var servicioConFallo = CrearServicio(db, new AlertDispatcherQueFalla(), reloj);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => servicioConFallo.EvaluarYNotificarAsync(CancellationToken.None));
+
+        // La marca no avanza: la siguiente pasada repite el mismo rango.
+        (await LeerMarcaAsync(db)).Should().Be(marcaPrevia);
+
+        var alertas = await servicio.EvaluarYNotificarAsync(CancellationToken.None);
+        alertas.Should().Contain(a => a.Regla == SecurityAlertService.Reglas.LoginFallidosPorCuenta);
+    }
+
+    [Fact]
+    public async Task Should_Store_The_Last_Evaluated_Marker_As_Datetime()
+    {
+        await using var db = BuildDbContext();
+        var reloj = new RelojMutable(Ahora);
+        var servicio = CrearServicio(db, new AlertDispatcherEnMemoria(db, reloj), reloj);
+
+        await servicio.EvaluarYNotificarAsync(CancellationToken.None);
+
+        var fila = await db.Configuraciones
+            .SingleAsync(c => c.Clave == LastEvaluatedKey);
+
+        fila.Tipo.Should().Be("datetime");
+        DateTime.Parse(fila.Valor, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal)
+            .Should().Be(Ahora);
+    }
+
     // --- helpers -----------------------------------------------------------
 
-    private static async Task<IReadOnlyList<SecurityAlert>> Evaluar(
+    private static SecurityAlertService CrearServicio(
         AppDbContext db,
+        IAlertDispatcher dispatcher,
+        IClock reloj,
         Action<SecurityAlertOptions>? configurar = null)
+    {
+        return new SecurityAlertService(
+            db,
+            dispatcher,
+            reloj,
+            Options.Create(CrearOpciones(configurar)));
+    }
+
+    private static SecurityAlertOptions CrearOpciones(Action<SecurityAlertOptions>? configurar = null)
     {
         var opciones = new SecurityAlertOptions
         {
@@ -222,6 +334,22 @@ public sealed class SecurityAlertServiceTests
             DiasHistoricoIpConocida = 90
         };
         configurar?.Invoke(opciones);
+        return opciones;
+    }
+
+    private static async Task<string?> LeerMarcaAsync(AppDbContext db)
+    {
+        return await db.Configuraciones
+            .Where(c => c.Clave == LastEvaluatedKey)
+            .Select(c => c.Valor)
+            .SingleOrDefaultAsync();
+    }
+
+    private static async Task<IReadOnlyList<SecurityAlert>> Evaluar(
+        AppDbContext db,
+        Action<SecurityAlertOptions>? configurar = null)
+    {
+        var opciones = CrearOpciones(configurar);
 
         var reloj = new FakeClock(Ahora);
         var servicio = new SecurityAlertService(
@@ -244,6 +372,25 @@ public sealed class SecurityAlertServiceTests
         for (var i = 0; i < cantidad; i++)
         {
             db.Auditorias.Add(Evento(tipoAccion, Ahora.AddSeconds(-10 - i), ip, usuarioId, detalles));
+        }
+    }
+
+    /// <summary>
+    /// Igual que <see cref="AddEventos"/> pero con el instante explicito: los
+    /// tests de ventana continua necesitan eventos en un punto concreto.
+    /// </summary>
+    private static void AddEventosEn(
+        AppDbContext db,
+        int cantidad,
+        string tipoAccion,
+        string ip,
+        DateTime instante,
+        Guid? usuarioId = null,
+        object? detalles = null)
+    {
+        for (var i = 0; i < cantidad; i++)
+        {
+            db.Auditorias.Add(Evento(tipoAccion, instante, ip, usuarioId, detalles));
         }
     }
 
@@ -271,6 +418,34 @@ public sealed class SecurityAlertServiceTests
     private sealed class FakeClock(DateTime utcNow) : IClock
     {
         public DateTime UtcNow { get; } = utcNow;
+    }
+
+    /// <summary>
+    /// Reloj con las manos libres: los tests de ventana continua necesitan
+    /// saltar del instante de una pasada al de la siguiente.
+    /// </summary>
+    private sealed class RelojMutable : IClock
+    {
+        public RelojMutable(DateTime utcNow)
+        {
+            UtcNow = utcNow;
+        }
+
+        public DateTime UtcNow { get; set; }
+    }
+
+    /// <summary>
+    /// Despachador que falla al enviar. Sirve para comprobar que una
+    /// evaluacion que no termina bien no deja avanzar la marca de evaluacion,
+    /// para que la siguiente pasada repita el mismo rango.
+    /// </summary>
+    private sealed class AlertDispatcherQueFalla : IAlertDispatcher
+    {
+        public Task<HashSet<string>> ClavesEnEnfriamientoAsync(DateTime ahoraUtc, CancellationToken cancellationToken)
+            => Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
+
+        public Task DespacharAsync(SecurityAlert alerta, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("El canal de despacho no esta disponible.");
     }
 
     /// <summary>

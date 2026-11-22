@@ -149,9 +149,9 @@ public static class SeedData
             // el operador esta ejecutando. Mantener una version atras provoca que el
             // default de versiones y el campo "app_version" que reportan
             // servicios como ActualizacionService.Invoke o SettingsTray queden
-            // una version atras del runtime real. Se actualiza a V-03.01, que
+            // una version atras del runtime real. Se actualiza a V-03.02, que
             // es el InformationalVersion declarado en Directory.Build.props.
-            ["app_version"] = ("V-03.01", "string", "Version instalada"),
+            ["app_version"] = ("V-03.02", "string", "Version instalada"),
             ["app_update_check_url"] = (ConfigurationDefaults.UpdateCheckUrl, "string", "Repositorio oficial de GitHub para actualizaciones"),
             ["app_update_auto_enabled"] = ("false", "bool", "Aplicar automaticamente releases firmados de GitHub"),
             ["app_update_auto_hour_utc"] = ("3", "int", "Hora UTC minima para la comprobacion automatica diaria"),
@@ -165,6 +165,7 @@ public static class SeedData
             ["smtp_user"] = ("", "string", "Usuario SMTP"),
             ["smtp_password"] = ("", "string", "Password SMTP cifrado"),
             ["smtp_from"] = ("noreply@empresa.com", "string", "Remitente SMTP"),
+            ["smtp_tls_mode"] = ("required", "string", "Modo TLS del SMTP: required | auto | none"),
             ["exchange_rate_api_key"] = ("", "string", "Clave API para sincronizacion de tipos de cambio"),
             ["divisa_principal_default"] = ("EUR", "string", "Divisa principal para dashboards"),
             ["dashboard_color_ingresos"] = ("#43B430", "string", "Color linea ingresos dashboard"),

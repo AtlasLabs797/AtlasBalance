@@ -3,7 +3,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
 import api from '@/services/api';
 import type { IntegrationTokenListItem, IntegrationTokenMetrics } from '@/types';
-import { formatDateTime, formatNumber } from '@/utils/formatters';
+import { formatDateTime, formatNumber, formatPercent } from '@/utils/formatters';
 
 type TokenMetricState =
   | { status: 'loading' }
@@ -76,19 +76,20 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
 
   return (
     <>
-    <div className="users-table-scroll">
+    <div className="users-table-scroll" role="region" tabIndex={0} aria-label="Tabla de tokens de integración">
       <table>
+        <caption className="sr-only">Tokens de integración</caption>
         <thead>
           <tr>
-            <th>Nombre</th>
-            <th>Estado</th>
-            <th>Expira</th>
-            <th>Último uso</th>
-            <th>Scopes</th>
-            <th>Peticiones</th>
-            <th>Exito</th>
-            <th>Tiempo medio (ms)</th>
-            <th>Acciones</th>
+            <th scope="col">Nombre</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Expira</th>
+            <th scope="col">Último uso</th>
+            <th scope="col">Scopes</th>
+            <th scope="col">Peticiones</th>
+            <th scope="col">Exito</th>
+            <th scope="col">Tiempo medio (ms)</th>
+            <th scope="col">Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -109,7 +110,7 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
                 </td>
                 <td>{token.scopes.length > 0 ? token.scopes.join(', ') : 'Legacy'}</td>
                 <td>{metricState.status === 'ready' ? metricState.data.total_requests : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
-                <td>{metricState.status === 'ready' ? `${formatNumber(metricState.data.porcentaje_exito)}%` : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
+                <td>{metricState.status === 'ready' ? formatPercent(metricState.data.porcentaje_exito, 2) : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td>{metricState.status === 'ready' ? formatNumber(metricState.data.tiempo_promedio_ms) : metricsUnavailable ? 'No disponible' : 'Cargando'}</td>
                 <td className="users-row-actions">
                   <button
@@ -157,6 +158,7 @@ export function TokenList({ tokens, busy, onRevocar, onRotar, onEliminar }: Toke
           : ''
       }
       confirmLabel={confirmTarget?.action === 'revocar' ? 'Revocar token' : 'Eliminar token'}
+      tone="irreversible"
       loadingLabel={confirmTarget?.action === 'revocar' ? 'Revocando...' : 'Eliminando...'}
       loading={busy}
       onCancel={() => setConfirmTarget(null)}

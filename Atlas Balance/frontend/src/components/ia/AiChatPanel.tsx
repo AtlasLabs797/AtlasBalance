@@ -61,6 +61,10 @@ function humanizeThinkingMode(value: string | null | undefined) {
       return 'Esfuerzo medio';
     case 'high':
       return 'Esfuerzo alto';
+    case 'xhigh':
+      return 'Esfuerzo muy alto';
+    case 'max':
+      return 'Esfuerzo máximo';
     case 'on':
       return 'Pensamiento activado';
     case 'off':
@@ -247,12 +251,15 @@ export function AiChatPanel({ compact = false, onClose }: AiChatPanelProps) {
   // V-02.09 (Fase UI): el backend publica los modos de pensamiento del provider;
   // si no llega la lista usamos el fallback local en `getThinkingModeOptions`.
   const thinkingModeOptions = useMemo(() => {
+    if (selectedProvider === 'MINIMAX' && activeModel === 'MiniMax-M3.1-Flash') {
+      return getThinkingModeOptions(selectedProvider, activeModel);
+    }
     const backend = config?.thinking_modes ?? [];
     if (backend.length === 0) {
       return getThinkingModeOptions(selectedProvider);
     }
     return backend.map((option) => ({ value: option.value, label: option.label }));
-  }, [config?.thinking_modes, selectedProvider]);
+  }, [activeModel, config?.thinking_modes, selectedProvider]);
 
   useEffect(() => {
     void ensureConfig();

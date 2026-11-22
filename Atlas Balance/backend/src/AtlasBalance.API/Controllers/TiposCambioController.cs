@@ -58,6 +58,9 @@ public sealed class TiposCambioController : ControllerBase
         return Ok(new
         {
             updated_count = result.UpdatedCount,
+            // B-2 (LOTE 5): las tasas manuales no se sobrescriben; la
+            // respuesta dice cuantas se han omitido.
+            manual_omitidas = result.ManualOmitidas,
             timestamp = DateTime.UtcNow
         });
     }

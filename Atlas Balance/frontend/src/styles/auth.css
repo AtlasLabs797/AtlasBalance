@@ -11,7 +11,7 @@
   --auth-card-border: var(--border-default);
   --auth-card-shadow: none;
   --auth-control-bg: var(--surface-muted);
-  --auth-control-border: var(--border-default);
+  --auth-control-border: var(--border-control);
   --auth-control-text: var(--text-primary);
   --auth-placeholder: var(--text-tertiary);
   --auth-accent: var(--accent-solid);
@@ -44,6 +44,10 @@
    necesita una formula propia por tema (no puede consumir variables CSS). */
 [data-theme="dark"] .auth-page {
   --auth-logo-filter: invert(69%) sepia(94%) saturate(1302%) hue-rotate(194deg) brightness(102%) contrast(103%);
+  /* Oscuro: la banda de marca y el fondo comparten --surface-page (sin
+     #252527 frente a negro); la tarjeta se separa con un borde mas marcado. */
+  --auth-brand-bg: var(--surface-page);
+  --auth-card-border: var(--border-strong);
 }
 
 .auth-theme-toggle {
@@ -97,7 +101,8 @@
 
 .auth-brand-lockup {
   display: flex;
-  align-items: center;
+  /* Arriba: el logo no se desplaza con/sin el subtitulo (Login vs Cambiar contrasena). */
+  align-items: flex-start;
   gap: 0.9rem;
 }
 
@@ -120,7 +125,7 @@
   margin: 0;
   color: var(--auth-heading);
   font-size: clamp(1.75rem, 2.5vw, 2.25rem);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
   line-height: 1.05;
 }
 
@@ -135,20 +140,20 @@
 .auth-brand-eyebrow {
   width: fit-content;
   padding: 0.28rem var(--space-2);
-  border: 1px solid var(--color-sidebar-border);
-  border-radius: var(--radius-pill);
-  color: var(--color-sidebar-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
 }
 
 .auth-brand-copy strong {
   max-width: 14ch;
   color: var(--auth-heading);
-  font-family: var(--font-family-heading);
+  font-family: var(--font-display);
   font-size: clamp(2.35rem, 2.8vw, 2.65rem);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
   line-height: 1.08;
 }
 
@@ -174,11 +179,11 @@
   min-height: 1.25rem;
   padding: 0.14rem 0.55rem;
   border: 1px solid var(--auth-tag-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-full);
   background: var(--auth-tag-bg);
   color: var(--auth-tag-text);
   font-size: var(--text-12);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--weight-bold);
   line-height: 1;
 }
 
@@ -201,7 +206,7 @@
 
 .auth-brand-footer strong {
   color: var(--auth-heading);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--weight-bold);
 }
 
 .auth-main-panel {
@@ -240,7 +245,7 @@
   margin: 0;
   color: var(--auth-heading);
   font-size: var(--text-28);
-  font-weight: var(--font-weight-heavy);
+  font-weight: var(--weight-bold);
   line-height: 1.14;
 }
 
@@ -259,7 +264,7 @@
 .auth-label {
   color: var(--auth-heading);
   font-size: var(--text-14);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
 }
 
 .auth-input {
@@ -271,7 +276,7 @@
   color: var(--auth-control-text);
   padding: var(--pad-field-y) var(--pad-field-x);
   font-size: var(--text-17);
-  font-weight: var(--font-weight-normal);
+  font-weight: var(--weight-regular);
   transition:
     background-color var(--transition-fast),
     border-color var(--transition-fast),
@@ -279,7 +284,10 @@
 }
 
 .auth-input:focus {
-  outline: none;
+  /* Un solo anillo de foco (--ring-focus), como global.css; el outline solo
+     queda transparente para Alto Contraste. */
+  outline: 2px solid transparent;
+  outline-offset: var(--focus-outline-offset);
   border-color: var(--auth-accent);
   box-shadow: var(--ring-focus);
 }
@@ -335,21 +343,21 @@
   padding: var(--space-3);
   border: 1px solid transparent;
   border-radius: var(--radius-card);
-  font-size: var(--font-size-sm);
+  font-size: var(--text-13);
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .auth-error {
-  background: var(--danger-bg);
-  border-color: color-mix(in srgb, var(--danger-text) 24%, transparent);
-  color: var(--danger-text);
+  background: var(--status-danger-bg);
+  border-color: color-mix(in srgb, var(--status-danger-text) 24%, transparent);
+  color: var(--status-danger-text);
 }
 
 .auth-success {
-  background: var(--success-bg);
-  border-color: color-mix(in srgb, var(--success-text) 24%, transparent);
-  color: var(--success-text);
+  background: var(--status-success-bg);
+  border-color: color-mix(in srgb, var(--status-success-text) 24%, transparent);
+  color: var(--status-success-text);
 }
 
 .auth-mfa-setup {
@@ -368,8 +376,8 @@
   border-radius: var(--radius-md);
   background: var(--auth-control-bg);
   color: var(--auth-control-text);
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
   line-height: 1.5;
   user-select: all;
 }
@@ -415,7 +423,7 @@
   background: var(--auth-accent);
   color: var(--auth-button-text);
   font-size: var(--text-17);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--weight-semibold);
   box-shadow: none;
   transition:
     background-color var(--transition-fast),
@@ -438,17 +446,17 @@
   padding: 0.35rem;
   border: none;
   background: none;
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
   text-decoration: underline;
   cursor: pointer;
 }
 
 .auth-link-button:hover {
-  color: var(--color-text-primary);
+  color: var(--text-primary);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1023.98px) {
   .auth-page {
     grid-template-columns: 1fr;
     overflow: auto;
@@ -485,12 +493,39 @@
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 767.98px) {
+  /* Movil: banda de marca compacta (sin ~110px vacios) y el mismo fondo que la
+     zona del formulario, sin corte de dos tonos. El padding derecho deja sitio
+     al boton de tema fijo. */
+  .auth-page {
+    --auth-brand-bg: var(--surface-page);
+    /* El grid de 100dvh repartia el alto sobrante entre filas: la banda de marca
+       crecia ~120px vacios. Filas al contenido. */
+    align-content: start;
+  }
+
   .auth-brand-panel {
-    padding-right: 4.5rem;
+    min-height: 0;
+    padding: var(--space-9) 4.5rem var(--space-4) var(--space-4);
   }
 
   .auth-card {
     padding: var(--space-5);
+  }
+}
+
+/* Tactil: casilla de 24px (WCAG 2.5.8) y fila con objetivo de 44px */
+@media (hover: none), (pointer: coarse) {
+  .auth-checkbox,
+  .auth-checkbox-label > input[type="checkbox"] {
+    width: 1.5rem;
+    height: 1.5rem;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
+  }
+
+  .auth-checkbox-row,
+  .auth-checkbox-label {
+    min-height: var(--control-height);
   }
 }

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using System.Globalization;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace AtlasBalance.API.Services;
@@ -30,6 +31,9 @@ public sealed class TiposCambioService : ITiposCambioService
     private const string CacheKey = "catalog";
     private const string ExchangeRateClient = "exchange-rate-api";
     private const string ExchangeRateApiKeyConfig = "exchange_rate_api_key";
+    // B-2 (LOTE 5): tipo de las notificaciones de administrador de este servicio.
+    private const string NotificacionTipoTiposCambio = "TIPOS_CAMBIO";
+    private static readonly TimeSpan VentanaAntispamNotificaciones = TimeSpan.FromHours(24);
     // V-02-05 (MED-10/11): acotar tasas razonables. EUR/USD tipico 0.5-2.0, criptomonedas
     // pueden llegar a 10^6 pero no a 10^12. Evita overflow en el producto acumulado
     // del BFS y division por cero o tasas negativas en la rama inversa.
@@ -380,6 +384,8 @@ public sealed class TiposCambioService : ITiposCambioService
 
         if (divisasActivas.Count < 2)
         {
+            // Con una sola divisa no hay nada que sincronizar: es configuracion
+            // normal, no un fallo, y no se avisa al admin.
             return new SyncTiposCambioResult(false, 0, "Se necesitan al menos dos divisas activas para sincronizar.");
         }
 
@@ -390,12 +396,22 @@ public sealed class TiposCambioService : ITiposCambioService
             .FirstOrDefaultAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(exchangeApiKey))
         {
+            await NotificarAdminAsync(
+                "sin_clave_api",
+                "No se pudieron sincronizar los tipos de cambio: falta la clave API de ExchangeRate-API en Ajustes.",
+                new { motivo = "sin_clave_api" },
+                cancellationToken);
             return new SyncTiposCambioResult(false, 0, "Configura la clave API de ExchangeRate-API en Ajustes antes de sincronizar.");
         }
 
         exchangeApiKey = _secretProtector.UnprotectFromStorage(exchangeApiKey)?.Trim();
         if (string.IsNullOrWhiteSpace(exchangeApiKey))
         {
+            await NotificarAdminAsync(
+                "sin_clave_api",
+                "No se pudieron sincronizar los tipos de cambio: falta la clave API de ExchangeRate-API en Ajustes.",
+                new { motivo = "sin_clave_api" },
+                cancellationToken);
             return new SyncTiposCambioResult(false, 0, "Configura la clave API de ExchangeRate-API en Ajustes antes de sincronizar.");
         }
 
@@ -420,13 +436,27 @@ public sealed class TiposCambioService : ITiposCambioService
                     "ExchangeRate API devolvió {StatusCode}. Body: {BodySafe}",
                     (int)response.StatusCode,
                     LogScrubber.Scrub(errorBody));
-                return new SyncTiposCambioResult(false, 0, "No se pudo sincronizar con la API de tipos de cambio.");
+
+                var statusCode = (int)response.StatusCode;
+                await NotificarAdminAsync(
+                    $"http_{statusCode}",
+                    $"No se pudieron sincronizar los tipos de cambio: la API devolvió HTTP {statusCode}. Revisa la clave API y el limite de peticiones.",
+                    new { status = statusCode },
+                    cancellationToken);
+
+                return new SyncTiposCambioResult(false, 0, $"No se pudo sincronizar con la API de tipos de cambio (HTTP {statusCode}).");
             }
 
             var payload = await response.Content.ReadFromJsonAsync<ExchangeRatesApiResponse>(cancellationToken);
             var sourceRates = payload?.ConversionRates ?? payload?.Rates;
             if (sourceRates is null || sourceRates.Count == 0)
             {
+                await NotificarAdminAsync(
+                    "sin_tasas",
+                    "No se pudieron sincronizar los tipos de cambio: la API no devolvio tasas validas. Revisa las divisas activas y el limite de peticiones.",
+                    new { motivo = "sin_tasas" },
+                    cancellationToken);
+
                 return new SyncTiposCambioResult(false, 0, "La API no devolvió tasas válidas.");
             }
 
@@ -445,6 +475,9 @@ public sealed class TiposCambioService : ITiposCambioService
                 .ToDictionaryAsync(x => x.DivisaDestino, cancellationToken);
 
             var updated = 0;
+            // B-2 (LOTE 5): las tasas con Fuente = MANUAL no se sobrescriben.
+            // La sincronizacion las omite y deja aviso al administrador.
+            var manualesOmitidas = new List<string>();
             foreach (var target in targets)
             {
                 if (!normalizedRates.TryGetValue(target, out var rate) || rate <= 0m)
@@ -462,6 +495,11 @@ public sealed class TiposCambioService : ITiposCambioService
                     };
                     _dbContext.TiposCambio.Add(entity);
                 }
+                else if (entity.Fuente == FuenteTipoCambio.MANUAL)
+                {
+                    manualesOmitidas.Add(target);
+                    continue;
+                }
 
                 entity.Tasa = rate;
                 entity.Fuente = FuenteTipoCambio.API;
@@ -469,20 +507,114 @@ public sealed class TiposCambioService : ITiposCambioService
                 updated++;
             }
 
-            if (updated == 0)
+            if (manualesOmitidas.Count > 0)
             {
+                await NotificarAdminAsync(
+                    "manual_omitidas",
+                    $"La sincronizacion no ha actualizado {manualesOmitidas.Count} tasa(s) marcadas como manual ({string.Join(", ", manualesOmitidas)}). Las tasas manuales no se sobrescriben automaticamente.",
+                    new { divisas = string.Join(",", manualesOmitidas) },
+                    cancellationToken);
+            }
+
+            if (updated == 0 && manualesOmitidas.Count == 0)
+            {
+                await NotificarAdminAsync(
+                    "sin_tasa_aplicable",
+                    "No se pudieron sincronizar los tipos de cambio: la API no devolvio ninguna tasa aplicable a las divisas activas.",
+                    new { motivo = "sin_tasa_aplicable" },
+                    cancellationToken);
                 return new SyncTiposCambioResult(false, 0, "No se encontró ninguna tasa aplicable para las divisas activas.");
             }
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             InvalidateCache();
 
-            return new SyncTiposCambioResult(true, updated, null);
+            return new SyncTiposCambioResult(true, updated, null, manualesOmitidas.Count);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error al sincronizar tipos de cambio desde API");
+            // B-2: el mismo DbContext puede llevar cambios sin guardar (tasas a
+            // medio actualizar) que el SaveChanges del aviso persistiria por
+            // error. Lo ya guardado esta en BD y no se pierde; solo se descarta
+            // lo pendiente.
+            _dbContext.ChangeTracker.Clear();
+            try
+            {
+                await NotificarAdminAsync(
+                    "error",
+                    "No se pudieron sincronizar los tipos de cambio por un error inesperado. Revisa el registro del servidor.",
+                    new { tipo = ex.GetType().Name },
+                    CancellationToken.None);
+            }
+            catch (Exception notifEx)
+            {
+                _logger.LogWarning(notifEx, "No se pudo registrar el aviso de error de sincronizacion de tipos de cambio");
+            }
             return new SyncTiposCambioResult(false, 0, "No se pudo sincronizar con la API de tipos de cambio.");
+        }
+    }
+
+    /// <summary>
+    /// B-2: aviso al administrador sobre el estado de la sincronizacion.
+    /// Anti-spam: si en las ultimas 24 h ya existe un aviso con la misma clave
+    /// no se repite (una sincronizacion que falla cada hora no debe llenar la
+    /// tabla), pero si el problema persiste al dia siguiente se vuelve a avisar.
+    /// </summary>
+    private async Task NotificarAdminAsync(
+        string clave,
+        string mensaje,
+        object detalles,
+        CancellationToken cancellationToken)
+    {
+        var ahora = DateTime.UtcNow;
+        var desde = ahora - VentanaAntispamNotificaciones;
+        var avisosRecientes = await _dbContext.NotificacionesAdmin
+            .AsNoTracking()
+            .Where(x => x.Tipo == NotificacionTipoTiposCambio && x.Fecha >= desde)
+            .Select(x => x.DetallesJson)
+            .ToListAsync(cancellationToken);
+
+        // La comparacion se hace en memoria sobre el JSON deserializado:
+        // DetallesJson es jsonb y PostgreSQL lo devuelve normalizado
+        // ("clave": "x", con espacio), asi que comparar texto no coincide nunca.
+        if (avisosRecientes.Any(json => ClaveDeAviso(json) == clave))
+        {
+            return;
+        }
+
+        _dbContext.NotificacionesAdmin.Add(new NotificacionAdmin
+        {
+            Id = Guid.NewGuid(),
+            Tipo = NotificacionTipoTiposCambio,
+            Mensaje = mensaje,
+            Leida = false,
+            Fecha = ahora,
+            DetallesJson = JsonSerializer.Serialize(new { clave, detalles })
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string? ClaveDeAviso(string? detallesJson)
+    {
+        if (string.IsNullOrWhiteSpace(detallesJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(detallesJson);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("clave", out var valor)
+                && valor.ValueKind == JsonValueKind.String
+                    ? valor.GetString()
+                    : null;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
@@ -716,7 +848,10 @@ public sealed record DivisaActivaDto(
 public sealed record SyncTiposCambioResult(
     bool Success,
     int UpdatedCount,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    // B-2 (LOTE 5): cuantas tasas marcadas como manual se han omitido (no se
+    // sobrescriben). 0 en el resto de casos.
+    int ManualOmitidas = 0);
 
 public sealed class TipoCambioMissingException : InvalidOperationException
 {

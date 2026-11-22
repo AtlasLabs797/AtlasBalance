@@ -1,0 +1,245 @@
+/* L8/R-9: reglas exclusivas de la ruta "formatos-importacion".
+   Se cargan con el modulo lazy de la pagina (import en el modulo), no en el
+   CSS inicial. Orden de fuente: las hojas de ruta van despues de las globales. */
+
+
+.users-form-card {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.users-form-card fieldset {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-field);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.formatos-page {
+  gap: var(--space-5);
+}
+
+.formatos-col-banco {
+  width: 5.75rem;
+}
+
+.formatos-col-divisa {
+  width: 4rem;
+}
+
+.formatos-col-base {
+  width: 12rem;
+}
+
+.formatos-col-extra {
+  width: auto;
+}
+
+.formatos-col-estado {
+  width: 5.25rem;
+}
+
+.formatos-col-acciones {
+  width: 10rem;
+}
+
+.formatos-extra-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.formatos-extra-chip {
+  display: inline-flex;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-items: center;
+  min-height: 1.45rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+}
+
+.formatos-row-actions {
+  flex-wrap: nowrap;
+}
+
+.formatos-row-actions button {
+  white-space: nowrap;
+}
+
+.formatos-page .users-form-card {
+  align-self: start;
+  gap: var(--space-3);
+}
+
+.formatos-page .users-form-card h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--text-21);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0;
+}
+
+.formatos-page .users-form-card fieldset {
+  border-color: var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-muted);
+}
+
+.formatos-page .users-form-card legend {
+  padding-inline: var(--space-3);
+  max-width: 100%;
+  white-space: normal;
+  color: var(--text-primary);
+  font-weight: var(--weight-bold);
+}
+
+.formatos-fieldset-help {
+  margin-bottom: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-13);
+}
+
+.formatos-column-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.formatos-page .extra-col-row {
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-field);
+  background: var(--surface-card);
+}
+
+.formatos-column-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.formatos-column-index {
+  min-width: 2.25rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  text-align: center;
+}
+
+.formatos-column-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.formatos-column-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.formatos-page .extra-col-btn-icon {
+  width: var(--control-height-compact);
+  min-width: var(--control-height-compact);
+  min-height: var(--control-height-compact);
+  border-radius: var(--radius-control);
+  font-family: var(--font-mono);
+}
+
+.formatos-add-column {
+  margin-top: var(--space-2);
+}
+
+.app-combobox {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.app-combobox-input {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-7, var(--space-3));
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-field);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.2;
+}
+
+.app-combobox-input:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  border-color: color-mix(in srgb, var(--accent-solid) 36%, var(--border-default));
+  background: var(--surface-card);
+}
+
+.app-combobox-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.app-combobox-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 16rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.app-combobox-option {
+  padding: var(--space-2);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.app-combobox-option--active,
+.app-combobox-option:hover {
+  background: color-mix(in srgb, var(--accent-solid) 14%, var(--surface-card));
+}
+
+.app-combobox-hint {
+  padding: var(--space-2);
+  border-top: 1px solid var(--border-default);
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-style: italic;
+  cursor: default;
+}
+
+.extra-col-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+@media (max-width: 767.98px) {
+
+  .extra-col-row {
+    grid-template-columns: 1fr;
+  }
+}

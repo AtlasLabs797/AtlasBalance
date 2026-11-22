@@ -1,9 +1,72 @@
 # Documentacion de usuario
 
-Documento vigente para `V-03.01`. Las menciones `Desde V-XX.YY` conservan la
+En Extractos y en el detalle de cuenta, las filas con alerta tienen fondo amarillo y se pueden desplazar las columnas desde las barras superior e inferior. En «Columnas» se puede mostrar u ocultar cada columna y cambiar su posicion con las flechas; la aplicacion guarda la preferencia para el usuario y el ambito. La primera vez tras actualizar, las columnas adicionales con datos pueden volver a aparecer aunque antes estuvieran ocultas; puedes ocultarlas de nuevo. El detalle incluye busqueda por concepto o comentarios y fechas; los filtros bajo las cabeceras actuan sobre la pagina cargada. La tabla de cuenta comienza en «Revision»; usa «Edicion avanzada» para modificar movimientos si tienes permiso. Al volver a revision se deshace la seleccion de movimientos.
+
+Documento vigente para `V-03.02`. Las menciones `Desde V-XX.YY` conservan la
 version en la que se introdujo cada comportamiento; no son una referencia a una
 version anterior instalada.
 
+## Novedades de uso (Impeccable, V-03.02)
+
+- **Densidad de la tabla de Extractos:** arriba de la tabla hay un selector "Comodo / Compacto". Compacto muestra mas filas a la vez. Se recuerda por usuario. En pantallas tactiles las filas mantienen un tamano comodo.
+- **Dashboard:** si falla una parte (por ejemplo la evolucion), el resto sigue visible y esa tarjeta ofrece "Reintentar". Los vencimientos de plazos fijos a 7 dias o menos aparecen como aviso arriba.
+- **Confirmaciones:** las acciones se distinguen por nivel: normales, reversibles (borde de aviso) e irreversibles (boton rojo y la frase "Esta accion no se puede deshacer").
+- **Movil:** Copias, Usuarios, Alertas, Exportaciones y Papelera caben en 390 px; las listas se muestran como tarjetas.
+- El reloj del menu lateral se ha quitado.
+
+## Novedades de accesibilidad y uso (V-03.02)
+
+- **Tema:** la primera vez, la aplicacion usa el modo claro u oscuro de tu sistema. Si lo cambias con el boton de la barra superior, se recuerda tu eleccion.
+- **Tamano de texto:** respeta el tamano de letra de tu navegador. Si lo aumentas, la aplicacion crece con el.
+- **Foco con teclado:** al navegar con Tab se ve un contorno azul alrededor del elemento activo, tambien en Alto Contraste de Windows.
+- **Titulos de pestana:** la pestana del navegador muestra la pantalla en la que estas (por ejemplo, `Extractos | Atlas Balance`).
+- **Importes y tasas:** en saldo minimo, tasa manual, interes previsto y presupuestos de IA puedes escribir `1,085` o `1.085` (un solo separador cuenta como decimal). Los importes con miles, como `1.234,50`, no se aceptan en estos campos: escribe `1234,50`.
+- **Pestanas con teclado:** en Importacion y Configuracion usa las flechas izquierda/derecha, Inicio y Fin.
+- **Tablas anchas:** puedes enfocarlas con Tab y desplazarlas con las flechas.
+
+## Permisos de usuario y Configuracion (V-03.02)
+
+- **Permisos de un usuario:** al editar un usuario, cada fila de permisos tiene ahora diez casillas. Las cuatro nuevas son "Revisar movimientos", "Aprobar importaciones", "Conciliar cuentas" y "Cerrar conciliacion". Antes no se podian marcar y, al guardar el usuario, se perdian: si un gerente necesitaba conciliar o revisar, habia que volver a concederselo cada vez que se editaba el usuario.
+- **Configuracion:** guardar una tasa, sincronizar los tipos de cambio, crear o modificar una divisa, o revocar, rotar o borrar un token ya no recarga la pagina entera. Solo se actualiza la seccion afectada, asi que lo que tengas escrito en otra seccion (por ejemplo la clave SMTP o el proveedor de IA) ya no se borra al guardar otra cosa. La pantalla tampoco se queda en blanco esqueleto mientras recarga.
+- **Auditoria:** cuando un movimiento no tiene valor anterior o nuevo, la celda muestra "Sin valor" o "-" en lugar de un importe en blanco.
+
+## Novedades de uso del LOTE 4 (IA e integraciones, V-03.02)
+
+- **El chat de IA respeta los filtros que le pides.** Si preguntas "¿cuanto he gastado en seguros?", la respuesta ya sale con el filtro de concepto aplicado; antes podia devolverte el total de todos los gastos sin avisar. Tambien se aplican los importes minimo y maximo, y se comparan por valor absoluto (un gasto de 120 EUR cuenta como 120, no como -120).
+- **Cuando la pregunta no se puede filtrar, la IA lo dice.** Si pides un saldo filtrado por concepto, o un pendiente por importe, el chat responde que no puede aplicar ese filtro en vez de mostrarte una cifra que no es la que preguntaste.
+- **Las cifras ya no mezclan divisas.** Las comparaciones entre periodos y los rankings (top de cuentas o titulares por gasto) se calculan por separado para cada divisa. Si la pregunta abarca mas de una divisa sin concretarla, el chat te pide que la concretes en vez de sumar euros y dolares juntos.
+- **Los pagos recurrentes ya no se marcan como duplicados.** Un cargo que se repite cada mes (una prima, una suscripcion) solo se avisa como posible duplicado si dos cargos del mismo concepto e importe estan a tres dias o menos.
+- **Los seguimientos mantienen los filtros.** Si preguntas "¿cuanto he gastado en seguros?" y despues "¿y el mes anterior?", la segunda respuesta tambien viene filtrada por seguros y por las cuentas y titulares de la primera.
+- **El chat de IA deja rastro.** Las respuestas que se resuelven en local (saldos, totales, rankings, sin llamar a ningun proveedor) ahora se auditan y cuentan contra tus limites de uso, igual que las que si llaman al proveedor. Repetir la misma pregunta hasta agotar el limite ya no sale gratis.
+- **Los dias y los meses se cuentan en hora local.** Entre las 00:00 y las 02:00 (verano) o la 01:00 (invierno), "hoy" y "este mes" ya no se refieren al dia anterior.
+- **Solo los administradores ven el presupuesto y el coste global de la IA.** El resto de usuarios ven su propio consumo (peticiones, tokens, coste estimado) y si pueden usar la IA. Si tu rol no es ADMIN, la pantalla de Configuracion sigue mostrando todo: ahi la informacion es para el administrador.
+- **Los tokens de integracion duran como maximo un ano.** Al crear o al editar un token no se puede pedir una caducidad de mas de 365 dias, ni una fecha ya pasada. Si editas un token y no cambias la fecha, **conserva la que tenia**: antes se renovaba sola a 90 dias.
+- **Rotar un token no resucita uno revocado.** Si el token esta revocado o ya ha caducado, «Rotar» responde con un error y no emite un token nuevo. Al rotar, el nuevo token hereda los permisos y los alcances del anterior: si el anterior no tenia ninguno, el nuevo tampoco.
+- **Los tokens nuevos ya no reciben por defecto los alcances "vencimientos" y "auditoria".** "Vencimientos" no abria ninguna direccion y "auditoria" permite ver el valor anterior y el nuevo de los movimientos modificados. Si un cliente los necesita, se piden a mano al crear el token. Los tokens que ya tenian esos alcances no cambian.
+
+## Novedades de uso del LOTE 2 (acceso, sesiones y correo, V-03.02)
+
+- **Una cuenta bloqueada ya no se queda fuera para siempre.** El bloqueo por contrasena incorrecta dura 30 minutos y, al cumplirse, el contador de intentos vuelve a cero: un fallo nuevo cuenta como uno, no como el sexto. Antes el contador se quedaba en cinco, de modo que cualquier fallo volvia a bloquear y el usuario podia quedarse fuera indefinidamente.
+- **El bloqueo ya no cierra las sesiones abiertas.** Mientras la cuenta esta bloqueada no se puede iniciar sesion ni completar el doble factor, pero las sesiones que ya tenias abiertas siguen funcionando. Asi, quien conozca un email no puede dejarte fuera de la aplicacion.
+- **Los administradores pueden desbloquear a un usuario.** En `Usuarios`, cada fila tiene ahora una columna "Bloqueo" con el estado de la cuenta y el numero de intentos fallidos. Cuando la cuenta esta bloqueada aparece el boton "Desbloquear", que pide confirmacion, retira el bloqueo y deja constancia en la auditoria.
+- **Las sesiones tienen una vida maxima de 30 dias.** Al renovarse, la sesion no reinicia su reloj: pasados 30 dias desde que la abriste, tienes que volver a iniciar sesion (con doble factor). El plazo se cambia con `JwtSettings:MaxSessionDays` en `appsettings.json`.
+- **Dos pestanas abiertas ya no cierran tu sesion.** Si dos pestanas renuevan el token a la vez, la segunda ya no se interpreta como un robo y no se cierran todas tus sesiones. El aviso de robo por reutilizacion sigue vigente si el intento llega desde otra IP o mas de 30 segundos despues de la renovacion.
+- **En produccion solo valen las cookies con prefijo `__Host-`.** Al actualizar la aplicacion, las sesiones abiertas que usaban las cookies antiguas dejan de valer: vuelve a iniciar sesion. Las cookies antiguas del navegador se ignoran mientras sigan ahi.
+- **Un fallo de red ya no cierra la sesion.** Si al renovar la sesion se cae la conexion, el backend no responde o hay demasiadas peticiones a la vez, la aplicacion te avisa y conserva la sesion. Solo se cierra cuando el servidor dice que la sesion ya no vale.
+- **Las respuestas de la aplicacion no se guardan en cache.** Los saldos y los extractos se piden siempre al servidor: un proxy o el navegador no pueden quedarse con una copia antigua.
+- **El cifrado del correo SMTP se decide de forma explicita.** En `Configuracion > General y SMTP > Servidor SMTP` hay un selector "Modo TLS" con tres opciones: "Obligatorio (STARTTLS)", "Automatico (STARTTLS con usuario; sin usuario, si el servidor lo admite)" y "Sin cifrar (servidor sin TLS)". Elige "Sin cifrar" solo si tu servidor no admite TLS: en ese caso los correos (alertas de saldo, avisos de vencimientos y alertas de seguridad) viajan sin cifrar, y el servidor deja un aviso en el log. "Obligatorio" es el valor por defecto en las instalaciones nuevas. "Automatico" (el valor de las instalaciones anteriores) exige STARTTLS cuando hay usuario SMTP, para no enviar nunca la contrasena en claro; sin usuario, cifra si el servidor lo permite. Si tu servidor tiene usuario y no admite STARTTLS, el envio fallara hasta que elijas "Sin cifrar" de forma explicita.
+- **El registro de auditoria de seguridad ya no se llena con un escaneo.** Los rechazos de acceso (401, 403) se agrupan por tipo, IP y usuario durante un minuto, en vez de escribir una linea por cada ruta intentada.
+
+## Novedades de uso del LOTE 6 (permisos, columnas e importacion, V-03.02)
+
+- **Ver el panel de inicio exige dos permisos.** Para ver saldos y cuentas hacen falta "Ver cuentas" **y** "Ver dashboard" en la misma linea de permisos. Antes, tener permiso solo para anadir, editar, importar o borrar movimientos ya era suficiente, y un gerente sin "Ver dashboard" veia el panel igualmente. Si un gerente o un empleado se queda sin panel, es que le falta "Ver dashboard": lo marca el administrador en la matriz de permisos.
+- **Deshacer una importacion exige "Eliminar lineas".** Revertir un lote borra todos sus extractos, asi que ahora necesita ese permiso: quien solo puede importar ya no puede deshacer su propia importacion. En la pantalla de Importacion el boton de revertir solo aparece si lo tienes.
+- **Guardar un usuario ya no pierde datos por accidente.** Ahora hay que enviar todos los datos del usuario (rol, si esta activo, si es su primer acceso, si puede usar la IA, emails y permisos). Si falta alguno, el servidor responde con un error que dice cual falta y **no cambia nada**: antes, un guardado con un cuerpo incompleto desactivaba al usuario, lo bajaba a EMPLEADO y le borraba los permisos y los emails.
+- **Las columnas que el administrador esconde ya no se pueden volver a mostrar.** Si un administrador fija que solo se vean algunas columnas, el servidor deja de devolver las demas y el usuario no puede reactivarlas: solo puede esconder mas. Cada usuario sigue eligiendo las suyas dentro de las permitidas.
+- **Las acciones que no puedes hacer ya no se ven.** En Conciliacion y en Revision, los botones de conciliar, generar sugerencias, resolver y revisar solo aparecen si tienes el permiso correspondiente: antes se veian y al pulsarlos el servidor respondia con un error.
+- **La exportacion del registro de auditoria deja rastro.** Quien exporta la auditoria a CSV queda anotado, con el numero de filas exportadas y los filtros usados.
+- **Puedes ver y revocar los equipos con MFA recordado.** En el menu lateral, grupo *Sistema*, esta **Dispositivos MFA**: la lista de los equipos y navegadores a los que diste permiso para no repetir el codigo de doble factor. De cada uno se ve el dispositivo, la IP, cuando se concedio, cuando se uso por ultima vez y hasta cuando es valida esa confianza. Puedes revocar uno concreto o el que estas usando ahora mismo (pedira confirmacion). Los equipos revocados se quedan listados, marcados como "Revocado". Al revocar uno, ese equipo tendra que meter el codigo MFA la proxima vez.
+- **Ya puedes deshacer una importacion.** En **Importacion > Historial**, cada lote confirmado tiene el boton **Revertir**, que pide confirmacion y explica que se borran los extractos de ese lote, que sus conciliaciones pasan a "excepcion" y que la importacion se puede volver a hacer. Solo te aparece si tienes el permiso **eliminar lineas** en esa cuenta (los administradores siempre). Si el lote no esta en estado reversible, el servidor avisa con el motivo.
 ## Ubicacion principal
 
 La aplicacion esta en la carpeta `Atlas Balance`.
@@ -187,6 +250,10 @@ En `Sistema > Backups`, un administrador puede configurar:
 - Frecuencia: cada X horas, diaria, semanal o mensual.
 - Hora UTC, dia semanal, dia mensual o intervalo horario segun la frecuencia.
 - Destino: `Solo local` o `Local + Google Drive`.
+
+El nombre del fichero de copia lleva fecha y hora (`backup_AAAA-MM-DD_HHMMSS.dump`), de modo que dos copias automaticas del mismo dia nunca se pisan. La copia se escribe primero en un fichero temporal y solo se publica con su nombre definitivo cuando el volcado termina bien: si la copia se interrumpe, no queda un volcado a medias dando la sensacion de que la copia es buena. Ese temporal a medias se borra solo en la siguiente copia correcta.
+
+Si la copia automatica esta activa y el ultimo volcado correcto es mas viejo de lo que permite la frecuencia configurada, el administrador recibe un aviso en el panel de notificaciones: 1 dia con frecuencia horaria, 2 con diaria, 8 con semanal y 32 con mensual. Si no hay ninguna copia correcta registrada, el aviso tambien aparece. Con la copia automatica desactivada no hay avisos: esa decision es del administrador.
 
 La copia local sigue siendo el archivo restaurable principal. Si eliges `Local + Google Drive`, Atlas Balance crea la copia local y despues sube a Google Drive una version cifrada `.enc`.
 
@@ -386,7 +453,7 @@ Tambien puedes actualizar desde la propia app:
 4. Pulsa `Verificar actualizacion`.
 5. Si hay version nueva y el preflight dice `Instalable`, pulsa `Actualizar ahora`.
 
-Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia desde la hora UTC indicada y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
+Tambien puedes activar `Actualizar automaticamente desde GitHub`. La app revisa una vez al dia dentro de una ventana de madrugada en hora del servidor (01:00-05:00 por defecto) y, si hay version superior, descarga y aplica el release firmado sin pulsar `Actualizar ahora`. Si el servidor estaba apagado durante esa ventana, la actualizacion se aplaza al dia siguiente: la app no se reinicia nunca en horario laboral. Dejamos esto desactivado por defecto porque una actualizacion silenciosa tambien reinicia servicios; usarlo fuera de una ventana razonable es pegarse un tiro en el pie con interfaz bonita.
 
 La app descarga el ZIP oficial `win-x64`, verifica digest y firma `.zip.sig`, limita tamano/contenido del paquete, crea backup PostgreSQL previo, rollback de binarios y comprueba `/api/health`. Si falta ZIP, firma, digest, clave publica o Watchdog disponible, el boton queda bloqueado con el motivo. En `V-02-03`, `Actualizacion disponible` no significa `Instalable`; esa diferencia evita actualizaciones a medias.
 
@@ -462,11 +529,18 @@ Si envias dos o mas filas con los mismos flags y una cubre a la otra en todas la
 
 Marca `Ver cuentas` cuando el usuario necesite abrir cuentas o extractos. Las acciones `Puede Agregar`, `Puede Editar`, `Puede Eliminar` y `Puede Importar` siguen siendo permisos separados.
 
+Desde V-03.02 se corrige el falso «Sin acceso» de permisos globales o con
+cuenta en blanco. Para dar lectura de todas las cuentas a un gerente o empleado,
+deja pais y titular en «Todos», cuenta en blanco y marca `Ver cuentas`.
+Un pais o titular concreto limita las cuentas visibles a ese alcance.
+El cambio requiere instalar el frontend actualizado; no hace falta enumerar
+todas las cuentas ni cambiar el rol a Admin.
+
 Las columnas visibles/editables tambien respetan ese alcance. Cambiar columnas visibles en `Extractos` no concede permiso de edicion; la edicion de columnas se decide por los permisos configurados en `Usuarios`.
 
 Para `Gerente`, el dashboard se habilita cuando tiene al menos un permiso de datos. Para `Empleado`, `Puede ver dashboard` solo permite dashboard si la fila tambien tiene algun permiso operativo de datos dentro de ese alcance. No abre cuentas ni extractos por si solo.
 
-La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar Authenticator`. Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
+La tabla de `Usuarios` muestra si el Authenticator del usuario esta activo. Si alguien pierde el movil o hay que cortarle el acceso MFA, usa `Revocar MFA` (antes se llamaba `Revocar Authenticator`). Atlas Balance cerrara sus sesiones activas y en el siguiente acceso tendra que configurar MFA desde cero.
 
 ## Titulares, cuentas y plazos fijos
 
@@ -493,6 +567,8 @@ En ese mismo dashboard de cuenta, dentro de `Desglose de la cuenta`, ahora puede
 - Confirma la accion para enviarlas a papelera.
 
 La renovacion de un plazo fijo es manual desde `Cuentas` con la accion `Renovar`. Atlas Balance no mueve dinero ni crea transferencias por ti. Bien: una app de tesoreria que inventa movimientos automaticamente es una bomba.
+
+Del aviso de vencimiento de un plazo fijo se ocupa el sistema, cada dia. Si el correo electronico no sale (servidor de correo caido, destinatario rejecting), el aviso **se reintenta al dia siguiente**: un plazo proximo a vencer no se queda sin avisar porque fallara un envio. El administrador recibe una notificacion por cada plazo afectado, no una sola por grupo de vencimientos.
 
 ## Alertas
 
@@ -569,7 +645,7 @@ En `Configuracion > Revision e IA` puedes activar o desactivar la IA, elegir pro
 
 Para OpenRouter, puedes dejar `Auto (gratis permitido)`. Atlas Balance guarda `openrouter/auto`, pero no usa el Auto Router abierto de OpenRouter porque puede chocar con las restricciones de modelos de tu cuenta. En su lugar, usa fallback con un maximo de 3 modelos por consulta, que es el limite efectivo de OpenRouter: `Nemotron 3 Super (free)`, `Gemma 4 31B (free)` y `MiniMax M2.5 (free)`. Si quieres forzar otro modelo gratis permitido, el selector del chat y el de Configuracion tambien muestran `gpt-oss-120b (free)`, `GLM 4.5 Air (free)` y `Qwen3 Coder 480B A35B (free)`.
 
-Para MiniMax, los modelos soportados son `MiniMax-M3` y `MiniMax-M2.7`. Atlas Balance llama directamente a `https://api.minimax.io/v1/chat/completions` con API key de servidor; no lo trata como slug de OpenRouter. `MiniMax-M3` se envia con `thinking` desactivado y `reasoning_split=true`; `MiniMax-M2.7` mantiene el comportamiento del proveedor porque MiniMax no permite desactivar thinking en la familia M2.x.
+Para MiniMax, el modelo predeterminado es `MiniMax-M3.1-Flash`; tambien estan disponibles `MiniMax-M3` y `MiniMax-M2.7`. En Configuracion > IA selecciona MiniMax o M3.1 Flash y guarda: se propone un limite de 1.000.000 de tokens de contexto, reservando los tokens de salida configurados. Las instalaciones existentes conservan su configuracion hasta guardarla. En el chat se puede elegir esfuerzo bajo, medio, alto, muy alto o maximo; automatico usa el maximo del proveedor. El razonamiento no se puede desactivar. El limite de tokens es aproximado; el numero de movimientos y el periodo de datos siguen limitados por la aplicacion. Atlas Balance llama directamente a `https://api.minimax.io/v1/chat/completions` con la clave API del servidor.
 
 Aviso serio: Atlas Balance envia a OpenRouter `zdr=true` y `data_collection=deny` en cada consulta. Si un modelo gratis no puede cumplir esa politica de privacidad, la consulta debe fallar. Eso es molesto, pero sacar finanzas a un proveedor con retencion seria peor.
 
@@ -802,6 +878,12 @@ Los seis avisos que existen:
 | Cambios de contrasena repetidos | Se ha cambiado la contrasena de la misma cuenta varias veces en pocos minutos. |
 | Muchos accesos denegados | Se estan rechazando muchas peticiones, muy por encima de lo habitual. |
 
+La vigilancia no se salta ningun tramo: cada comprobacion empieza donde termino
+la anterior, asi que un servidor parado o una tarea que se retrasa no dejan
+eventos sin mirar (antes se perdian justo los tramos con mas actividad). Por lo
+mismo, si el aviso llega con mas eventos de los habituales, es que se estaba
+acumulando actividad desde la ultima comprobacion.
+
 **Que hacer cuando llega un aviso.** Casi todos tienen explicacion inocente: un
 companero que ha olvidado la contrasena, alguien trabajando desde casa, una
 exportacion grande. Lo importante es confirmarlo con la persona implicada. Si
@@ -912,3 +994,56 @@ resto se agrupa en "Otros", con el numero de entidades agrupadas.
 Reporta la **pantalla exacta, el tema (claro u oscuro) y el tamano de ventana**,
 con captura si puedes. Un aviso de "se ve raro" sin esos tres datos no se puede
 reproducir ni corregir.
+
+## Cambios de seguridad visibles (V-03.02)
+
+- **Contrasenas:** siguen pidiendo 12 caracteres como minimo. Ahora tambien se rechazan las que aparecen en listas de contrasenas filtradas conocidas, con el mensaje "La contrasena es demasiado comun". Elige una frase larga que solo conozcas tu.
+- **Aviso de bloqueo:** si tu cuenta se bloquea por demasiados intentos fallidos, recibiras un correo con la hora y la IP aproximada del intento. El bloqueo se levanta solo pasado el tiempo indicado; si no fuiste tu, avisa al administrador. El correo no incluye enlaces.
+- **IBAN de las cuentas:** solo el administrador ve el IBAN completo al abrir el detalle o al editar una cuenta. El resto de usuarios lo ve enmascarado, y tampoco puede buscar cuentas por IBAN. El numero de cuenta todavia no ha cambiado.
+- **Registro de auditoria:** los registros nuevos ya no guardan el IBAN completo; si un cambio afecta al IBAN, el registro lo indica. Los registros anteriores no se modifican y caducan a su plazo normal.
+- **Limpieza automatica:** cada dia se borran los dispositivos de confianza de MFA caducados o revocados. En las importaciones cerradas hace mas de 180 dias (plazo configurable) se vacian las filas intermedias del archivo; los movimientos ya confirmados no se tocan.
+# Buscar titulares y cuentas (V-03.02)
+
+Pulsa Ctrl+K (⌘K en Mac) o usa el buscador superior y escribe el nombre de un titular o una cuenta. Selecciona el resultado para abrir su detalle. Se muestran hasta diez resultados por tipo, correspondientes al pais activo y a tus permisos. Escribe mas caracteres si necesitas concretar la busqueda.
+
+# Lo que cambia en el LOTE 7 (V-03.02, 2026-11-17)
+
+- **Papelera:** ahora muestra de 50 en 50 con paginacion, y aparecen tambien los elementos eliminados hace mas tiempo, que antes no cabian en la lista y no se podian restaurar. Los importes de los extractos se muestran en la divisa de su cuenta, no siempre en euros. Si cambias de pestana o de pagina mientras se esta cargando, ya no se cuela una respuesta antigua: solo se muestra la que pediste.
+- **Avisos de error repetidos:** durante una actualizacion del sistema o un backup, el servidor esta caido a proposito. Antes salia un aviso de error cada dos segundos y medio; ahora los sondeos no pintan avisos y se detienen al salir de la pagina.
+- **Banner de alertas:** si lo ocultas, sigue oculto al recargar o al cambiar de pais. Solo vuelve a salir cuando hay una alerta distinta de la que ocultaste.
+- **Nota de alerta:** entrar y salir del campo de la nota sin escribirla ya no guarda nada.
+- **Borrar o marcar en lote:** en el detalle de cuenta se procesan de cuatro en cuatro, todas las filas se intentan y, si alguna falla, te dicen cuantas se hicieron y cuantas no ("Se eliminaron 12 de 15 movimientos. Fallaron 3."). Antes se paraban en el primer error.
+- **Campos numericos de Configuracion:** ahora puedes vaciarlos. Si dejas el campo vacio, se conserva el ultimo valor que estaba bien, porque el servidor todavia no admite "sin valor" en estos campos.
+- **Celda editable:** si el guardado falla, lo que habias escrito se queda, aparece un aviso debajo ("No guardado. Revisa el dato e intentalo otra vez.") y el campo sigue abierto: puedes reintentar con Enter o salir con Escape para descartar.
+- **Detalle de cuenta:** al cambiar de pagina o de periodo ya no se hacen peticiones duplicadas. El dato se repide solo cuando toca (cada 10 segundos en los movimientos, cada 5 en el resumen) o al volver a la ventana.
+- **Buscadores:** los de Formatos, Usuarios y el campo "Modelo" de Configuracion esperan 300 ms antes de buscar, asi que ya no lanzan una peticion por cada tecla. El texto que ves en pantalla se filtra al instante.
+- **Configuracion de la IA:** el navegador ya no la consulta cada 30 segundos. Si otro usuario cambia la configuracion de la IA, tu navegador la recoge al volver a la pestana (si han pasado mas de 5 minutos) o al recargar la pagina.
+- **Importacion:** si cambias de pais o de cuenta mientras preparas una importacion, ya no falla con "la clave de idempotencia ya se uso con otro contenido".
+
+# Lo que cambia en el LOTE 5 (V-03.02, 2026-11-17)
+
+- **Totales en divisa:** si alguna cuenta esta en una divisa sin tipo de cambio, el total ya no parece mas bajo sin explicacion. El dashboard y la integracion OpenClaw dicen que divisas quedan fuera ("El total no incluye GBP y USD. No hay tipo de cambio para esas divisas.") y el total sigue siendo la suma de las cuentas convertibles.
+- **Tipos de cambio:** las tasas que has fijado a mano **no se sobrescriben** al sincronizar. Si alguna se ha quedado sin actualizar, el administrador recibe un aviso y la pantalla de Configuracion te dice cuantas se han omitido. Si la sincronizacion falla (la API no responde, devuelve error o no devuelve tasas), tambien deja aviso al administrador: antes solo quedaba en el registro del servidor.
+- **Cambiar la divisa de una cuenta:** si la cuenta ya tiene movimientos, no se puede cambiar su divisa. El mensaje es "La cuenta tiene extractos: no se puede cambiar su divisa. Crea una cuenta nueva o elimina los extractos de esta cuenta antes de cambiarla." Los movimientos que estan en la papelera no bloquean el cambio.
+- **Revertir una importacion:** al revertir un lote, todo se deshace o se aplica entero: si algo falla a mitad, no quedan movimientos borrados con el lote sin revertir. Ahora solo se pueden revertir los lotes ya confirmados (antes en un lote sin confirmar se aceptaba la peticion y se devolvia un error). Ademas, los movimientos de ese lote que estaban conciliados pasan a "excepcion" (se ven y se pueden revisar) y el movimiento esperado vuelve a quedar pendiente, para que se pueda volver a sugerir cuando se reimporte.
+- **Reimportar un lote revertido:** ya se puede. Antes el sistema daba los movimientos del lote revertido por duplicados y no dejaba volver a importarlos.
+- **Confirmar una importacion:** el boton de confirmar un lote ya no responde siempre con "El lote esta siendo procesado por otra operacion". Ese error hacia imposible confirmar cualquier importacion en una base de datos real.
+- **Conciliacion:** un extracto no se puede conciliar dos veces (te avisa con "El extracto ya esta conciliado"), y ya no se propone un extracto cuyo importe se aleja del movimiento mas alla de la tolerancia. Los estados tienen su recorrido: una conciliacion se puede pasar a "Excepcion" o a "Resuelta", y una excepcion se puede volver a conciliar o cerrar. Las conciliaciones resueltas quedan cerradas.
+- **Orden de las filas pegadas:** Atlas Balance toma como saldo actual la ultima fila del extracto pegado, que es la linea de ARRIBA del bloque. Si pegas un fichero del banco que va del mas antiguo al mas reciente, la pantalla de validacion te avisa antes de confirmar, porque el saldo actual se calcularia con la fila mas antigua. Si el aviso te aparece, pega el extracto al reves o consulta con el equipo: el criterio de que fila es la actual depende de como exporta tu banco.
+- **Avisos de saldo bajo:** con dos importaciones simultaneas ya no llegan dos correos de saldo bajo. El aviso se comprueba y se registra dentro de una transaccion, asi que las dos importaciones esperan su turno.
+- **Importes con coma:** "0,500" se lee como 0,5 y no como 500, tanto al importar como en la interfaz. Lo mismo con el punto: "0.500" es 0,5.
+- **Avisos de plazo fijo:** el aviso de "proximo a vencer" ya no falla por un error del servidor. Si el envio del correo falla, se vuelve a intentar en la siguiente pasada sin duplicar la notificacion.
+
+## Cambios visuales de noviembre de 2026
+
+- La barra superior muestra la seccion en la que estas ("Operación", "Control" o "Sistema"). El nombre de la pantalla aparece en el titulo grande.
+- En "Dispositivos MFA de confianza" cada dispositivo aparece como "Navegador · Sistema", por ejemplo "Chrome 157 · Windows". Pasa el raton por encima para ver el detalle tecnico completo.
+- Al editar un pais en Configuración › Países ya se conserva su codigo ISO2.
+
+## Aviso de saldos
+
+Cuando una cuenta queda por debajo del minimo, aparece un aviso flotante sobre la pagina. Puedes abrir «Revisar alertas» u ocultarlo con su boton.
+
+## Signos de cifras (V-03.02)
+
+Los importes y porcentajes positivos se muestran sin signo; los negativos llevan el signo menos. Los datos guardados no cambian.

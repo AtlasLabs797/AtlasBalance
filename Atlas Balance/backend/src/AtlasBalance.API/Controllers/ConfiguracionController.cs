@@ -62,7 +62,9 @@ public sealed class ConfiguracionController : ControllerBase
                 Host = GetValue(config, "smtp_host"),
                 Port = ParseInt(GetValue(config, "smtp_port"), 587),
                 User = GetValue(config, "smtp_user"),
-                From = GetValue(config, "smtp_from")
+                From = GetValue(config, "smtp_from"),
+                // S-17: modo TLS explicito. "required" si no esta configurado.
+                TlsMode = GetValue(config, "smtp_tls_mode", "required")
             },
             General = new GeneralConfigResponse
             {
@@ -119,6 +121,13 @@ public sealed class ConfiguracionController : ControllerBase
         if (request.Smtp.Port <= 0 || request.Smtp.Port > 65535)
         {
             return BadRequest(new { error = "Puerto SMTP inválido." });
+        }
+
+        // S-17: el modo TLS solo admite required | auto | none. Vacio o ausente
+        // significa "no especificado": no se toca el valor guardado.
+        if (!string.IsNullOrWhiteSpace(request.Smtp.TlsMode) && !IsValidSmtpTlsMode(request.Smtp.TlsMode))
+        {
+            return BadRequest(new { error = "Modo TLS SMTP inválido. Valores admitidos: required, auto, none." });
         }
 
         if (!string.IsNullOrWhiteSpace(request.General.AppBaseUrl) && !IsValidAppBaseUrl(request.General.AppBaseUrl))
@@ -201,6 +210,12 @@ public sealed class ConfiguracionController : ControllerBase
             Upsert(config, "smtp_password", request.Smtp.Password, userId, now);
         }
         Upsert(config, "smtp_from", request.Smtp.From.Trim(), userId, now);
+        // S-17: solo se guarda si viene informado, para que un cliente que
+        // todavia no conoce el campo no resetee el modo elegido.
+        if (!string.IsNullOrWhiteSpace(request.Smtp.TlsMode))
+        {
+            Upsert(config, "smtp_tls_mode", request.Smtp.TlsMode.Trim().ToLowerInvariant(), userId, now);
+        }
 
         Upsert(config, "app_base_url", request.General.AppBaseUrl.Trim(), userId, now);
         Upsert(config, "app_update_check_url", updateCheckUrl, userId, now);
@@ -408,6 +423,12 @@ public sealed class ConfiguracionController : ControllerBase
         item.UsuarioModificacionId = userId;
     }
 
+    private static bool IsValidSmtpTlsMode(string value)
+    {
+        var modo = value.Trim().ToLowerInvariant();
+        return modo is "required" or "auto" or "none";
+    }
+
     private static string GetValue(IReadOnlyDictionary<string, string> map, string key, string defaultValue = "")
     {
         return map.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
@@ -482,16 +503,16 @@ public sealed class ConfiguracionController : ControllerBase
             PorcentajeAvisoPresupuesto = Math.Clamp(ParseInt(GetValue(config, "ai_budget_warning_percent"), AiConfigurationDefaults.BudgetWarningPercent), 1, 100),
             InputCostPerMillionTokensEur = Math.Max(0, ParseDecimal(GetValue(config, "ai_input_cost_per_1m_tokens_eur"), 0m)),
             OutputCostPerMillionTokensEur = Math.Max(0, ParseDecimal(GetValue(config, "ai_output_cost_per_1m_tokens_eur"), 0m)),
-            MaxInputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_input_tokens"), AiConfigurationDefaults.MaxInputTokens), 1000, 50000),
+            MaxInputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_input_tokens"), AiConfigurationDefaults.MaxInputTokens), 1000, 1000000),
             MaxOutputTokens = Math.Clamp(ParseInt(GetValue(config, "ai_max_output_tokens"), AiConfigurationDefaults.MaxOutputTokens), 64, 4000),
             MaxContextRows = Math.Clamp(ParseInt(GetValue(config, "ai_max_context_rows"), AiConfigurationDefaults.MaxContextRows), 0, 500),
-            ThinkingModes = BuildThinkingModeOptions(provider)
+            ThinkingModes = BuildThinkingModeOptions(provider, model)
         };
     }
 
-    private static IReadOnlyList<IaThinkingModeOption> BuildThinkingModeOptions(string provider)
+    private static IReadOnlyList<IaThinkingModeOption> BuildThinkingModeOptions(string provider, string model)
     {
-        return AiConfiguration.GetThinkingModesForProvider(provider)
+        return AiConfiguration.GetThinkingModesForProvider(provider, model)
             .Select(value => new IaThinkingModeOption
             {
                 Value = value,
@@ -507,6 +528,8 @@ public sealed class ConfiguracionController : ControllerBase
             "low" => "Esfuerzo bajo",
             "medium" => "Esfuerzo medio",
             "high" => "Esfuerzo alto",
+            "xhigh" => "Esfuerzo muy alto",
+            "max" => "Esfuerzo máximo",
             "on" => "Pensamiento activado",
             "off" => "Pensamiento desactivado",
             _ => "Esfuerzo automatico"
@@ -591,9 +614,9 @@ public sealed class ConfiguracionController : ControllerBase
             return "Los costes estimados por token no pueden ser negativos.";
         }
 
-        if (request.MaxInputTokens is < 1000 or > 50000)
+        if (request.MaxInputTokens is < 1000 or > 1000000)
         {
-            return "El limite de tokens de entrada debe estar entre 1000 y 50000.";
+            return "El limite de tokens de entrada debe estar entre 1000 y 1000000.";
         }
 
         if (request.MaxOutputTokens is < 64 or > 4000)

@@ -517,38 +517,11 @@ public sealed partial class RowLevelSecurityTests
                     GROUP BY polrelid
                 ) p ON p.polrelid = c.oid
                 WHERE n.nspname = 'public'
-                  AND c.relname IN (
-                      'TITULARES',
-                      'CUENTAS',
-                      'PLAZOS_FIJOS',
-                      'EXTRACTOS',
-                      'EXTRACTOS_COLUMNAS_EXTRA',
-                      'EXTRACTOS_DESGLOSES',
-                      'REVISION_EXTRACTO_ESTADOS',
-                      'EXPORTACIONES',
-                      'PREFERENCIAS_USUARIO_CUENTA',
-                      'AUDITORIAS',
-                      'AUDITORIA_INTEGRACIONES',
-                      'BACKUPS',
-                      'BACKUP_CLOUD_CONNECTIONS',
-                      'BACKUP_CLOUD_COPIES',
-                      'PAISES',
-                      'MFA_TRUSTED_DEVICES',
-                      'PERMISOS_USUARIO',
-                      'INTEGRATION_PERMISSIONS',
-                      'NOTIFICACIONES_ADMIN',
-                      'IMPORTACION_LOTES',
-                      'IMPORTACION_LOTE_FILAS',
-                      'MOVIMIENTOS_ESPERADOS',
-                      'CONCILIACIONES',
-                      'ALERTAS_SALDO',
-                      'ALERTA_DESTINATARIOS',
-                      'IA_USO_USUARIOS',
-                      'BACKUP_OPERATIONS'
-                  )
+                  AND c.relname = ANY(@tables)
             ) r
             WHERE NOT r.relrowsecurity OR NOT r.relforcerowsecurity OR r.policy_count = 0
-            """);
+            """,
+            new NpgsqlParameter("tables", RlsProtectedTables));
         tableFailures.Should().Be(0);
 
         var roleFlags = await ExecuteScalarAsync<string>(
@@ -812,6 +785,137 @@ public sealed partial class RowLevelSecurityTests
         (await UpdateByIdAsync(connection, "BACKUP_OPERATIONS", backupOperationId, "estado = 'PENDING'")).Should().Be(1);
     }
 
+    [Fact]
+    public async Task AllPublicTables_Should_Have_Forced_Rls_And_Policy_Unless_Documented_Exception()
+    {
+        var (migrationConnectionString, _) = await CreateRoleConnectionStringsAsync();
+        var migrationOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(migrationConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .Options;
+
+        await using (var db = new AppDbContext(migrationOptions))
+        {
+            await db.Database.MigrateAsync();
+        }
+
+        await using var connection = new NpgsqlConnection(migrationConnectionString);
+        await connection.OpenAsync();
+
+        var allTables = await ListPublicTablesAsync(connection);
+        var unprotected = await ListPublicTablesWithoutForcedRlsAsync(connection);
+
+        // Las listas no deben pudrirse: todo lo listado existe de verdad.
+        allTables.Should().Contain(RlsProtectedTables, "la lista fija previa debe seguir existiendo");
+        allTables.Should().Contain(RlsDeferredExceptionTables.Keys, "cada excepcion documentada debe existir");
+        RlsProtectedTables.Should().NotIntersectWith(RlsDeferredExceptionTables.Keys);
+
+        // La lista fija previa sigue protegida (subconjunto de las tablas con RLS forzada + policy).
+        unprotected.Should().NotContain(RlsProtectedTables);
+
+        // Las excepciones siguen sin RLS: si alguna se protege, hay que sacarla de la lista.
+        unprotected.Should().Contain(RlsDeferredExceptionTables.Keys,
+            "si una excepcion ya tiene RLS forzada con policy, retirarla de RlsDeferredExceptionTables");
+
+        // Cualquier otra tabla de public sin RLS es un hallazgo: no anadir como excepcion sin decision explicita.
+        var unclassified = unprotected.Except(RlsDeferredExceptionTables.Keys, StringComparer.Ordinal).ToList();
+        unclassified.Should().BeEmpty(
+            "toda tabla de public (salvo __EFMigrationsHistory y excepciones documentadas) debe tener RLS forzada y al menos una policy");
+    }
+
+    // Tablas ordinarias de public que deben tener RLS forzada + policy (lista fija original).
+    private static readonly string[] RlsProtectedTables =
+    [
+        "TITULARES",
+        "CUENTAS",
+        "PLAZOS_FIJOS",
+        "EXTRACTOS",
+        "EXTRACTOS_COLUMNAS_EXTRA",
+        "EXTRACTOS_DESGLOSES",
+        "REVISION_EXTRACTO_ESTADOS",
+        "EXPORTACIONES",
+        "PREFERENCIAS_USUARIO_CUENTA",
+        "AUDITORIAS",
+        "AUDITORIA_INTEGRACIONES",
+        "BACKUPS",
+        "BACKUP_CLOUD_CONNECTIONS",
+        "BACKUP_CLOUD_COPIES",
+        "PAISES",
+        "MFA_TRUSTED_DEVICES",
+        "PERMISOS_USUARIO",
+        "INTEGRATION_PERMISSIONS",
+        "NOTIFICACIONES_ADMIN",
+        "IMPORTACION_LOTES",
+        "IMPORTACION_LOTE_FILAS",
+        "MOVIMIENTOS_ESPERADOS",
+        "CONCILIACIONES",
+        "ALERTAS_SALDO",
+        "ALERTA_DESTINATARIOS",
+        "IA_USO_USUARIOS",
+        "BACKUP_OPERATIONS"
+    ];
+
+    // Tablas de identidad/configuracion que quedan fuera de RLS a proposito (deuda diferida,
+    // ver Documentacion/DOCUMENTACION_TECNICA.md: "Limites deliberados" y "Deuda diferida a V-02.07").
+    private static readonly Dictionary<string, string> RlsDeferredExceptionTables = new(StringComparer.Ordinal)
+    {
+        ["USUARIOS"] = "Identidad: la consulta de login/refresh ocurre antes de existir contexto RLS.",
+        ["USUARIO_EMAILS"] = "Identidad: emails de usuario, mismo flujo previo al contexto RLS.",
+        ["REFRESH_TOKENS"] = "Identidad: validacion de sesion previa al contexto RLS.",
+        ["INTEGRATION_TOKENS"] = "Identidad: autenticacion de integraciones previa al contexto RLS.",
+        ["CONFIGURACION"] = "Configuracion global leida por servicios de sistema; deuda diferida.",
+        ["TIPOS_CAMBIO"] = "Configuracion global de divisas; deuda diferida.",
+        ["DIVISAS_ACTIVAS"] = "Configuracion global de divisas; deuda diferida.",
+        ["FORMATOS_IMPORTACION"] = "Configuracion global de importacion; deuda diferida."
+    };
+
+    private static async Task<List<string>> ListPublicTablesAsync(NpgsqlConnection connection)
+    {
+        return await QueryNamesAsync(
+            connection,
+            """
+            SELECT c.relname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'r'
+              AND c.relname <> '__EFMigrationsHistory'
+            ORDER BY c.relname
+            """);
+    }
+
+    private static async Task<List<string>> ListPublicTablesWithoutForcedRlsAsync(NpgsqlConnection connection)
+    {
+        return await QueryNamesAsync(
+            connection,
+            """
+            SELECT c.relname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind = 'r'
+              AND c.relname <> '__EFMigrationsHistory'
+              AND (NOT c.relrowsecurity
+                   OR NOT c.relforcerowsecurity
+                   OR NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid))
+            ORDER BY c.relname
+            """);
+    }
+
+    private static async Task<List<string>> QueryNamesAsync(NpgsqlConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await using var reader = await command.ExecuteReaderAsync();
+        var names = new List<string>();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
     private async Task<(string MigrationConnectionString, string RuntimeConnectionString)> CreateRoleConnectionStringsAsync()
     {
         var builder = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString);
@@ -1013,10 +1117,14 @@ public sealed partial class RowLevelSecurityTests
         return ids;
     }
 
-    private static async Task<T> ExecuteScalarAsync<T>(NpgsqlConnection connection, string sql)
+    private static async Task<T> ExecuteScalarAsync<T>(
+        NpgsqlConnection connection,
+        string sql,
+        params NpgsqlParameter[] parameters)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
         var result = await command.ExecuteScalarAsync();
         result.Should().NotBeNull();
         return (T)result!;
