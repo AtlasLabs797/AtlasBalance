@@ -398,7 +398,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
+  grid-template-rows: minmax(var(--topbar-height), auto) minmax(0, 1fr);
 }
 
 .app-main > .app-topbar {
@@ -407,13 +407,17 @@
 
 .app-main > .alert-banner {
   grid-row: 2;
+  grid-column: 1;
+  z-index: var(--z-sticky);
+  justify-self: end;
   align-self: start;
-  min-height: 0;
-  height: auto;
+  min-width: 0;
+  max-width: min(42rem, calc(100% - 2 * var(--space-5)));
 }
 
 .app-main > .app-content {
-  grid-row: 3;
+  grid-row: 2;
+  grid-column: 1;
   min-height: 0;
 }
 
@@ -421,9 +425,9 @@
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-4);
   min-height: var(--topbar-height);
   padding: 0 var(--space-5);
@@ -469,6 +473,7 @@
 
 .app-topbar-actions {
   display: flex;
+  justify-self: end;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
@@ -570,11 +575,12 @@
   --alert-banner-border: var(--status-warning-border);
   --alert-banner-solid: var(--status-warning-solid);
 
-  /* Mismo margen lateral que el padding de .app-content (var(--space-5)). */
+  /* Superpuesto al contenido sin reservar una fila de la pagina. */
   margin: var(--space-2) var(--space-5) 0;
   border: 1px solid var(--alert-banner-border);
   border-radius: var(--radius-card);
   background: var(--alert-banner-bg);
+  box-shadow: var(--shadow-lg);
   padding: var(--space-2) var(--space-3);
   display: flex;
   align-self: start;
@@ -1048,7 +1054,7 @@ body:has(.ai-floating-widget) .toast-viewport {
   }
 
   .app-main {
-    grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
+    grid-template-rows: minmax(var(--topbar-height), auto) minmax(0, 1fr);
     padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
   }
 
@@ -1058,6 +1064,10 @@ body:has(.ai-floating-widget) .toast-viewport {
 
   /* Una sola fila compacta: texto que envuelve a la izquierda y descarte como
      boton de icono de 32px a la derecha. */
+  .app-main > .alert-banner {
+    max-width: calc(100% - 2 * var(--space-3));
+  }
+
   .alert-banner {
     margin: var(--space-2) var(--space-3) 0;
     padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
@@ -1099,6 +1109,8 @@ body:has(.ai-floating-widget) .toast-viewport {
   }
 
   .app-topbar {
+    display: flex;
+    justify-content: space-between;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
   }

@@ -1,4 +1,9 @@
-﻿## 2026-11-20 - V-03.02 - Pulido visual Lotes 3 y 4: incidencias
+## 2026-11-22 - V-03.02 - Verificacion del buscador
+
+- `npm run test:unit` encontro permisos denegados al escribir en `.test-dist`; se compilo en un directorio alternativo y pasaron 345 pruebas.
+- El primer `npm run lint` encontro un directorio temporal desaparecido durante el recorrido; el segundo paso correctamente.
+
+## 2026-11-20 - V-03.02 - Pulido visual Lotes 3 y 4: incidencias
 
 ### Editar un pais borraba su codigo ISO2 (CORREGIDO EN CODIGO)
 - **Causa:** `PaisesPage.tsx` enviaba `{ codigoIso2 }`, pero la API serializa en snake_case (`Program.cs`, `SnakeCaseLower`) y espera `codigo_iso2`. El campo llegaba nulo y se guardaba vacio. El fallo es anterior a estos lotes.
@@ -6481,3 +6486,9 @@ mismo dia tras verificacion en codigo. Detalle de cada uno:
 ## 2026-11-20 - Comprobacion MiniMax M3.1 Flash
 
 La suite frontend no pudo sobrescribir archivos existentes en `.test-dist` por EPERM. Se compilo en `.test-dist-minimax-m31` y se ejecuto la prueba dirigida correctamente. El filtro `dotnet test --filter` fue ignorado por el runner xUnit v3; se interrumpio y se uso el ejecutable compilado con `-method` (2 pruebas correctas).
+# 2026-11-22 - V-03.02 - Fondo de alerta incompleto
+
+- Sintoma: los movimientos con alerta solo mostraban un borde y un punto.
+- Causa: el estilo anterior habia retirado el fondo de las filas marcadas; la columna fija tiene ademas un fondo propio.
+- Solucion: aplicar el fondo de aviso a la fila y a la columna fija, tambien en hover. Verificacion estatica y pruebas de frontend; revision visual pendiente.
+- Incidencia de verificacion: `npm run test:unit` no pudo escribir en `.test-dist` (EPERM). La compilacion y ejecucion en una carpeta alternativa dentro del proyecto terminaron con 345/345 pruebas correctas.

@@ -2,6 +2,10 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-22 - Buscador superior
+
+- `shell.css` usa tres columnas con laterales iguales para centrar el buscador en la barra; en movil conserva el layout flexible y el buscador oculto.
+
 ### 2026-11-19 - Correccion tras la verificacion independiente (B-10, S-17, S-25, B-2, J-1, S-2, F-7, D-1, M-3, A-6)
 
 - **IA (B-10, A-6):** `FinancialToolsService.SonProximos` compara parejas consecutivas de elementos ordenados (sin `Distinct`). `DetectAnomaliesAsync` filtra por `Concepto` (`ToLower().Contains`) y por `ImporteMinimo`/`ImporteMaximo` sobre `Math.Abs(Monto)`.
@@ -7442,3 +7446,10 @@ Contrato visual que queda en el codigo (DESIGN.md manda):
 - **`utils/userAgent.ts`:** `resumenUserAgent(ua)` da "Navegador version · SO" (Edge, Opera, Claude, Electron, Firefox, Chrome, Safari; Windows, macOS, Linux, Android, iOS, ChromeOS).
 - **Contrato de nombres con la API:** los cuerpos de peticion deben ir en snake_case (`codigo_iso2`), igual que las respuestas. Un nombre en camelCase se pierde en silencio.
 - **Toasts:** con el boton flotante de IA montado, `.toast-viewport` sube por encima de el (`body:has(.ai-floating-widget)`).
+# 2026-11-22 - V-03.02: fondo de alerta en filas
+
+La tabla compartida `ExtractoTable` aplica `--status-warning-bg` a toda la fila marcada y a su columna fija; el estado hover conserva un tono de aviso en ambos temas. La regla anterior solo mostraba un borde y un punto. No cambia la logica de alertas.
+
+## 2026-11-22 - Aviso de saldo superpuesto (V-03.02)
+
+La alerta y el contenido comparten la segunda fila del grid de `.app-main`; la alerta se alinea a la derecha, limita su ancho y se dibuja por encima con sombra. En movil se adapta al ancho disponible.

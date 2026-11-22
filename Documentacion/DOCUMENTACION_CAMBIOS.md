@@ -1,5 +1,13 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-22 - V-03.02 - Centrado del buscador
+
+- Trabajo y decision visual: centrado respecto a la barra superior mediante columnas laterales iguales; en movil se mantiene oculto.
+- Archivos: `frontend/src/styles/layout/shell.css`, `Documentacion/Versiones/v-03.02.md`, `DOCUMENTACION_TECNICA.md` y esta bitacora.
+- Verificacion: `npm run lint` correcto en el segundo intento; compilacion de tests con `npx tsc -p tsconfig.test.v2.json --outDir .test-centrado-buscador` y `node --test --test-force-exit .test-centrado-buscador/tests/*.test.js`: 345/345 correctos.
+- Incidencias: el primer lint encontro un directorio temporal eliminado durante su recorrido; `npm run test:unit` no pudo escribir en `.test-dist` por permisos, por lo que se uso un directorio alternativo.
+- Pendiente: comprobacion visual en la aplicacion real.
+
 # 2026-11-20 - V-03.02 - Pulido visual del frontend, Lotes 3 y 4 (revision en la app real)
 
 - Trabajo: revision de todas las pantallas en la app real, con la sesion del usuario en el panel del navegador, datos reales y pantalla completa con scroll, a 1587 px y 375 px. Se combino un script de medicion (desbordes, textos cortados, alturas de control, solapes y tildes) con capturas de cada tramo de pagina. Los defectos se repartieron entre escritores Sonnet/Haiku con ficheros disjuntos y luego se verificaron de nuevo en la app real. Sin commit.
@@ -1046,3 +1054,19 @@ Frontend (`Atlas Balance/frontend`): `index.html`, `public/theme-init.js` (nuevo
 - Comandos: `dotnet build` del proyecto de tests con analizadores desactivados; ejecutable xUnit con filtros `-method` y `-class`; `npm run lint`, `npx tsc --noEmit`, compilacion de tests frontend a `.test-dist-minimax-reasoning` y `node --test` de `aiModels.test.js`.
 - Verificacion: build, lint y tipos correctos; 7 casos de envio MiniMax, 12 pruebas de modos existentes, 1 prueba de guardado de 1.000.000 y 6 pruebas frontend correctas. Visual: selector existente con etiquetas de niveles, sin rediseno.
 - Pendiente: prueba visual autenticada y llamada real a MiniMax; la configuracion existente requiere seleccionar el proveedor o modelo y guardar. El limite de tokens es aproximado y siguen vigentes los limites de movimientos y periodo.
+# 2026-11-22 - V-03.02: fondo de alerta en movimientos y extractos
+
+- Trabajo: fondo amarillo en toda la fila marcada de la tabla compartida, incluida la columna fija y el estado hover; se mantienen el borde y el punto. Se usan los colores de aviso existentes de cada tema.
+- Archivos: `frontend/src/styles/layout/extractos.css`, `Documentacion/Versiones/v-03.02.md`, `DOCUMENTACION_TECNICA.md`, `DOCUMENTACION_CAMBIOS.md` y `LOG_ERRORES_INCIDENCIAS.md`.
+- Comandos: `npm run lint`; `npm run test:unit`; compilacion de tests con `tsc -p tsconfig.test.v2.json --outDir .test-verificacion-alertas` y ejecucion con `node --test`; `git diff --check`.
+- Verificacion: lint correcto; 345/345 tests correctos usando carpeta alternativa, pues la salida habitual dio EPERM. Revision estatica de la cascada CSS. No se ha validado visualmente en navegador ni en la aplicacion autenticada.
+- Pendientes de diseno: comprobar visualmente claro y oscuro en la aplicacion.
+
+# 2026-11-22 - V-03.02 - Aviso de saldo superpuesto
+
+- Trabajo: el aviso deja de reservar una fila completa y flota alineado a la derecha, con ancho limitado, sombra y ajuste para movil; conserva enlace y descarte.
+- Archivos: `frontend/src/styles/layout/shell.css`, documentacion tecnica, de usuario, version y bitacora.
+- Comandos: `npm run lint`, `npm run test:unit`, `npx eslint src --max-warnings 0`, `npx tsc --noEmit`, `git diff --check`.
+- Verificacion: ESLint de `src` y TypeScript correctos. El lint completo incluye archivos generados en `.test-verificacion-alertas`; los tests no compilan por EPERM en `.test-dist`. `git diff --check` senala lineas finales preexistentes en documentos modificados simultaneamente.
+- Pendiente: comprobacion visual en la aplicacion y ejecucion de la suite en un entorno con permisos.
+- Diseno: aviso compacto sobre el contenido, alineado a la derecha y con sombra; sin cambios de color ni acciones.

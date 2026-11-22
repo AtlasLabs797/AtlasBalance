@@ -1039,3 +1039,7 @@ Pulsa Ctrl+K (⌘K en Mac) o usa el buscador superior y escribe el nombre de un 
 - La barra superior muestra la seccion en la que estas ("Operación", "Control" o "Sistema"). El nombre de la pantalla aparece en el titulo grande.
 - En "Dispositivos MFA de confianza" cada dispositivo aparece como "Navegador · Sistema", por ejemplo "Chrome 157 · Windows". Pasa el raton por encima para ver el detalle tecnico completo.
 - Al editar un pais en Configuración › Países ya se conserva su codigo ISO2.
+
+## Aviso de saldos
+
+Cuando una cuenta queda por debajo del minimo, aparece un aviso flotante sobre la pagina. Puedes abrir «Revisar alertas» u ocultarlo con su boton.

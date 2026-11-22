@@ -405,8 +405,6 @@
   background: var(--sheet-row-hover);
 }
 
-/* P2-13: fila marcada sin fondo coloreado (DESIGN.md): punto de estado a la
-   derecha (::before de abajo) y borde izquierdo de 2px. */
 .extracto-row.flagged > .cell:first-child {
   box-shadow: inset 2px 0 0 var(--status-warning-solid);
 }
@@ -1287,6 +1285,16 @@
 
 .cell--fila_numero {
   background: var(--surface-card);
+}
+
+.extracto-row.flagged,
+.extracto-row.flagged .cell--fila_numero {
+  background: var(--status-warning-bg);
+}
+
+.extracto-row.flagged:hover,
+.extracto-row.flagged:hover .cell--fila_numero {
+  background: color-mix(in srgb, var(--status-warning-bg) 85%, var(--status-warning-solid));
 }
 
 .cell.head.cell--fila_numero {
