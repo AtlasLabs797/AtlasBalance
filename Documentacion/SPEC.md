@@ -1947,6 +1947,10 @@ nombre_columna  VARCHAR(100) NOT NULL
 
 valor           TEXT
 
+deleted_at      TIMESTAMP     -- soft delete; en BD sin zona horaria, el modelo pide TIMESTAMPTZ (deriva M-9)
+
+deleted_by_id   UUID FK → USUARIOS
+
 ```
 
 **Índices:** `extracto_id`, `nombre_columna`
@@ -2581,7 +2585,7 @@ filas_validas                 INTEGER NOT NULL
 filas_error                   INTEGER NOT NULL
 filas_advertencia             INTEGER NOT NULL
 advertencias_aceptadas        BOOLEAN NOT NULL
-notas                         TEXT                          -- nullable; existe en la entidad pero no en ninguna migración: comprobar si la columna existe en BD
+notas                         TEXT                          -- nullable; la crea V0203_Hardening (falta en el snapshot, deriva M-9)
 fecha_creacion                TIMESTAMPTZ NOT NULL
 fecha_confirmacion            TIMESTAMPTZ                   -- nullable
 confirmado_por_id             UUID FK → USUARIOS            -- nullable
@@ -2610,7 +2614,7 @@ fingerprint           VARCHAR(64)                  -- nullable; huella para dete
 datos_json            JSONB NOT NULL
 errores_json          JSONB NOT NULL
 advertencias_json     JSONB NOT NULL
-deleted_at            TIMESTAMPTZ                  -- soft delete
+deleted_at            TIMESTAMP     -- en BD sin zona horaria; el modelo pide TIMESTAMPTZ (deriva M-9)
 deleted_by_id         UUID FK → USUARIOS           -- nullable
 ```
 
@@ -2632,7 +2636,7 @@ estado                  VARCHAR(24) NOT NULL          -- p.ej. 'PENDIENTE', 'COR
 fecha_modificacion      TIMESTAMPTZ NOT NULL
 usuario_modificacion_id UUID FK → USUARIOS            -- nullable
 xmin                    xid                           -- token de concurrencia optimista
-deleted_at              TIMESTAMPTZ                   -- soft delete
+deleted_at              TIMESTAMP     -- en BD sin zona horaria; el modelo pide TIMESTAMPTZ (deriva M-9)
 deleted_by_id           UUID FK → USUARIOS            -- nullable
 ```
 

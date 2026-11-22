@@ -2,13 +2,6 @@
 
 ## Abiertos
 
-### 2026-11-22 - V-03.02 - Abierto - Posible deriva modelo/BD en `IMPORTACION_LOTES.notas` y soft delete de importacion/revision
-
-- **Sintoma:** `ImportacionLote.Notas` (`Models/Entities.cs:225`) existe en la entidad, pero ninguna migracion ni `AppDbContextModelSnapshot.cs` crea la columna `notas`. Ademas, el snapshot no tiene `deleted_at`/`deleted_by_id` en `REVISION_EXTRACTO_ESTADOS` ni `IMPORTACION_LOTE_FILAS`, que vienen de una migracion SQL manuscrita.
-- **Impacto posible:** si la columna no existe en BD, cualquier consulta que materialice `ImportacionLote` fallaria con columna inexistente; y la proxima `dotnet ef migrations add` podria generar cambios inesperados.
-- **Contexto:** detectado al documentar el esquema en `SPEC.md`; no se ha comprobado contra una BD real.
-- **Siguiente paso:** `\d importacion_lotes` en la BD de desarrollo y `dotnet ef migrations has-pending-model-changes`.
-
 ### 2026-10-05 - V-03.02 - Cerrado - `PlazoFijoVencimientoJob` falla al consultar notificaciones JSONB
 
 - **Sintoma:** durante el arranque del backend de desarrollo, Hangfire reintenta
@@ -93,6 +86,7 @@
   diferencias de filtro en tres indices unicos y de nombre en una FK.
   Cerrarlo exige una migracion de esquema nueva y actualizar el snapshot al
   mismo tiempo: es trabajo de un lote propio, no de este.
+- **Comprobacion (2026-11-22):** `IMPORTACION_LOTES.notas` existe en la base de desarrollo (la crea `20260701115326_V0203_Hardening`); solo falta en el snapshot, dentro de esta misma deriva. No hay fallo en runtime.
 - **Por que sigue abierto:** mientras haya esa deriva, el `Ignore` de
   `RelationalEventId.PendingModelChangesWarning` en `AppDbContext.OnConfiguring`
   es obligatorio; quitarlo haria fallar `Migrate()` contra toda base

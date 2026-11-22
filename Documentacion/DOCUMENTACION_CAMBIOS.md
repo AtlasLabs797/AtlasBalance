@@ -6,7 +6,9 @@ Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (h
 - `AGENTS.md`: la regla "ENUMs como tipos PostgreSQL" era falsa; ahora explica que son `integer` y que no se deben reordenar. La seccion 12 ya no dice que SPEC esta incompleta.
 - Archivos: `Documentacion/SPEC.md`, `AGENTS.md`, `Documentacion/REGISTRO_BUGS.md` y esta bitacora.
 - Verificacion: cada tabla contrastada con `AppDbContextModelSnapshot.cs`, `Entities.cs` y `Enums.cs`; 35 headings de tabla en la seccion 5 y bloques de codigo cerrados.
-- Pendiente: comprobar en BD real la posible deriva de `IMPORTACION_LOTES.notas` (abierto en `REGISTRO_BUGS.md`).
+- Comprobacion posterior en la BD de desarrollo: `IMPORTACION_LOTES.notas` existe (la crea `V0203_Hardening`); la alarma era falsa y solo falta en el snapshot, dentro de la deriva M-9 ya registrada. Se retira la entrada nueva de `REGISTRO_BUGS.md` y se anota en la de M-9. En SPEC, `deleted_at` de `REVISION_EXTRACTO_ESTADOS`, `IMPORTACION_LOTE_FILAS` y `EXTRACTOS_COLUMNAS_EXTRA` pasa a reflejar el tipo real (`timestamp` sin zona). `AGENTS.md` avisa de no usar `dotnet ef migrations add` mientras dure M-9.
+- La BD de desarrollo (`atlas_balance` en Docker) tiene sin aplicar `20261116210000`, `20261117120000` y `20261118100000`: faltan `REFRESH_TOKENS.sesion_ini_en` y `PREFERENCIAS_USUARIO_CUENTA.columnas_visibles_admin`. Se aplican solas con `Migrate()` al arrancar el backend de desarrollo con el codigo actual.
+- Pendiente: cerrar M-9 con una migracion de esquema propia (cambio de tipo de `deleted_at` con recreacion de policies RLS).
 
 # 2026-11-22 - V-03.02 - Instrucciones de agentes: recursos externos y limpieza
 

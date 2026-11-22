@@ -203,6 +203,8 @@ El equipo tiene antimalware y antivirus activos, y lo que parezca malware se blo
 
 La fuente de verdad es el codigo: `Models/Entities.cs`, `Data/AppDbContext.cs` y `Migrations/`. `Documentacion/SPEC.md` seccion 5 documenta todas las tablas (actualizada contra el snapshot en V-03.02). Si chocan, manda el codigo. Si cambias el esquema, actualiza tambien SPEC.
 
+El snapshot de EF tiene deriva conocida frente al modelo (M-9 en `Documentacion/REGISTRO_BUGS.md`, fijada por `SnapshotModelDriftTests`). Por eso `dotnet ef migrations add` genera migraciones sucias con cambios ajenos: escribe las migraciones a mano, como las de V-03.02, y no quites el `Ignore` de `PendingModelChangesWarning` en `AppDbContext` hasta cerrar M-9.
+
 Lo que SPEC no recoge o recoge mal:
 
 1. **Soft delete:** solo las entidades que implementan `ISoftDelete` tienen `deleted_at` + `deleted_by_id`. `AppDbContext.ApplySoftDeleteQueryFilters` les aplica un filtro global (`HasQueryFilter`), asi que no anadas `WHERE deleted_at IS NULL` a mano; usa `IgnoreQueryFilters()` solo con motivo (papelera, restauracion). Otras tablas no tienen soft delete a proposito: auditoria (append-only), tokens, permisos, configuracion, tipos de cambio, notificaciones admin...
@@ -227,8 +229,8 @@ docker compose up -d
 # Backend
 cd "Atlas Balance/backend/src/AtlasBalance.API"
 dotnet run
-dotnet ef migrations add NombreMigracion
 dotnet ef database update
+# Migraciones nuevas: a mano, no con "dotnet ef migrations add" (ver seccion 12)
 
 # Backend - tests
 cd "Atlas Balance/backend"
