@@ -1,5 +1,11 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-23 - V-03.02 - Correccion de checks de CI
+
+- Trabajo: rutas de pruebas multiplataforma, test de bloqueo de exportacion en Windows y codigo de salida correcto de los fixtures del scanner. CI ejecuta la clase de limpieza en Windows.
+- Archivos: `LimpiezaExportacionesJobTests.cs`, `Test-AtlasSecrets.Tests.ps1`, `.github/workflows/ci.yml`, documentacion tecnica, version y log de incidencias.
+- Verificacion local: fixtures del scanner con envoltorio y codigo de salida de CI, correctos; 12/12 tests de limpieza de exportaciones en Windows. Pendiente: ejecuciones completas de GitHub Actions.
+
 # 2026-11-22 - V-03.02 - Cierre de M-9: modelo, snapshot y esquema alineados
 
 - Trabajo: migracion `20261122223119_CloseM9SnapshotDrift`. El snapshot y el Designer se regeneraron con `dotnet ef migrations add`; el Up/Down del scaffold se sustituyo por SQL idempotente. `deleted_at` pasa a `timestamptz` en REVISION_EXTRACTO_ESTADOS, IMPORTACION_LOTE_FILAS y EXTRACTOS_COLUMNAS_EXTRA, conservando las policies RLS dependientes (leidas del catalogo, retiradas y recreadas) y convirtiendo con la zona de la sesion. Tambien se anaden la FK e indice de `deleted_by_id` en esas tres tablas, se corrige la errata `ix_extratos_*`, se garantizan los unicos parciales, se renombra la FK de CONCILIACIONES y se retiran dos indices obsoletos. En el modelo se declaran dos indices que ya existian en BD (FK `extracto_id` y `deleted_at` de IA_USO_USUARIOS) y se elimina el `Ignore(PendingModelChangesWarning)`. `SnapshotModelDriftTests` exige cero diferencias.

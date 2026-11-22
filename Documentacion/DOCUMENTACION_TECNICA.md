@@ -2,6 +2,11 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-23 - Pruebas de CI multiplataforma
+
+- `Test-AtlasSecrets.Tests.ps1` restablece `$LASTEXITCODE` tras finalizar correctamente sus fixtures, incluido el caso que espera una deteccion con codigo 1; los errores siguen interrumpiendo el script.
+- `LimpiezaExportacionesJobTests` construye rutas con `Path.Combine` y limita el test de bloqueo por `FileShare.None` a Windows. CI ejecuta esa clase tambien en Windows para conservar su cobertura.
+
 ### 2026-11-22 - Signos de cifras en pantalla
 
 - `SignedAmount`, `formatPercent` y el tooltip de graficos ya no anaden el signo positivo. Los importes crudos mostrados en importacion y auditoria eliminan un `+` inicial solo si se reconocen como numeros; el dato original no se modifica. Los negativos conservan su signo. Esta decision sustituye el criterio anterior D-11 de mostrar `+` en positivos.

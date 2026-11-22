@@ -199,6 +199,7 @@ public sealed class LimpiezaExportacionesJobTests
     [Fact]
     public async Task ExecuteAsync_Should_Not_SoftDelete_Exportacion_When_The_File_Cannot_Be_Deleted()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "El bloqueo FileShare.None impide borrar solo en Windows.");
         await using var db = BuildDbContext();
         var exportDirectory = Path.Combine(Path.GetTempPath(), $"atlas-balance-export-locked-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(exportDirectory);
@@ -335,12 +336,14 @@ public sealed class LimpiezaExportacionesJobTests
     }
 
     [Theory]
-    [InlineData(@"C:\atlas-balance\exports\2026\export.xlsx", @"C:\atlas-balance\exports", true)]
-    [InlineData(@"C:\atlas-balance\exports-mal\export.xlsx", @"C:\atlas-balance\exports", false)]
-    [InlineData(@"C:\atlas-balance\exports2\export.xlsx", @"C:\atlas-balance\exports", false)]
-    [InlineData(@"C:\atlas-balance\otro\export.xlsx", @"C:\atlas-balance\exports", false)]
-    public void IsAllowedExportFile_Should_Only_Accept_Paths_Under_The_Export_Root(string ruta, string raiz, bool permitido)
+    [InlineData("exports", "2026", true)]
+    [InlineData("exports-mal", "", false)]
+    [InlineData("exports2", "", false)]
+    [InlineData("otro", "", false)]
+    public void IsAllowedExportFile_Should_Only_Accept_Paths_Under_The_Export_Root(string directorio, string subdirectorio, bool permitido)
     {
+        var raiz = Path.Combine(Path.GetTempPath(), "atlas-balance", "exports");
+        var ruta = Path.Combine(Path.GetTempPath(), "atlas-balance", directorio, subdirectorio, "export.xlsx");
         LimpiezaExportacionesJob.IsAllowedExportFile(ruta, raiz).Should().Be(permitido);
     }
 

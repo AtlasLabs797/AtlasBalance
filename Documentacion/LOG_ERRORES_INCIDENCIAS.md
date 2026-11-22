@@ -6511,3 +6511,8 @@ La suite frontend no pudo sobrescribir archivos existentes en `.test-dist` por E
 # 2026-11-22 - EPERM al ejecutar pruebas del frontend
 
 La salida habitual `.test-dist` contiene archivos sin permiso de escritura y `npm run test:unit` no pudo compilarlos. Se compilo la misma configuracion en una carpeta alternativa del frontend y se ejecutaron alli las pruebas: 316 correctas. No se modificaron permisos ni se elimino la carpeta existente.
+# 2026-11-23 - V-03.02 - Fallos de CI en PR #42
+
+- Dos tests de limpieza de exportaciones dependian de rutas y bloqueo de ficheros de Windows, pero se ejecutaban en Ubuntu. Se usan rutas nativas y el test de bloqueo queda en Windows, donde CI ejecuta la clase.
+- Los fixtures del scanner imprimian OK pero dejaban `$LASTEXITCODE=1` tras una deteccion esperada. Se restablece a 0 solo al finalizar correctamente; una excepcion sigue haciendo fallar el paso.
+- Pendiente: comprobar los nuevos resultados completos en GitHub Actions.

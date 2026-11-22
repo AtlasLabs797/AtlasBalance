@@ -67,3 +67,5 @@ finally {
     if ($null -ne $tempBase -and (Test-Path -LiteralPath $tempBase)) { Remove-Item -LiteralPath $tempBase -Recurse -Force }
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
 }
+
+$global:LASTEXITCODE = 0
