@@ -2,7 +2,6 @@
 using AtlasBalance.API.Models;
 using AtlasBalance.API.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace AtlasBalance.API.Data;
 

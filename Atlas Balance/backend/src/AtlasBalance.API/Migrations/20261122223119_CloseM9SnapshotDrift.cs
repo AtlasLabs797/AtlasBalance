@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -179,6 +179,7 @@ namespace AtlasBalance.API.Migrations
             return $"""
                 DO $$
                 DECLARE
+                    saved jsonb;
                     pol record;
                     tbl regclass;
                     role_list text;
@@ -193,22 +194,29 @@ namespace AtlasBalance.API.Migrations
                         RETURN;
                     END IF;
 
-                    CREATE TEMP TABLE m9_saved_policies ON COMMIT DROP AS
-                    SELECT DISTINCT p.oid AS policy_oid,
-                           p.polrelid::regclass AS table_name,
-                           p.polname,
-                           p.polpermissive,
-                           p.polcmd,
-                           p.polroles,
-                           pg_get_expr(p.polqual, p.polrelid) AS qual,
-                           pg_get_expr(p.polwithcheck, p.polrelid) AS with_check
-                    FROM pg_depend d
-                    JOIN pg_policy p ON d.classid = 'pg_policy'::regclass AND d.objid = p.oid
-                    JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
-                    WHERE d.refobjid IN ({tables})
-                      AND a.attname = 'deleted_at';
+                    -- Definiciones guardadas en una variable (sin tabla temporal: no
+                    -- depende del privilegio TEMP del rol de migracion).
+                    SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) INTO saved
+                    FROM (
+                        SELECT DISTINCT p.polrelid::regclass::text AS table_name,
+                               p.polname::text AS polname,
+                               p.polpermissive,
+                               p.polcmd::text AS polcmd,
+                               p.polroles::oid[]::text AS polroles,
+                               pg_get_expr(p.polqual, p.polrelid) AS qual,
+                               pg_get_expr(p.polwithcheck, p.polrelid) AS with_check
+                        FROM pg_depend d
+                        JOIN pg_policy p ON d.classid = 'pg_policy'::regclass AND d.objid = p.oid
+                        JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+                        WHERE d.refobjid IN ({tables})
+                          AND a.attname = 'deleted_at'
+                    ) x;
 
-                    FOR pol IN SELECT * FROM m9_saved_policies LOOP
+                    FOR pol IN
+                        SELECT * FROM jsonb_to_recordset(saved)
+                            AS r(table_name text, polname text, polpermissive boolean, polcmd text,
+                                 polroles text, qual text, with_check text)
+                    LOOP
                         EXECUTE format('DROP POLICY %I ON %s', pol.polname, pol.table_name);
                     END LOOP;
 
@@ -224,10 +232,14 @@ namespace AtlasBalance.API.Migrations
                         END IF;
                     END LOOP;
 
-                    FOR pol IN SELECT * FROM m9_saved_policies LOOP
+                    FOR pol IN
+                        SELECT * FROM jsonb_to_recordset(saved)
+                            AS r(table_name text, polname text, polpermissive boolean, polcmd text,
+                                 polroles text, qual text, with_check text)
+                    LOOP
                         SELECT string_agg(CASE WHEN r.role_oid = 0 THEN 'PUBLIC' ELSE quote_ident(pr.rolname) END, ', ')
                         INTO role_list
-                        FROM unnest(pol.polroles) AS r(role_oid)
+                        FROM unnest(pol.polroles::oid[]) AS r(role_oid)
                         LEFT JOIN pg_roles pr ON pr.oid = r.role_oid;
 
                         EXECUTE format(

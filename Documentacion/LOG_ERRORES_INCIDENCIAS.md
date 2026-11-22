@@ -1,3 +1,19 @@
+## 2026-11-22 - V-03.02 - Cierre de M-9 (deriva modelo/snapshot/esquema)
+
+### Deriva entre modelo EF, snapshot y esquema real (CORREGIDO)
+- **Causa:** migraciones SQL manuscritas (IF NOT EXISTS) crearon columnas, indices y FKs sin actualizar el snapshot; ademas `deleted_at` de REVISION_EXTRACTO_ESTADOS, IMPORTACION_LOTE_FILAS y EXTRACTOS_COLUMNAS_EXTRA se creo como `timestamp` sin zona. `dotnet ef migrations add` generaba migraciones sucias y `AppDbContext` tenia que ignorar `PendingModelChangesWarning`.
+- **Solucion:** migracion `20261122223119_CloseM9SnapshotDrift` con snapshot regenerado y SQL idempotente (detalle en `DOCUMENTACION_TECNICA.md`, seccion "V-03.02 - Cierre de M-9"). Para cambiar el tipo de una columna usada por policies RLS: leer las policies dependientes de `pg_depend`, guardarlas en una variable `jsonb`, retirarlas, cambiar el tipo y recrearlas. Para pasar `timestamp` a `timestamptz` se usa la zona de la sesion (`current_setting('TimeZone')`), no `'UTC'` fijo: asi se invierte como se escribieron los valores.
+- **Prevencion:** `SnapshotModelDriftTests` exige cero diferencias y el `Ignore` se ha quitado, asi que una deriva nueva rompe el test y `Migrate()`.
+
+### `obj/` del API con propietario de otro usuario (BLOQUEO DE ENTORNO)
+- **Sintoma:** `dotnet build` falla con `MSB3491 ... AssemblyInfoInputs.cache ... Access to the path is denied`.
+- **Causa:** `Atlas Balance/backend/src/AtlasBalance.API/obj` pertenece al usuario `CodexSandboxOffline` (otro agente).
+- **Solucion aplicada:** compilar con salida aparte sin tocar ACLs: variables de entorno `UseArtifactsOutput=true` y `ArtifactsPath=<ruta>`, tambien validas para `dotnet ef`. Para los tests, usa una ruta dentro del repo (p.ej. `.artifacts/<nombre>`, ignorada por Git): 14 tests localizan ficheros fuente subiendo carpetas y fallan si la salida esta fuera del repo. xUnit v3 necesita apphost: no uses `-p:UseAppHost=false` con `dotnet test`.
+
+### Password de `atlas_owner` en `appsettings.Development.json` no coincide (BLOQUEO DE ENTORNO)
+- **Sintoma:** `dotnet ef database update --connection <MigrationConnection>` falla con `28P01 password authentication failed for user "atlas_owner"`.
+- **Solucion aplicada:** generar el script con `dotnet ef migrations script <desde> <hasta>`, quitarle el BOM y aplicarlo dentro del contenedor (`docker exec -i atlas_balance_db psql -U atlas_owner ...`, autenticacion local). Pendiente: alinear la password del appsettings local.
+
 ## 2026-11-22 - V-03.02 - Verificacion del buscador
 
 - `npm run test:unit` encontro permisos denegados al escribir en `.test-dist`; se compilo en un directorio alternativo y pasaron 345 pruebas.
