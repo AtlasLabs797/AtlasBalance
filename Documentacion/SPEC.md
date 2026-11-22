@@ -508,7 +508,7 @@ Esta es la pieza central de la aplicación.
 
 
 
-**Virtualización:** implementada con `react-virtual`, maneja 50.000+ filas sin degradación
+**Virtualización:** implementada con `@tanstack/react-virtual`, maneja 50.000+ filas sin degradación
 
 
 
@@ -742,9 +742,9 @@ Esta es la pieza central de la aplicación.
 
 
 
-- Ningún dato se borra físicamente de la BD
+- Los datos de negocio no se borran físicamente: las entidades que implementan `ISoftDelete` tienen `deleted_at` y `deleted_by_id`, y EF Core las filtra con un query filter global
 
-- Todas las entidades tienen `deleted_at` y `deleted_by_id`
+- Hay tablas sin soft delete a propósito (auditoría append-only, tokens, permisos, configuración, tipos de cambio, notificaciones admin, entre otras): consulta `Models/Entities.cs`
 
 - Admin tiene sección "Papelera" por entidad con opción de restaurar
 
@@ -1514,6 +1514,13 @@ Todas las respuestas de integración siguen esta estructura:
 
 ## 5. Schema de Base de Datos
 
+> **Fuente de verdad:** el código (`Models/Entities.cs`, `Data/AppDbContext.cs`, `Migrations/AppDbContextModelSnapshot.cs`). Si este documento choca con él, manda el código; si cambias el esquema, actualiza también esta sección.
+>
+> Convenciones reales que no se repiten en cada tabla:
+> - **Enums:** se guardan como `INTEGER` con el ordinal del enum C# (`Models/Enums.cs`). Los tipos enum de PostgreSQL declarados en el snapshot no los usa ninguna columna. No reordenes valores de un enum: cambiaría el significado de los datos guardados.
+> - **Texto:** salvo que haya `MaxLength`, las columnas son `text`; los `VARCHAR(n)` de abajo indican la longitud esperada, no siempre un límite en BD.
+> - **Defaults:** casi todos los `DEFAULT` de abajo son inicializadores C#, no `DEFAULT` SQL. En BD solo hay `gen_random_uuid()` en algunos `id` y `es_secreto = false` en CONFIGURACION.
+
 
 
 ### USUARIOS
@@ -1528,7 +1535,7 @@ password_hash           VARCHAR(255) NOT NULL
 
 nombre_completo         VARCHAR(255) NOT NULL
 
-rol                     ENUM('ADMIN','GERENTE','EMPLEADO')
+rol                     INTEGER NOT NULL  -- enum RolUsuario: ADMIN=0, GERENTE=1, EMPLEADO=2
 
 activo                  BOOLEAN DEFAULT true
 
@@ -1542,13 +1549,27 @@ failed_login_attempts   INTEGER DEFAULT 0
 
 locked_until            TIMESTAMPTZ
 
+mfa_enabled             BOOLEAN NOT NULL
+
+mfa_enabled_at          TIMESTAMPTZ
+
+mfa_last_accepted_step  BIGINT
+
+mfa_secret              VARCHAR(2048)  -- secreto TOTP cifrado (SecretProtector.ProtectForStorage)
+
+password_changed_at     TIMESTAMPTZ
+
+puede_usar_ia           BOOLEAN NOT NULL
+
+security_stamp          VARCHAR(64) NOT NULL
+
 deleted_at              TIMESTAMPTZ
 
-deleted_by_id           UUID FK → USUARIOS
+deleted_by_id           UUID  -- sin FK en BD (el modelo no declara relación hacia USUARIOS)
 
 ```
 
-**Índices:** `email`, `rol`, `activo`
+**Índices:** `email` UNIQUE, `rol`, `activo`, `mfa_enabled`, `puede_usar_ia`
 
 
 
@@ -1598,9 +1619,17 @@ reemplazado_por  VARCHAR(255)
 
 ip_address       INET
 
+mfa_verified_at  TIMESTAMPTZ
+
+security_stamp   VARCHAR(128) NOT NULL
+
+session_id       VARCHAR(64)
+
+sesion_ini_en    TIMESTAMPTZ  -- ancla de la sesión; se hereda en cada rotación
+
 ```
 
-**Índices:** `usuario_id`, `token_hash`, `expira_en`
+**Índices:** `usuario_id`, `token_hash` UNIQUE, `expira_en`, `session_id`
 
 
 
@@ -1616,7 +1645,7 @@ id                UUID PK
 
 nombre            VARCHAR(255) NOT NULL
 
-tipo              ENUM('EMPRESA','PARTICULAR')
+tipo              INTEGER NOT NULL  -- enum TipoTitular: EMPRESA=0, PARTICULAR=1, AUTONOMO=2
 
 identificacion    VARCHAR(50)
 
@@ -1665,6 +1694,12 @@ formato_id        UUID FK → FORMATOS_IMPORTACION (nullable)
 es_efectivo       BOOLEAN DEFAULT false
 
 activa            BOOLEAN DEFAULT true
+
+notas             TEXT
+
+pais_id           UUID FK → PAISES (nullable)
+
+tipo_cuenta       INTEGER NOT NULL  -- enum TipoCuenta: NORMAL=0, EFECTIVO=1, PLAZO_FIJO=2 (convive con es_efectivo)
 
 fecha_creacion    TIMESTAMPTZ DEFAULT now()
 
@@ -1838,7 +1873,7 @@ fila_numero              INTEGER NOT NULL
 
   -- INMUTABLE: MAX(fila_numero)+1 por cuenta al insertar
 
-  -- UNIQUE(cuenta_id, fila_numero)
+  -- UNIQUE parcial (cuenta_id, fila_numero) WHERE deleted_at IS NULL
 
 checked                  BOOLEAN DEFAULT false
 
@@ -1862,6 +1897,20 @@ usuario_modificacion_id  UUID FK → USUARIOS
 
 fecha_modificacion       TIMESTAMPTZ
 
+comentarios              TEXT
+
+fecha_importacion        TIMESTAMPTZ
+
+importacion_fila_origen  INTEGER
+
+importacion_fingerprint  VARCHAR(64)
+
+importacion_lote_hash    VARCHAR(64)
+
+importacion_lote_id      UUID FK → IMPORTACION_LOTES (ON DELETE SET NULL)
+
+xmin                     xid  -- columna de sistema PostgreSQL; token de concurrencia optimista
+
 deleted_at               TIMESTAMPTZ
 
 deleted_by_id            UUID FK → USUARIOS
@@ -1870,7 +1919,9 @@ deleted_by_id            UUID FK → USUARIOS
 
 **Índices (críticos para rendimiento):**
 
-- `(cuenta_id, fila_numero)` UNIQUE
+- `(cuenta_id, fila_numero)` UNIQUE parcial (`WHERE deleted_at IS NULL`)
+
+- `(cuenta_id, importacion_fingerprint)` UNIQUE parcial (`WHERE deleted_at IS NULL AND importacion_fingerprint IS NOT NULL`)
 
 - `(cuenta_id, fecha)`
 
@@ -1963,9 +2014,13 @@ id                    UUID PK
 
 usuario_id            UUID FK → USUARIOS NOT NULL
 
-cuenta_id             UUID FK → CUENTAS (nullable = permiso global)
+cuenta_id             UUID FK → CUENTAS (nullable = todas las cuentas)
 
-titular_id            UUID FK → TITULARES (nullable)
+titular_id            UUID FK → TITULARES (nullable = todos los titulares)
+
+pais_id               UUID FK → PAISES (nullable = todos los países)
+
+-- Acceso global solo con pais_id, titular_id y cuenta_id a null y puede_ver_cuentas = true (UserAccessService)
 
 puede_ver_cuentas     BOOLEAN DEFAULT false
 
@@ -1979,13 +2034,19 @@ puede_importar        BOOLEAN DEFAULT false
 
 puede_ver_dashboard   BOOLEAN DEFAULT false
 
-columnas_visibles     JSONB   -- null = todas
+puede_aprobar_importaciones BOOLEAN NOT NULL
 
-columnas_editables    JSONB   -- null = todas permitidas por rol
+puede_cerrar_conciliacion   BOOLEAN NOT NULL
+
+puede_conciliar             BOOLEAN NOT NULL
+
+puede_revisar_lineas        BOOLEAN NOT NULL
+
+-- La visibilidad/edición de columnas NO está aquí: vive en PREFERENCIAS_USUARIO_CUENTA
 
 ```
 
-**Índices:** `(usuario_id, cuenta_id)`, `usuario_id`
+**Índices:** `(usuario_id, cuenta_id)`, `(usuario_id, pais_id)`, `usuario_id`, `cuenta_id`, `titular_id`, `pais_id`
 
 
 
@@ -2001,6 +2062,8 @@ id                   UUID PK
 
 cuenta_id            UUID FK → CUENTAS (nullable = alerta global)
 
+tipo_titular         INTEGER  -- nullable; enum TipoTitular (alerta global por tipo de titular)
+
 saldo_minimo         DECIMAL(18,4) NOT NULL
 
 activa               BOOLEAN DEFAULT true
@@ -2011,7 +2074,9 @@ fecha_ultima_alerta  TIMESTAMPTZ
 
 ```
 
-> Si `cuenta_id IS NULL` → es la alerta global. Si `cuenta_id IS NOT NULL` → sobreescribe la global para esa cuenta.
+> Si `cuenta_id IS NULL` → es una alerta global (con `tipo_titular` informado, solo aplica a ese tipo de titular). Si `cuenta_id IS NOT NULL` → sobreescribe la global para esa cuenta.
+>
+> **Índices únicos parciales:** `cuenta_id` UNIQUE `WHERE cuenta_id IS NOT NULL`; `tipo_titular` UNIQUE `WHERE cuenta_id IS NULL AND tipo_titular IS NOT NULL`.
 
 
 
@@ -2025,7 +2090,7 @@ fecha_ultima_alerta  TIMESTAMPTZ
 
 id          UUID PK
 
-alerta_id   UUID FK → ALERTAS_SALDO NOT NULL
+alerta_id   UUID FK → ALERTAS_SALDO NOT NULL  -- ON DELETE CASCADE
 
 usuario_id  UUID FK → USUARIOS NOT NULL
 
@@ -2063,7 +2128,17 @@ timestamp         TIMESTAMPTZ DEFAULT now()
 
 ip_address        INET
 
-detalles_json     JSONB
+detalles_json     JSON  -- tipo json, no jsonb
+
+firma             VARCHAR(64)  -- HMAC-SHA256 de la fila (AuditSigner)
+
+origen            VARCHAR(16) NOT NULL  -- UI | API | JOB | SISTEMA (AuditOrigenes; también DESCONOCIDO)
+
+secuencia         BIGINT NOT NULL  -- identity; alternate key (UNIQUE)
+
+session_id        VARCHAR(64)
+
+user_agent        VARCHAR(256)
 
 ```
 
@@ -2073,7 +2148,7 @@ detalles_json     JSONB
 
 
 
-**Índices:** `(usuario_id, timestamp)`, `tipo_accion`, `entidad_id`, `timestamp`
+**Índices:** `(ip_address, timestamp)`, `tipo_accion`, `entidad_id`, `timestamp`, `secuencia` UNIQUE (alternate key)
 
 
 
@@ -2095,7 +2170,7 @@ descripcion         TEXT
 
 tipo                VARCHAR(50) DEFAULT 'openclaw'
 
-estado              ENUM('activo','revocado') DEFAULT 'activo'
+estado              INTEGER NOT NULL  -- enum EstadoTokenIntegracion: Activo=0, Revocado=1
 
 permiso_lectura     BOOLEAN DEFAULT true
 
@@ -2107,6 +2182,14 @@ fecha_ultima_uso    TIMESTAMPTZ
 
 fecha_revocacion    TIMESTAMPTZ
 
+endpoint_scopes_json JSONB NOT NULL
+
+fecha_expiracion    TIMESTAMPTZ
+
+last_used_ip_address TEXT
+
+rotated_from_token_id UUID FK → INTEGRATION_TOKENS
+
 usuario_creador_id  UUID FK → USUARIOS NOT NULL
 
 deleted_at          TIMESTAMPTZ
@@ -2115,7 +2198,7 @@ deleted_by_id       UUID FK → USUARIOS
 
 ```
 
-**Índices:** `token_hash`, `estado`
+**Índices:** `token_hash` UNIQUE, `estado`, `fecha_expiracion`, `rotated_from_token_id`
 
 
 
@@ -2129,11 +2212,13 @@ deleted_by_id       UUID FK → USUARIOS
 
 id           UUID PK
 
-token_id     UUID FK → INTEGRATION_TOKENS NOT NULL
+token_id     UUID FK → INTEGRATION_TOKENS NOT NULL  -- ON DELETE CASCADE
 
 titular_id   UUID FK → TITULARES (nullable)
 
 cuenta_id    UUID FK → CUENTAS (nullable)
+
+pais_id      UUID FK → PAISES (nullable)
 
 acceso_tipo  VARCHAR(50) NOT NULL DEFAULT 'lectura'
 
@@ -2147,7 +2232,7 @@ fecha_creacion TIMESTAMPTZ DEFAULT now()
 
 
 
-**Índices:** `token_id`, `titular_id`, `cuenta_id`
+**Índices:** `token_id`, `titular_id`, `cuenta_id`, `pais_id`
 
 
 
@@ -2201,7 +2286,7 @@ tasa                DECIMAL(18,8) NOT NULL
 
 fecha_actualizacion TIMESTAMPTZ DEFAULT now()
 
-fuente              ENUM('API','MANUAL')
+fuente              INTEGER NOT NULL  -- enum FuenteTipoCambio: API=0, MANUAL=1
 
 UNIQUE(divisa_origen, divisa_destino)
 
@@ -2225,7 +2310,7 @@ simbolo   VARCHAR(5)
 
 activa    BOOLEAN DEFAULT true
 
-es_base   BOOLEAN DEFAULT false  -- solo una puede ser true (EUR por defecto)
+es_base   BOOLEAN DEFAULT false  -- solo una debe ser true (EUR por defecto); NO hay índice único en BD, lo garantiza el código (TiposCambioService desmarca las demás al guardar)
 
 ```
 
@@ -2250,6 +2335,8 @@ descripcion              TEXT
 fecha_modificacion       TIMESTAMPTZ
 
 usuario_modificacion_id  UUID FK → USUARIOS
+
+es_secreto               BOOLEAN NOT NULL DEFAULT false
 
 ```
 
@@ -2315,9 +2402,9 @@ ruta_archivo     VARCHAR(500) NOT NULL
 
 tamanio_bytes    BIGINT
 
-estado           ENUM('PENDING','SUCCESS','FAILED')
+estado           INTEGER NOT NULL  -- enum EstadoProceso: PENDING=0, SUCCESS=1, FAILED=2
 
-tipo             ENUM('AUTO','MANUAL')
+tipo             INTEGER NOT NULL  -- enum TipoProceso: AUTO=0, MANUAL=1
 
 iniciado_por_id  UUID FK → USUARIOS (nullable para auto)
 
@@ -2349,9 +2436,9 @@ ruta_archivo      VARCHAR(500)
 
 tamanio_bytes     BIGINT
 
-estado            ENUM('PENDING','SUCCESS','FAILED')
+estado            INTEGER NOT NULL  -- enum EstadoProceso: PENDING=0, SUCCESS=1, FAILED=2
 
-tipo              ENUM('AUTO','MANUAL')
+tipo              INTEGER NOT NULL  -- enum TipoProceso: AUTO=0, MANUAL=1
 
 iniciado_por_id   UUID FK → USUARIOS (nullable para auto)
 
@@ -2390,6 +2477,357 @@ detalles_json  JSONB
 ---
 
 
+
+### Tablas añadidas después de la especificación original
+
+Documentadas desde `Migrations/AppDbContextModelSnapshot.cs` y `Models/Entities.cs` (V-03.02).
+
+### MFA_TRUSTED_DEVICES
+
+Dispositivos de confianza MFA (cookie "recordar este dispositivo"). Solo se guarda el hash del token.
+
+```sql
+id                  UUID PK DEFAULT gen_random_uuid()
+usuario_id          UUID FK → USUARIOS NOT NULL
+token_hash          VARCHAR(64) NOT NULL         -- hash del token; el token en claro nunca se persiste
+security_stamp      VARCHAR(128) NOT NULL        -- si cambia el stamp del usuario, el dispositivo deja de ser válido
+user_agent_summary  VARCHAR(256)                 -- nullable
+ip_address_summary  VARCHAR(128)                 -- nullable
+created_at          TIMESTAMPTZ NOT NULL
+expires_at          TIMESTAMPTZ NOT NULL
+last_used_at        TIMESTAMPTZ                  -- nullable
+revoked_at          TIMESTAMPTZ                  -- nullable
+deleted_at          TIMESTAMPTZ                  -- soft delete
+deleted_by_id       UUID FK → USUARIOS           -- nullable
+```
+
+**Índices:** `UNIQUE (token_hash)`, `usuario_id`, `expires_at`, `revoked_at`, `deleted_at`, `deleted_by_id`
+**Soft delete:** sí (`ISoftDelete`).
+
+---
+
+### PAISES
+
+Nivel superior de la jerarquía País > Titular > Cuenta (V-02.08).
+
+```sql
+id                  UUID PK DEFAULT gen_random_uuid()
+nombre              VARCHAR(128) NOT NULL
+codigo_iso2         VARCHAR(2)                   -- nullable
+activo              BOOLEAN NOT NULL
+fecha_creacion      TIMESTAMPTZ NOT NULL
+fecha_modificacion  TIMESTAMPTZ                  -- nullable
+deleted_at          TIMESTAMPTZ                  -- soft delete
+deleted_by_id       UUID FK → USUARIOS           -- nullable
+```
+
+**Índices:** `UNIQUE (nombre)`, `UNIQUE (codigo_iso2) WHERE codigo_iso2 IS NOT NULL`, `activo`, `deleted_at`, `deleted_by_id`
+**Soft delete:** sí (`ISoftDelete`).
+`CUENTAS.pais_id`, `PERMISOS_USUARIO.pais_id`, `INTEGRATION_PERMISSIONS.pais_id` y `PREFERENCIAS_USUARIO_CUENTA.pais_id` apuntan a esta tabla (FK ON DELETE RESTRICT).
+
+---
+
+### PLAZOS_FIJOS
+
+Plazo fijo asociado a una cuenta de tipo depósito (una por cuenta activa).
+
+```sql
+id                        UUID PK
+cuenta_id                 UUID FK → CUENTAS NOT NULL            -- relación 1:1 con la cuenta
+cuenta_referencia_id      UUID FK → CUENTAS                     -- nullable; cuenta de referencia/destino
+fecha_inicio              DATE NOT NULL
+fecha_vencimiento         DATE NOT NULL
+interes_previsto          NUMERIC(18,2)                         -- nullable
+renovable                 BOOLEAN NOT NULL
+estado                    ENUM EstadoPlazoFijo NOT NULL         -- se guarda como INTEGER: ACTIVO=0, PROXIMO_VENCER=1, VENCIDO=2, RENOVADO=3, CANCELADO=4
+fecha_ultima_notificacion DATE                                  -- nullable
+fecha_renovacion          DATE                                  -- nullable
+notas                     TEXT                                  -- nullable
+fecha_creacion            TIMESTAMPTZ NOT NULL
+fecha_modificacion        TIMESTAMPTZ                           -- nullable
+xmin                      xid                                   -- token de concurrencia optimista
+deleted_at                TIMESTAMPTZ                           -- soft delete
+deleted_by_id             UUID FK → USUARIOS                    -- nullable
+```
+
+**Índices:** `UNIQUE (cuenta_id) WHERE deleted_at IS NULL`, `cuenta_referencia_id`, `estado`, `fecha_vencimiento`, `deleted_at`, `deleted_by_id`
+**Soft delete:** sí (`ISoftDelete`). FKs a CUENTAS con ON DELETE RESTRICT.
+
+---
+
+### IMPORTACION_LOTES
+
+Cabecera de un lote de importación (validación previa + confirmación + reversión). Guarda el contenido original para poder reproducir y auditar.
+
+```sql
+id                            UUID PK
+cuenta_id                     UUID FK → CUENTAS NOT NULL
+usuario_creador_id            UUID FK → USUARIOS NOT NULL
+tipo_origen                   VARCHAR(16) NOT NULL          -- p.ej. 'PEGADO' (default en código), archivo
+nombre_archivo                VARCHAR(260)                  -- nullable
+tamanio_bytes                 BIGINT NOT NULL
+sha256                        VARCHAR(64) NOT NULL          -- hash del contenido original
+separador                     VARCHAR(16) NOT NULL
+mapeo_json                    JSONB NOT NULL                -- mapeo de columnas usado
+resumen_json                  JSONB NOT NULL
+contenido_original            TEXT NOT NULL
+lote_hash                     VARCHAR(64) NOT NULL          -- hash del lote (contenido + mapeo + cuenta)
+idempotency_key               VARCHAR(128)                  -- nullable; clave de la validación
+confirmacion_idempotency_key  VARCHAR(128)                  -- nullable; clave de la confirmación
+confirmacion_response_json    JSONB                         -- nullable; respuesta cacheada de la confirmación
+estado                        VARCHAR(24) NOT NULL          -- 'validado' | 'validado_con_errores' | 'confirmado' | 'revertido'
+filas_total                   INTEGER NOT NULL
+filas_validas                 INTEGER NOT NULL
+filas_error                   INTEGER NOT NULL
+filas_advertencia             INTEGER NOT NULL
+advertencias_aceptadas        BOOLEAN NOT NULL
+notas                         TEXT                          -- nullable; existe en la entidad pero no en ninguna migración: comprobar si la columna existe en BD
+fecha_creacion                TIMESTAMPTZ NOT NULL
+fecha_confirmacion            TIMESTAMPTZ                   -- nullable
+confirmado_por_id             UUID FK → USUARIOS            -- nullable
+fecha_reversion               TIMESTAMPTZ                   -- nullable
+revertido_por_id              UUID FK → USUARIOS            -- nullable
+```
+
+**Índices:** `UNIQUE (usuario_creador_id, idempotency_key) WHERE idempotency_key IS NOT NULL`, `cuenta_id`, `estado`, `fecha_creacion`, `lote_hash`, `sha256`, `usuario_creador_id`, `confirmado_por_id`, `revertido_por_id`
+**Soft delete:** no (no implementa `ISoftDelete`). FKs con ON DELETE RESTRICT.
+`EXTRACTOS.importacion_lote_id` referencia esta tabla (ON DELETE SET NULL).
+
+---
+
+### IMPORTACION_LOTE_FILAS
+
+Filas validadas de un lote de importación.
+
+```sql
+id                    UUID PK
+lote_id               UUID FK → IMPORTACION_LOTES NOT NULL
+indice                INTEGER NOT NULL             -- posición de la fila dentro del lote
+valida                BOOLEAN NOT NULL
+seleccionada_default  BOOLEAN NOT NULL
+estado                VARCHAR(24) NOT NULL
+fingerprint           VARCHAR(64)                  -- nullable; huella para detección de duplicados
+datos_json            JSONB NOT NULL
+errores_json          JSONB NOT NULL
+advertencias_json     JSONB NOT NULL
+deleted_at            TIMESTAMPTZ                  -- soft delete
+deleted_by_id         UUID FK → USUARIOS           -- nullable
+```
+
+**Índices:** `UNIQUE (lote_id, indice) WHERE deleted_at IS NULL`, `fingerprint`, `deleted_at`
+**Soft delete:** sí (`ISoftDelete`; columnas añadidas por migración SQL manuscrita). FK a IMPORTACION_LOTES con ON DELETE RESTRICT.
+
+---
+
+### REVISION_EXTRACTO_ESTADOS
+
+Estado de revisión por extracto y tipo de revisión (comisión, seguro...), incluida la devolución asociada (V-02.08).
+
+```sql
+id                      UUID PK
+extracto_id             UUID FK → EXTRACTOS NOT NULL
+extracto_devolucion_id  UUID FK → EXTRACTOS           -- nullable; extracto positivo (bonificación) emparejado como devolución
+tipo                    VARCHAR(24) NOT NULL          -- p.ej. 'COMISION', 'SEGURO'
+estado                  VARCHAR(24) NOT NULL          -- p.ej. 'PENDIENTE', 'CORRECTO', 'DEVUELTA', 'DESCARTADA'
+fecha_modificacion      TIMESTAMPTZ NOT NULL
+usuario_modificacion_id UUID FK → USUARIOS            -- nullable
+xmin                    xid                           -- token de concurrencia optimista
+deleted_at              TIMESTAMPTZ                   -- soft delete
+deleted_by_id           UUID FK → USUARIOS            -- nullable
+```
+
+**Índices:** `UNIQUE (extracto_id, tipo) WHERE deleted_at IS NULL`, `UNIQUE (extracto_devolucion_id) WHERE deleted_at IS NULL AND extracto_devolucion_id IS NOT NULL`, `estado`, `tipo`, `usuario_modificacion_id`, `deleted_at`
+**Soft delete:** sí (`ISoftDelete`). FKs con ON DELETE RESTRICT.
+
+---
+
+### PREFERENCIAS_USUARIO_CUENTA
+
+Preferencias de columnas por usuario y ámbito (país, titular o cuenta). Las columnas `columnas_visibles_admin` son una restricción fijada por el administrador, no una preferencia.
+
+```sql
+id                       UUID PK
+usuario_id               UUID FK → USUARIOS NOT NULL   -- ON DELETE CASCADE
+pais_id                  UUID FK → PAISES              -- nullable
+titular_id               UUID FK → TITULARES           -- nullable
+cuenta_id                UUID FK → CUENTAS             -- nullable; ON DELETE CASCADE
+columnas_visibles        JSONB                         -- nullable; preferencia del usuario
+orden_columnas           JSONB                         -- nullable
+columnas_editables       JSONB                         -- nullable
+columnas_visibles_admin  JSONB                         -- nullable; whitelist fijada por ADMIN (solo estrecha la vista)
+created_at               TIMESTAMPTZ NOT NULL
+updated_at               TIMESTAMPTZ NOT NULL
+```
+
+**Índices:** `(usuario_id, pais_id, titular_id, cuenta_id)` (no único en el snapshot), `usuario_id`, `pais_id`, `titular_id`, `cuenta_id`
+**Soft delete:** no.
+
+---
+
+### IA_USO_USUARIOS
+
+Consumo mensual de IA por usuario (para presupuesto y límites).
+
+```sql
+id                     UUID PK
+usuario_id             UUID FK → USUARIOS NOT NULL
+month_key              VARCHAR(7) NOT NULL          -- formato 'YYYY-MM'
+requests               INTEGER NOT NULL
+input_tokens           BIGINT NOT NULL
+output_tokens          BIGINT NOT NULL
+coste_estimado_eur     NUMERIC(18,8) NOT NULL
+fecha_ultimo_uso_utc   TIMESTAMPTZ NOT NULL
+fecha_modificacion     TIMESTAMPTZ NOT NULL
+deleted_at             TIMESTAMPTZ                  -- soft delete
+deleted_by_id          UUID FK → USUARIOS           -- nullable
+```
+
+**Índices:** `UNIQUE (usuario_id, month_key)`, `fecha_modificacion`, `deleted_at`
+**Soft delete:** sí (`ISoftDelete`, V-02.06 MED-22). FK a USUARIOS con ON DELETE RESTRICT.
+
+---
+
+### MOVIMIENTOS_ESPERADOS
+
+Movimientos previstos que se concilian contra extractos reales.
+
+```sql
+id                     UUID PK
+cuenta_id              UUID FK → CUENTAS NOT NULL
+fecha_esperada         DATE NOT NULL
+monto                  NUMERIC(18,4) NOT NULL
+divisa                 VARCHAR(8) NOT NULL
+concepto               VARCHAR(512)                  -- nullable
+referencia             VARCHAR(128)                  -- nullable
+origen                 VARCHAR(32) NOT NULL
+estado                 VARCHAR(24) NOT NULL          -- CHECK: 'pendiente','sugerida','conciliada','excepcion','resuelta'
+fecha_creacion         TIMESTAMPTZ NOT NULL
+usuario_creacion_id    UUID FK → USUARIOS            -- nullable
+fecha_modificacion     TIMESTAMPTZ                   -- nullable
+usuario_modificacion_id UUID FK → USUARIOS           -- nullable
+xmin                   xid                           -- token de concurrencia optimista
+deleted_at             TIMESTAMPTZ                   -- soft delete
+deleted_by_id          UUID FK → USUARIOS            -- nullable
+```
+
+**Índices:** `(cuenta_id, estado)`, `(cuenta_id, fecha_esperada, monto)`, `referencia`, `usuario_creacion_id`, `usuario_modificacion_id`, `deleted_at`
+**Check:** `ck_movimientos_esperados_estado`.
+**Soft delete:** sí (`ISoftDelete`). FKs con ON DELETE RESTRICT.
+
+---
+
+### CONCILIACIONES
+
+Emparejamiento entre un movimiento esperado y un extracto real.
+
+```sql
+id                        UUID PK
+cuenta_id                 UUID FK → CUENTAS NOT NULL
+movimiento_esperado_id    UUID FK → MOVIMIENTOS_ESPERADOS NOT NULL
+extracto_id               UUID FK → EXTRACTOS           -- nullable; ON DELETE SET NULL
+estado                    VARCHAR(24) NOT NULL          -- CHECK: 'sugerida','conciliada','excepcion','resuelta'
+score                     INTEGER NOT NULL
+regla                     VARCHAR(64) NOT NULL          -- p.ej. 'deterministica-v1'
+diferencia_dias           INTEGER NOT NULL
+referencia_normalizada    VARCHAR(256)                  -- nullable
+concepto_normalizado      VARCHAR(512)                  -- nullable
+usuario_sugerencia_id     UUID FK → USUARIOS            -- nullable
+fecha_sugerencia          TIMESTAMPTZ NOT NULL
+usuario_confirmacion_id   UUID FK → USUARIOS            -- nullable
+fecha_confirmacion        TIMESTAMPTZ                   -- nullable
+usuario_resolucion_id     UUID FK → USUARIOS            -- nullable
+fecha_resolucion          TIMESTAMPTZ                   -- nullable
+observacion               VARCHAR(1000)                 -- nullable
+fecha_creacion            TIMESTAMPTZ NOT NULL
+fecha_modificacion        TIMESTAMPTZ                   -- nullable
+xmin                      xid                           -- token de concurrencia optimista
+deleted_at                TIMESTAMPTZ                   -- soft delete
+deleted_by_id             UUID FK → USUARIOS            -- nullable; ON DELETE SET NULL
+```
+
+**Índices:** `UNIQUE (movimiento_esperado_id, extracto_id) WHERE deleted_at IS NULL`, `UNIQUE (extracto_id) WHERE estado = 'conciliada' AND extracto_id IS NOT NULL AND deleted_at IS NULL`, `(cuenta_id, estado)`, `movimiento_esperado_id`, `usuario_sugerencia_id`, `usuario_confirmacion_id`, `usuario_resolucion_id`, `deleted_at`, `deleted_by_id`
+**Check:** `ck_conciliaciones_estado`.
+**Soft delete:** sí (`ISoftDelete`). FK a CUENTAS, MOVIMIENTOS_ESPERADOS y usuarios con ON DELETE RESTRICT.
+
+---
+
+### BACKUP_OPERATIONS
+
+Operaciones asíncronas de backup (backup manual, importación desde Drive, restauración).
+
+```sql
+id               UUID PK
+tipo             VARCHAR(32) NOT NULL         -- CHECK: 'MANUAL','DRIVE_IMPORT','RESTORE'
+estado           VARCHAR(16) NOT NULL         -- CHECK: 'PENDING','RUNNING','SUCCESS','FAILED'
+backup_id        UUID FK → BACKUPS            -- nullable; ON DELETE SET NULL
+usuario_id       UUID FK → USUARIOS           -- nullable; ON DELETE SET NULL
+parametro        TEXT                         -- nullable
+resultado_json   JSONB                        -- nullable
+error            TEXT                         -- nullable
+fecha_creacion   TIMESTAMPTZ NOT NULL
+fecha_inicio     TIMESTAMPTZ                  -- nullable
+fecha_fin        TIMESTAMPTZ                  -- nullable
+deleted_at       TIMESTAMPTZ                  -- soft delete
+deleted_by_id    UUID FK → USUARIOS           -- nullable
+```
+
+**Índices:** `backup_id`, `estado`, `(usuario_id, fecha_creacion)`, `deleted_by_id`
+**Check:** `ck_backup_operations_estado`, `ck_backup_operations_tipo`.
+**Soft delete:** sí (`ISoftDelete`).
+
+---
+
+### BACKUP_CLOUD_CONNECTIONS
+
+Conexión a un proveedor cloud para copias de backup (hoy solo Google Drive).
+
+```sql
+id                 UUID PK
+provider           TEXT NOT NULL                -- default en código: 'GOOGLE_DRIVE'
+estado             TEXT NOT NULL                -- 'CONNECTED' | 'DISCONNECTED'
+account_email      TEXT                         -- nullable
+scope              TEXT NOT NULL
+refresh_token      TEXT NOT NULL
+connected_at       TIMESTAMPTZ NOT NULL
+last_validated_at  TIMESTAMPTZ                  -- nullable
+last_error         TEXT                         -- nullable
+deleted_at         TIMESTAMPTZ                  -- soft delete
+deleted_by_id      UUID FK → USUARIOS           -- nullable
+```
+
+**Índices:** `(provider, deleted_at)`, `deleted_by_id`
+**Soft delete:** sí (`ISoftDelete`). FK a USUARIOS con ON DELETE RESTRICT.
+
+---
+
+### BACKUP_CLOUD_COPIES
+
+Copia en la nube de un backup local.
+
+```sql
+id                 UUID PK
+backup_id          UUID FK → BACKUPS NOT NULL            -- ON DELETE RESTRICT
+connection_id      UUID FK → BACKUP_CLOUD_CONNECTIONS    -- nullable; ON DELETE SET NULL
+provider           TEXT NOT NULL                         -- default en código: 'GOOGLE_DRIVE'
+estado             TEXT NOT NULL                         -- default en código: 'PENDING'
+remote_file_id     TEXT                                  -- nullable
+remote_file_name   TEXT                                  -- nullable
+remote_size_bytes  BIGINT                                -- nullable
+checksum_sha256    TEXT                                  -- nullable
+fecha_creacion     TIMESTAMPTZ NOT NULL
+uploaded_at        TIMESTAMPTZ                           -- nullable
+error_code         TEXT                                  -- nullable
+error_message      TEXT                                  -- nullable
+deleted_at         TIMESTAMPTZ                           -- soft delete
+deleted_by_id      UUID FK → USUARIOS                    -- nullable
+```
+
+**Índices:** `backup_id`, `connection_id`, `(provider, estado)`, `deleted_by_id`
+**Soft delete:** sí (`ISoftDelete`).
+
+---
+
+---
 
 ## 6. API Endpoints
 
@@ -3716,7 +4154,7 @@ No configurar `VITE_API_URL`. El cliente debe llamar siempre a `/api` en el mism
 
 **Días 15-16: ExtractoTable — base**
 
-- Virtualización con `react-virtual`
+- Virtualización con `@tanstack/react-virtual`
 
 - Columnas fijas + columnas extra dinámicas
 

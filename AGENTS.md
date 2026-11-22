@@ -175,7 +175,7 @@ El equipo tiene antimalware y antivirus activos, y lo que parezca malware se blo
 
 ### Base de datos
 
-- PostgreSQL 16+. ENUMs como tipos PostgreSQL.
+- PostgreSQL 16+. Los enums C# se guardan como `integer` (ordinal); los tipos enum de PostgreSQL del snapshot no los usa ninguna columna. No reordenes ni insertes valores en medio de un enum: cambiaria el significado de los datos guardados.
 - Indices explicitos en todas las FKs y campos de busqueda frecuente; UNIQUE donde corresponda.
 - Nombrado: seccion 14.
 
@@ -201,7 +201,7 @@ El equipo tiene antimalware y antivirus activos, y lo que parezca malware se blo
 
 ## 12. Esquema de BD
 
-La fuente de verdad es el codigo: `Models/Entities.cs`, `Data/AppDbContext.cs` y `Migrations/`. `Documentacion/SPEC.md` es la especificacion original y esta incompleta: le faltan tablas posteriores (PAISES, CONCILIACIONES, IMPORTACION_LOTES, MOVIMIENTOS_ESPERADOS, PLAZOS_FIJOS, BACKUP_*, entre otras) y campos nuevos. Si chocan, manda el codigo. Si cambias el esquema, actualiza tambien SPEC.
+La fuente de verdad es el codigo: `Models/Entities.cs`, `Data/AppDbContext.cs` y `Migrations/`. `Documentacion/SPEC.md` seccion 5 documenta todas las tablas (actualizada contra el snapshot en V-03.02). Si chocan, manda el codigo. Si cambias el esquema, actualiza tambien SPEC.
 
 Lo que SPEC no recoge o recoge mal:
 

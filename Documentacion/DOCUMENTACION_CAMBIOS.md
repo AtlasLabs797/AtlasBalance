@@ -1,5 +1,13 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-22 - V-03.02 - SPEC.md: esquema de BD completo contra el codigo
+
+- Trabajo: la seccion 5 de `SPEC.md` documenta las 35 tablas. Se anaden las 13 que faltaban (PAISES, PLAZOS_FIJOS, IMPORTACION_LOTES, IMPORTACION_LOTE_FILAS, REVISION_EXTRACTO_ESTADOS, PREFERENCIAS_USUARIO_CUENTA, IA_USO_USUARIOS, MOVIMIENTOS_ESPERADOS, CONCILIACIONES, MFA_TRUSTED_DEVICES, BACKUP_OPERATIONS, BACKUP_CLOUD_CONNECTIONS, BACKUP_CLOUD_COPIES) y se ponen al dia las 22 originales (columnas MFA, seguridad, pais, conciliacion, auditoria firmada, scopes de integracion). Nota inicial: el codigo es la fuente de verdad, los enums se guardan como `integer`, el texto es `text` salvo `MaxLength` y casi todos los defaults son de C#. Corregidas las lineas de `react-virtual`, la de soft delete "en todas las entidades" y la de `cuenta_id` null como permiso global.
+- `AGENTS.md`: la regla "ENUMs como tipos PostgreSQL" era falsa; ahora explica que son `integer` y que no se deben reordenar. La seccion 12 ya no dice que SPEC esta incompleta.
+- Archivos: `Documentacion/SPEC.md`, `AGENTS.md`, `Documentacion/REGISTRO_BUGS.md` y esta bitacora.
+- Verificacion: cada tabla contrastada con `AppDbContextModelSnapshot.cs`, `Entities.cs` y `Enums.cs`; 35 headings de tabla en la seccion 5 y bloques de codigo cerrados.
+- Pendiente: comprobar en BD real la posible deriva de `IMPORTACION_LOTES.notas` (abierto en `REGISTRO_BUGS.md`).
+
 # 2026-11-22 - V-03.02 - Instrucciones de agentes: recursos externos y limpieza
 
 - Trabajo: `AGENTS.md` seccion 7 reescrita con las rutas reales de skills (`C:\Users\usuario\Documents\Skills`) y herramientas de diseno (`C:\Users\usuario\Documents\Herramentas`: Impecable Design, Emil Kowlaski Design, Modern Web Guidance, Astryx), para que sirve cada una y que no se ejecuta. Se quitan contradicciones (preguntar vs actuar, servidores dev vs comandos frecuentes, umbral de plan y bitacora), duplicados, ejemplo de version `V-02-07` y entradas obsoletas del arbol. `SKILLS_LOCALES.md` reescrito con rutas verificadas.
@@ -8,7 +16,7 @@ Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (h
 - Regla de Newtonsoft corregida: es un pin de seguridad (Hangfire.Core arrastra 11.0.1 vulnerable; se fuerza 13.0.4), no se usa en codigo.
 - Archivos: `AGENTS.md`, `CLAUDE.md`, `Documentacion/SKILLS_LOCALES.md` y esta bitacora.
 - Verificacion: rutas citadas comprobadas en disco; politica JSON snake_case (`Program.cs:349`), `HasGlobalAccess` (`UserAccessService.cs:231`) y filtro soft delete (`AppDbContext.cs:660`) comprobados; revision en frio del resultado.
-- Pendiente: completar `SPEC.md` con las tablas que faltan y corregir sus lineas 511, 745-747, 1966 y 3719.
+- Pendiente: completar `SPEC.md` (hecho en la entrada "SPEC.md: esquema de BD completo" del mismo dia).
 
 # 2026-11-22 - V-03.02 - Centrado del buscador
 
