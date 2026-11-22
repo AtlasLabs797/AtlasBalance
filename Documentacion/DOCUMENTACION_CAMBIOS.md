@@ -1,5 +1,14 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-22 - V-03.02 - Boton de alertas (campana) en la barra superior
+
+- Trabajo y decision visual: el aviso emergente de saldo bajo se mantiene (esquina superior derecha). Junto al boton de modo claro/oscuro hay un boton campana con contador (ambar, rojo si hay cuentas en negativo) que despliega un menu con todas las alertas activas (cuenta, titular, saldo, minimo), enlace a `/alertas` y un boton para ocultar o volver a mostrar el aviso emergente. Cierra con Escape o clic fuera. El descarte reutiliza la huella del store; se anade `restoreBanner`.
+- Archivos: `frontend/src/components/layout/AlertBell.tsx` (nuevo), `TopBar.tsx`, `Icons.tsx` (`IconBell`), `stores/alertasStore.ts`, `styles/layout/shell.css`, `tests/alertasBannerDismissal.test.ts` (la campana puede leer `bannerDismissed`).
+- Verificacion: `npm run lint` correcto; tests compilados en directorio alternativo (`.test-dist` da EPERM): 345/345.
+- Ajuste posterior: el menu de la campana quedaba tapado por el aviso (mismo z-index, hermano posterior); el topbar sube un nivel mientras el menu esta abierto. El aviso emergente pasa a una sola linea compacta ("N cuentas bajo minimo" + "Ver" + boton X), sin pastilla ni texto largo, tambien en escritorio. Verificacion: lint correcto.
+- Segundo ajuste visual: las filas del menu de la campana dejan de ser pastillas rellenas y siguen el patron de `/alertas` (icono de estado `IconAlertaDanger/Warning`, cuenta como enlace a su ficha, titular, saldo con `SignedAmount` y minimo en mono, separador `--border-subtle`). Cabecera en mayusculas pequenas y boton de ocultar como pildora de acento, igual que `.alertas-notif-action`.
+- Pendiente: comprobacion visual en la app real (desktop y movil); ocultar alerta por alerta no se ha hecho, el descarte es global.
+
 # 2026-11-22 - V-03.02 - SPEC.md: esquema de BD completo contra el codigo
 
 - Trabajo: la seccion 5 de `SPEC.md` documenta las 35 tablas. Se anaden las 13 que faltaban (PAISES, PLAZOS_FIJOS, IMPORTACION_LOTES, IMPORTACION_LOTE_FILAS, REVISION_EXTRACTO_ESTADOS, PREFERENCIAS_USUARIO_CUENTA, IA_USO_USUARIOS, MOVIMIENTOS_ESPERADOS, CONCILIACIONES, MFA_TRUSTED_DEVICES, BACKUP_OPERATIONS, BACKUP_CLOUD_CONNECTIONS, BACKUP_CLOUD_COPIES) y se ponen al dia las 22 originales (columnas MFA, seguridad, pais, conciliacion, auditoria firmada, scopes de integracion). Nota inicial: el codigo es la fuente de verdad, los enums se guardan como `integer`, el texto es `text` salvo `MaxLength` y casi todos los defaults son de C#. Corregidas las lineas de `react-virtual`, la de soft delete "en todas las entidades" y la de `cuenta_id` null como permiso global.

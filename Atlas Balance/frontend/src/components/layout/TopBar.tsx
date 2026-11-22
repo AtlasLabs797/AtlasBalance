@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { X } from 'lucide-react';
 import { IconAiFace, IconMenu, IconMoon, IconSalir, IconSun } from '@/components/Icons';
+import { AlertBell } from '@/components/layout/AlertBell';
 import { CommandPalette } from '@/components/layout/CommandPalette';
 import { navigationGroups, navigationItems } from '@/utils/navigation';
 import api, { clearSessionState } from '@/services/api';
@@ -101,6 +102,7 @@ export function TopBar() {
           <kbd className="app-kbd app-search-hint">{shortcutLabel}</kbd>
         </button>
         <div className="app-topbar-actions">
+          <AlertBell />
           <button
             type="button"
             className="theme-toggle"

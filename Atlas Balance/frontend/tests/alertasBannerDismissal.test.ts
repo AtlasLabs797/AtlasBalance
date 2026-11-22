@@ -295,7 +295,7 @@ test('el store es el unico escritor del estado de descarte del banner', () => {
     .sort();
   assert.deepEqual(
     menciones,
-    ['components/layout/AlertBanner.tsx', 'stores/alertasStore.ts'],
-    'solo el store escribe el descarte; el banner solo lo lee',
+    ['components/layout/AlertBanner.tsx', 'components/layout/AlertBell.tsx', 'stores/alertasStore.ts'],
+    'solo el store escribe el descarte; el banner y la campana solo lo leen',
   );
 });

@@ -525,6 +525,173 @@
   transform: scale(0.94);
 }
 
+.alert-bell {
+  position: relative;
+}
+
+.alert-bell-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--border-default);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  padding: 0;
+  border-radius: var(--radius-control);
+}
+
+.alert-bell-button:hover {
+  background: var(--surface-hover);
+}
+
+.alert-bell-count {
+  position: absolute;
+  top: -0.2rem;
+  right: -0.2rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--status-warning-solid);
+  color: var(--surface-card);
+  font-size: var(--text-12);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+.alert-bell-count--danger {
+  background: var(--status-danger-solid);
+}
+
+.alert-bell-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: var(--z-sticky);
+  width: min(24rem, calc(100vw - 2 * var(--space-3)));
+  max-height: min(28rem, 70dvh);
+  overflow-y: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-1);
+  animation: alert-banner-in var(--duration-slow) var(--ease-premium) both;
+}
+
+.alert-bell-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.alert-bell-menu-head strong {
+  font-size: var(--text-12);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.alert-bell-menu-head button {
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-3);
+  border-color: var(--accent-soft-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-link);
+  font-size: var(--text-13);
+  font-weight: var(--weight-semibold);
+}
+
+.alert-bell-menu-head button:hover {
+  border-color: var(--accent-solid);
+  background: var(--accent-soft);
+}
+
+.alert-bell-empty {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.alert-bell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+/* Mismo patron que la lista de /alertas: icono de estado, titulo, importes
+   en mono y filas separadas por linea fina, sin rellenos de color. */
+.alert-bell-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+}
+
+.alert-bell-item:hover {
+  background: var(--surface-hover);
+}
+
+.alert-bell-item-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.alert-bell-item-name {
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-bell-item-name:hover {
+  color: var(--text-link);
+  text-decoration: none;
+}
+
+.alert-bell-item-meta {
+  font-size: var(--text-12);
+  color: var(--text-tertiary);
+}
+
+.alert-bell-item-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-13);
+}
+
+.alert-bell-item-min {
+  color: var(--text-tertiary);
+}
+
+.alert-bell-link {
+  justify-self: start;
+  padding-top: var(--space-1);
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold);
+  color: var(--text-link);
+}
+
 .theme-toggle,
 .logout-button {
   display: inline-flex;
@@ -628,8 +795,42 @@
   border-color: var(--alert-banner-solid);
 }
 
-.alert-banner-dismiss-icon {
+/* Aviso compacto: solo el dato imprescindible y descarte como boton de icono. */
+.alert-banner {
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  gap: var(--space-2);
+}
+
+.alert-banner > button {
+  width: var(--control-height-sm);
+  padding: 0;
+  border-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alert-banner-pill {
   display: none;
+}
+
+.alert-banner-dismiss-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.alert-banner-dismiss-icon {
+  display: block;
+}
+
+/* El menu de la campana vive en el topbar: sin esto el aviso, hermano
+   posterior con el mismo z-index, lo tapa. */
+.app-topbar:has(.alert-bell-menu) {
+  z-index: calc(var(--z-sticky) + 1);
 }
 
 .alert-banner-content {

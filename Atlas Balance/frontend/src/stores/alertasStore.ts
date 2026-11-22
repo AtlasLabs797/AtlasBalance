@@ -31,6 +31,7 @@ interface AlertasState {
 
   setAlertasActivas: (alertas: AlertaActiva[]) => void;
   dismissBanner: () => void;
+  restoreBanner: () => void;
   clear: () => void;
   syncAlertas: (
     alertas: AlertaActiva[] | undefined,
@@ -69,6 +70,10 @@ export const useAlertasStore = create<AlertasState>((set, get) => ({
     const huella = huellaAlertas(get().alertasActivas);
     sessionStorage()?.setItem(SESSION_KEY, huella);
     set({ bannerDismissed: true, bannerDismissedFor: huella });
+  },
+  restoreBanner: () => {
+    sessionStorage()?.removeItem(SESSION_KEY);
+    set({ bannerDismissed: false, bannerDismissedFor: null });
   },
   clear: () => {
     sessionStorage()?.removeItem(SESSION_KEY);

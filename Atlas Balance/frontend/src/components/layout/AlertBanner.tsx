@@ -27,13 +27,11 @@ export function AlertBanner() {
     >
       <div className="alert-banner-content">
         <span className="alert-banner-dot" aria-hidden="true" />
-        <span className="alert-banner-pill">{variante === 'danger' ? 'Urgente' : 'Atención'}</span>
-        <strong>{enNegativo > 0 ? 'Cuentas en negativo' : 'Saldo bajo detectado'}</strong>
-        <span>
-          {alertasActivas.length} cuenta{alertasActivas.length === 1 ? '' : 's'} por debajo del mínimo
-          {enNegativo > 0 ? `, ${enNegativo} en negativo` : ''}.
-        </span>
-        <Link to="/alertas">Revisar alertas</Link>
+        <strong>
+          {alertasActivas.length} cuenta{alertasActivas.length === 1 ? '' : 's'}{' '}
+          {enNegativo > 0 ? 'en negativo' : 'bajo mínimo'}
+        </strong>
+        <Link to="/alertas">Ver</Link>
       </div>
       <button type="button" onClick={dismissBanner} aria-label="Ocultar aviso">
         <span className="alert-banner-dismiss-label">Ocultar</span>
