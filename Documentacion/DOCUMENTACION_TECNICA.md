@@ -2,6 +2,10 @@
 
 ## Vigencia documental: V-03.02
 
+### 2026-11-23 - Posicion del aviso de alertas
+
+- El grid de `.app-main` reserva al aviso de alertas una fila `auto` separada del contenido y adaptable a su altura, tambien en movil. Sin aviso la fila se colapsa.
+
 ### 2026-11-23 - Pruebas de CI multiplataforma
 
 - `Test-AtlasSecrets.Tests.ps1` restablece `$LASTEXITCODE` tras finalizar correctamente sus fixtures, incluido el caso que espera una deteccion con codigo 1; los errores siguen interrumpiendo el script.

@@ -1,5 +1,11 @@
 Las entradas anteriores a V-03.02 estan en `DOCUMENTACION_CAMBIOS_ARCHIVO.md` (historico de V-03.01 y anteriores).
 
+# 2026-11-23 - V-03.02 - Aviso de alertas sin solapar controles
+
+- Trabajo y decision visual: el aviso de alertas ocupa una fila de altura automatica sobre el contenido, sin cubrir botones, tanto en escritorio como en movil. La fila queda vacia cuando no hay aviso.
+- Archivos: `frontend/src/styles/layout/shell.css`, documentacion tecnica, de usuario, version y log de incidencias.
+- Verificacion: lint correcto. Playwright local alcanzo el hover y midio el contraste, pero quedo bloqueado al cerrar y se interrumpio; no cuenta como prueba aprobada. Pendiente repetir pruebas visuales y release en CI.
+
 # 2026-11-23 - V-03.02 - Correccion de checks de CI
 
 - Trabajo: rutas de pruebas multiplataforma, test de bloqueo de exportacion en Windows y codigo de salida correcto de los fixtures del scanner. CI ejecuta la clase de limpieza en Windows.

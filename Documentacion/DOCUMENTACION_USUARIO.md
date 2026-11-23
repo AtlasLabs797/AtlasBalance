@@ -1047,3 +1047,6 @@ Cuando una cuenta queda por debajo del minimo, aparece un aviso flotante sobre l
 ## Signos de cifras (V-03.02)
 
 Los importes y porcentajes positivos se muestran sin signo; los negativos llevan el signo menos. Los datos guardados no cambian.
+# Aviso de alertas
+
+El aviso de cuentas con alertas aparece encima del contenido sin tapar los botones de la pantalla. Se puede ocultar con el boton del propio aviso.

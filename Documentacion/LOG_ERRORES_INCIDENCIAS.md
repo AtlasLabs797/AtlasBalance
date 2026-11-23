@@ -6516,3 +6516,8 @@ La salida habitual `.test-dist` contiene archivos sin permiso de escritura y `np
 - Dos tests de limpieza de exportaciones dependian de rutas y bloqueo de ficheros de Windows, pero se ejecutaban en Ubuntu. Se usan rutas nativas y el test de bloqueo queda en Windows, donde CI ejecuta la clase.
 - Los fixtures del scanner imprimian OK pero dejaban `$LASTEXITCODE=1` tras una deteccion esperada. Se restablece a 0 solo al finalizar correctamente; una excepcion sigue haciendo fallar el paso.
 - Pendiente: comprobar los nuevos resultados completos en GitHub Actions.
+# 2026-11-23 - V-03.02 - Aviso de alertas tapa controles
+
+- La release #8 fallo en dos pruebas visuales porque `.alert-banner` compartia fila de grid con el contenido e interceptaba los clics y el hover. Cinco capturas posteriores no llegaron a ejecutarse.
+- Se reserva una fila `auto` al aviso y otra al contenido en escritorio y movil, conservando la altura adaptable del aviso.
+- Pendiente: repetir pruebas visuales y release.

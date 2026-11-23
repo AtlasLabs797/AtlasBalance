@@ -398,7 +398,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(var(--topbar-height), auto) minmax(0, 1fr);
+  grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
 }
 
 .app-main > .app-topbar {
@@ -416,7 +416,7 @@
 }
 
 .app-main > .app-content {
-  grid-row: 2;
+  grid-row: 3;
   grid-column: 1;
   min-height: 0;
 }
@@ -742,7 +742,7 @@
   --alert-banner-border: var(--status-warning-border);
   --alert-banner-solid: var(--status-warning-solid);
 
-  /* Superpuesto al contenido sin reservar una fila de la pagina. */
+  /* Fila propia para que el aviso no tape los controles de la pagina. */
   margin: var(--space-2) var(--space-5) 0;
   border: 1px solid var(--alert-banner-border);
   border-radius: var(--radius-card);
@@ -1255,7 +1255,7 @@ body:has(.ai-floating-widget) .toast-viewport {
   }
 
   .app-main {
-    grid-template-rows: minmax(var(--topbar-height), auto) minmax(0, 1fr);
+    grid-template-rows: minmax(var(--topbar-height), auto) auto minmax(0, 1fr);
     padding-bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
   }
 
